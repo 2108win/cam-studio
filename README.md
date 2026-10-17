@@ -8,6 +8,21 @@ Một app giống Camo Studio: lấy hình từ camera ngoài và đưa ra một
 - **iPhone qua Wi‑Fi:** app đã build được nhưng chưa thử trên iPhone thật.
 - **Điện thoại qua USB:** dùng chung giao thức, sẽ làm sau.
 
+## Cài đặt (bản phát hành)
+
+Tải file ở trang [Releases](https://github.com/2108win/cam-studio/releases):
+
+- **Windows 11:**
+  - Tải `CamStudio-<phiên bản>-win-x64.zip` và giải nén.
+  - Bấm đúp `Install.cmd`, rồi bấm Yes khi Windows hỏi quyền Admin.
+  - Mở **Cam Studio** từ Start menu.
+  - Gỡ cài đặt trong Settings › Apps.
+- **Android 8 trở lên:**
+  - Chép `CamStudio-<phiên bản>-android.apk` sang điện thoại rồi mở file để cài.
+  - Điện thoại sẽ hỏi quyền cài app từ nguồn ngoài, hãy cho phép.
+
+Đóng gói bản mới bằng `scripts\package-release.ps1`. Kết quả nằm trong `build\dist`.
+
 ## Điện thoại làm webcam (Wi‑Fi)
 
 - **Chạy trên PC:** [CamStudio.exe](app/) tự tìm điện thoại trong cùng mạng Wi‑Fi (mDNS `_camstudio._tcp`). Nếu mạng chặn mDNS, chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại.
