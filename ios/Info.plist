@@ -25,6 +25,14 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <!-- iPad: every orientation, as Xcode requires (the stream follows the device, not the UI). -->
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
     <key>NSCameraUsageDescription</key>
     <string>Cam Studio gửi hình camera sang máy tính để dùng làm webcam.</string>
     <key>NSMicrophoneUsageDescription</key>

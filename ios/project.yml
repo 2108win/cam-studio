@@ -1,14 +1,20 @@
 # XcodeGen spec: on the Mac run `brew install xcodegen && xcodegen` in this
-# folder to create CamStudio.xcodeproj, then open it in Xcode.
+# folder to create CamStudio.xcodeproj, then open it in Xcode, or just run
+# scripts/ios-run.sh (build, install and launch on the connected iPhone).
 name: CamStudio
 options:
   bundleIdPrefix: vn.camstudio
   deploymentTarget:
     iOS: "17.0"
+    macOS: "14.0"
+# The signing team comes from Signing.local.xcconfig (not in git, see Signing.xcconfig): a team
+# picked in Xcode would be lost the next time xcodegen regenerates the project.
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""          # pick your team in Xcode > Signing & Capabilities
     CODE_SIGN_STYLE: Automatic
 targets:
   CamStudio:
@@ -29,8 +35,26 @@ targets:
     sources:
       - path: CamStudioTests
       - path: CamStudio/Crypto.swift
-    resources:
       - path: ../docs/protocol-vectors.json
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  # Same CryptoTests on the Mac itself: no simulator, iPhone or signing team needed.
+  #   xcodebuild test -scheme CryptoTestsMac -destination platform=macOS
+  CamStudioTestsMac:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: CamStudioTests
+      - path: CamStudio/Crypto.swift
+      - path: ../docs/protocol-vectors.json
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
 schemes:
   CamStudio:
     build:
@@ -40,3 +64,10 @@ schemes:
     test:
       targets:
         - CamStudioTests
+  CryptoTestsMac:
+    build:
+      targets:
+        CamStudioTestsMac: [test]
+    test:
+      targets:
+        - CamStudioTestsMac

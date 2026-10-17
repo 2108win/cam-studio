@@ -77,6 +77,8 @@ u32  flags
 **iOS:** VideoToolbox xuất khung dạng AVCC (mỗi NAL có 4 byte độ dài ở đầu), còn SPS/PPS/VPS nằm trong `CMFormatDescription`. App iOS phải đổi sang Annex‑B trước khi gửi:
 - thay 4 byte độ dài bằng `00 00 00 01`;
 - gửi VIDEO_CONFIG mỗi khi `CMFormatDescription` thay đổi.
+
+VIDEO_CONFIG có thể kèm NAL khác ngoài VPS/SPS/PPS. Ví dụ, HEVC 10‑bit HLG của iPhone có thêm SEI (loại 39). Bên nhận không được giả định trong đó chỉ có tham số bộ giải mã.
 | 4 | AUDIO_FRAME | ĐT → PC | (dành cho sau này) |
 
 ---
@@ -235,6 +237,7 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
       "focalLength35mm": 24,
       "fovDegrees": 77.0,
       "sensorOrientation": 90,
+      "cinematic": true,                // ống kính này quay điện ảnh được (xem dưới)
       "controls": { /* như mục "controls" bên dưới, nhưng riêng cho ống kính này */ }
     },
     { "id": "back-wide", "facing": "back", "kind": "wide", "label": "Góc rộng 1×", "zoom": { "min": 1, "max": 10 } },
@@ -272,6 +275,10 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 ```
 
 **`controls` theo từng ống kính:** mỗi phần tử trong `lenses` có thể có `controls` riêng, vì mỗi ống kính có giới hạn ISO, phơi sáng, lấy nét và chống rung khác nhau. Nếu có thì `lenses[i].controls` được ưu tiên hơn `controls` chung ở cấp trên.
+
+**`cinematic` theo từng ống kính:** khi `effects.cinematic == "app"`, chỉ những ống kính không ghi `"cinematic": false` mới quay điện ảnh được. Không có trường này nghĩa là được.
+- **Trên PC:** chỉ hiện nút điện ảnh cho những ống kính đó.
+- **Khi không bật được** (ví dụ chế độ đang phát không có định dạng điện ảnh): điện thoại để `cinematic: false` trong `state`, **không** gửi `error`, vì PC dừng phát khi nhận `error`.
 
 **Quy tắc ghi `modes`:**
 - **Lọc theo bộ mã hóa:** chỉ ghi các kích thước mà camera xuất được **và** bộ mã hóa video phần cứng nhận được.

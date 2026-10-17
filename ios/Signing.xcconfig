@@ -1,0 +1,4 @@
+// Signing team for this Mac, kept out of git: XcodeGen regenerates the project and would drop a
+// team picked in Xcode. Signing.local.xcconfig holds one line (scripts/ios-run.sh writes it once):
+//   DEVELOPMENT_TEAM = ABCDE12345
+#include? "Signing.local.xcconfig"

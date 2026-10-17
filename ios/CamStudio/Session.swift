@@ -185,7 +185,7 @@ final class Session {
         streamer = s
         sendControl([
             "type": "started", "lens": lens.id, "width": Int(width), "height": Int(height), "fps": fps,
-            "codec": codec, "hdr": codec == "hevc10", "orientation": s.orientation,
+            "codec": s.codec, "hdr": s.codec == "hevc10", "orientation": s.orientation,
         ])
         ui?.status(streaming: true, text: "Đang phát \(lens.label) · \(width)×\(height) · \(fps) fps → \(pcName)")
     }
@@ -206,7 +206,8 @@ final class Session {
     // MARK: - sending
 
     private func sendControl(_ json: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+        // dataWithJSONObject raises an Objective-C exception (a crash, not a Swift error) on NaN.
+        guard JSONSerialization.isValidJSONObject(json), let data = try? JSONSerialization.data(withJSONObject: json) else { return }
         // Control jumps the queue so it is never stuck behind video.
         pendingLock.lock()
         pending.insert(Out(kind: Wire.kindControl, data: data, ptsUs: 0, flags: 0, queuedAt: Date().timeIntervalSince1970), at: 0)

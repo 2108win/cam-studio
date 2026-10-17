@@ -31,27 +31,37 @@ final class CameraCaps {
             .builtInTrueDepthCamera,
         ]
         let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .unspecified).devices
+        // The TrueDepth camera is the front wide-angle sensor plus depth: listing both would show
+        // the same picture twice on the PC. Keep TrueDepth only when it brings cinematic video.
+        let hasFrontWide = devices.contains { $0.position == .front && $0.deviceType == .builtInWideAngleCamera }
+        let trueDepthCinematic = devices.contains { $0.deviceType == .builtInTrueDepthCamera && $0.formats.contains(where: Cinematic.isSupported) }
         var out: [Lens] = []
         for d in devices {
+            if d.deviceType == .builtInTrueDepthCamera && hasFrontWide && !trueDepthCinematic { continue }
+            if d.position == .front && d.deviceType == .builtInWideAngleCamera && trueDepthCinematic { continue }
             let facing = d.position == .front ? "front" : "back"
             let kind: String
             let label: String
+            let short: String // stable id part: the PC may remember a lens across launches
             switch d.deviceType {
             case .builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera:
                 kind = "virtual"
+                short = d.deviceType == .builtInTripleCamera ? "triple" : d.deviceType == .builtInDualWideCamera ? "dualWide" : "dual"
                 label = facing == "front" ? "Camera trước (tự đổi ống kính)" : "Camera sau (tự đổi ống kính)"
             case .builtInUltraWideCamera:
-                kind = "ultraWide"; label = "Camera sau · siêu rộng 0.5×"
+                kind = "ultraWide"; short = "ultraWide"; label = "Camera sau · siêu rộng 0.5×"
             case .builtInTelephotoCamera:
-                kind = "telephoto"; label = "Camera sau · tele"
+                kind = "telephoto"; short = "tele"; label = "Camera sau · tele"
             case .builtInTrueDepthCamera:
-                kind = "trueDepth"; label = "Camera trước (TrueDepth)"
+                kind = "trueDepth"; short = "trueDepth"; label = "Camera trước (TrueDepth)"
             default:
                 kind = facing == "front" ? "front" : "wide"
+                short = "wide"
                 label = facing == "front" ? "Camera trước" : "Camera sau · góc rộng 1×"
             }
-            out.append(Lens(id: "\(facing)-\(d.deviceType.rawValue.split(separator: ".").last ?? "cam")-\(out.count)",
-                            device: d, facing: facing, kind: kind, label: label))
+            var id = "\(facing)-\(short)"
+            if out.contains(where: { $0.id == id }) { id += "-\(out.count)" }
+            out.append(Lens(id: id, device: d, facing: facing, kind: kind, label: label))
         }
         return out
     }
@@ -82,15 +92,22 @@ final class CameraCaps {
             // e.g. 0.5 on a triple camera: zoom 2.0 is shown to people as "1×".
             zoom["displayMultiplier"] = Double(d.displayVideoZoomFactorMultiplier)
         }
+        let fov = Double(d.activeFormat.videoFieldOfView)
         var lens: [String: Any] = [
             "id": l.id, "facing": l.facing, "kind": l.kind, "label": l.label,
             "zoom": zoom,
-            "fovDegrees": Double(d.activeFormat.videoFieldOfView),
+            "fovDegrees": fov,
             "sensorOrientation": 90,
             "controls": controls(d),
+            "cinematic": d.formats.contains { Cinematic.isSupported($0) },
         ]
-        if d.isVirtualDevice {
+        if l.kind == "virtual" {
             lens["members"] = d.constituentDevices.compactMap { member in lenses.first { $0.device.uniqueID == member.uniqueID }?.id }
+        } else if fov > 1 {
+            // From the horizontal field of view (36 mm wide full frame). The PC orders its lens
+            // chips by this and labels them 0.5× / 1× / 2× relative to the main lens. A virtual
+            // camera has none, so it sorts last ("Tự động").
+            lens["focalLength35mm"] = (18 / tan(fov * .pi / 360)).rounded()
         }
         return lens
     }
@@ -166,7 +183,7 @@ final class CameraCaps {
             "studioLight": formats.contains { $0.isStudioLightSupported } ? "system" : "none",
             "centerStage": formats.contains { $0.isCenterStageSupported } ? "system" : "none",
             "backgroundReplacement": "none",
-            "cinematic": Cinematic.isSupported(lenses.map(\.device)) ? "app" : "none",
+            "cinematic": formats.contains { Cinematic.isSupported($0) } ? "app" : "none",
             "bokehExtension": "none",
         ]
         if #available(iOS 18.0, *) {

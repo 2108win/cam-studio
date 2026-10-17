@@ -121,7 +121,7 @@ public sealed partial class MainWindow
         if (lens.LowLightBoost) AddToggle("Tăng sáng khi thiếu sáng", Sent("lowLightBoost", false), on => SendPhone("lowLightBoost", on));
 
         // Effects: "app" ones are toggles; "system" ones live in the OS panel.
-        if (_phoneCaps!.Effects.TryGetValue("cinematic", out var cin) && cin == "app")
+        if (_phoneCaps!.Effects.TryGetValue("cinematic", out var cin) && cin == "app" && lens.Cinematic)
             AddToggle("Chế độ điện ảnh (xóa phông)", Sent("cinematic", false), on => SendPhone("cinematic", on));
         if (_phoneCaps.HasSystemEffects)
         {

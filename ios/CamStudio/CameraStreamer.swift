@@ -16,7 +16,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     let width: Int32
     let height: Int32
     let fps: Int
-    let codec: String                             // h264 | hevc | hevc10
+    private(set) var codec: String                // h264 | hevc | hevc10 (falls back to hevc without 10-bit)
     private var bitrate: Int
     private let callbacks: Callbacks
 
@@ -31,6 +31,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var rotationObserver: NSKeyValueObservation?
     private var stateTimer: Timer?
     private var controls: [String: Any] = [:]
+    private var cinematicOn = false
 
     init(lens: CameraCaps.Lens, width: Int32, height: Int32, fps: Int, codec: String, bitrate: Int, callbacks: Callbacks) {
         self.lens = lens
@@ -47,6 +48,8 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     func start(stabilization: String?, cinematic: Bool) throws {
         let device = lens.device
         session.beginConfiguration()
+        var committed = false
+        defer { if !committed { session.commitConfiguration() } }
         session.sessionPreset = .inputPriority // we choose the device format ourselves
         // Otherwise the session picks P3 itself and overrides our HLG choice.
         session.automaticallyConfiguresCaptureDeviceForWideColor = codec != "hevc10"
@@ -59,7 +62,6 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         try device.lockForConfiguration()
         guard let format = pickFormat(device, cinematic: cinematic) else {
             device.unlockForConfiguration()
-            session.commitConfiguration()
             throw WireError.protocolError("format \(width)x\(height)@\(fps) not available")
         }
         device.activeFormat = format
@@ -71,15 +73,29 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         device.unlockForConfiguration()
 
-        if cinematic { _ = Cinematic.enable(input, true) }
+        if cinematic { cinematicOn = Cinematic.enable(input, true) }
 
-        // 10-bit capture for HLG, 8-bit full range otherwise.
-        let pixelFormat = codec == "hevc10" ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange : kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat]
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
         guard session.canAddOutput(output) else { throw WireError.protocolError("cannot add video output") }
         session.addOutput(output)
+
+        // 10-bit capture for HLG, 8-bit otherwise. Always video (limited) range: the PC hands decoded NV12
+        // straight to the virtual camera, whose consumers assume limited range (Android sends the same).
+        // The output lists its pixel formats only once input, camera format and output are all in the
+        // session, and setting one it does not list raises an exception (a crash).
+        let available = output.availableVideoPixelFormatTypes
+        let tenBit = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+        let eightBit = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        if codec == "hevc10" && !available.contains(tenBit) {
+            codec = "hevc"
+            if (try? device.lockForConfiguration()) != nil {
+                if device.activeFormat.supportedColorSpaces.contains(.sRGB) { device.activeColorSpace = .sRGB }
+                device.unlockForConfiguration()
+            }
+        }
+        let pixelFormat = codec == "hevc10" ? tenBit : available.contains(eightBit) ? eightBit : available.first ?? eightBit
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat]
 
         if let connection = output.connection(with: .video) {
             // Frames stay in sensor orientation; the PC rotates using "orientation".
@@ -89,6 +105,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             }
         }
         session.commitConfiguration()
+        committed = true
 
         try makeEncoder()
         session.startRunning()
@@ -124,14 +141,14 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     private func pickFormat(_ device: AVCaptureDevice, cinematic: Bool) -> AVCaptureDevice.Format? {
-        if cinematic, let f = Cinematic.format(for: device, width: width, height: height) { return f }
+        if cinematic, let f = Cinematic.format(for: device, width: width, height: height, fps: fps) { return f }
         let wantsHdr = codec == "hevc10"
         let matches = device.formats.filter { f in
             let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
             return d.width == width && d.height == height &&
                 f.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= Double(fps) && Double(fps) <= $0.maxFrameRate }
         }
-        // Prefer HLG-capable formats for HDR, full-range 8-bit otherwise; skip binned when possible.
+        // Prefer HLG-capable (10-bit) formats for HDR, 8-bit ones otherwise; skip binned when possible.
         return matches.first { wantsHdr == $0.supportedColorSpaces.contains(.HLG_BT2020) && !$0.isVideoBinned }
             ?? matches.first { !$0.isVideoBinned } ?? matches.first
     }
@@ -273,6 +290,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     /// Applies a "set" message; unknown fields are ignored (protocol rule).
     func set(_ update: [String: Any]) {
         for (k, v) in update where k != "type" { controls[k] = v }
+        if let on = update["cinematic"] as? Bool { setCinematic(on) }
         let d = lens.device
         do {
             try d.lockForConfiguration()
@@ -344,6 +362,30 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
     }
 
+    /// The PC toggles cinematic video live ("set"): it needs a cinematic-capable format of the
+    /// same size and frame rate, so the stream keeps its resolution and the encoder is untouched.
+    /// When this lens or mode cannot, "state" keeps cinematic false. No "error": the PC ends the
+    /// stream on any error, and losing the picture is worse than a toggle that does nothing.
+    private func setCinematic(_ on: Bool) {
+        defer { controls["cinematic"] = cinematicOn }
+        guard on != cinematicOn, let input else { return }
+        let d = lens.device
+        let format = on ? Cinematic.format(for: d, width: width, height: height, fps: fps) : pickFormat(d, cinematic: false)
+        guard let format else { return }
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        do { try d.lockForConfiguration() } catch {
+            callbacks.error("busy", "Không điều khiển được camera: \(error.localizedDescription)")
+            return
+        }
+        d.activeFormat = format
+        let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
+        d.activeVideoMinFrameDuration = duration
+        d.activeVideoMaxFrameDuration = duration
+        d.unlockForConfiguration()
+        if Cinematic.enable(input, on) { cinematicOn = on }
+    }
+
     private static func stabilizationMode(_ name: String) -> AVCaptureVideoStabilizationMode {
         switch name {
         case "standard": return .standard
@@ -358,10 +400,18 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         let d = lens.device
         var state = controls
         state["type"] = "state"
-        state["zoom"] = Double(d.videoZoomFactor)
-        state["iso"] = Double(d.iso)
-        state["exposureMs"] = d.exposureDuration.seconds * 1000
-        state["lensPosition"] = Double(d.lensPosition)
+        // JSON has no NaN: skip a value the camera cannot give right now (exposureDuration is
+        // invalid for a moment after switching to manual exposure).
+        func put(_ key: String, _ value: Double) { if value.isFinite { state[key] = value } }
+        put("zoom", Double(d.videoZoomFactor))
+        put("iso", Double(d.iso))
+        put("exposureMs", d.exposureDuration.seconds * 1000)
+        put("lensPosition", Double(d.lensPosition))
+        // Raises an exception for gains outside 1...max, which they are while the session reconfigures.
+        let gains = d.deviceWhiteBalanceGains
+        if [gains.redGain, gains.greenGain, gains.blueGain].allSatisfy({ $0 >= 1 && $0 <= d.maxWhiteBalanceGain }) {
+            put("wbKelvin", Double(d.temperatureAndTintValues(for: gains).temperature))
+        }
         state["orientation"] = orientation
         state["bitrateKbps"] = bitrate / 1000
         state["battery"] = Int(max(0, UIDevice.current.batteryLevel) * 100)

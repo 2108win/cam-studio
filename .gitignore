@@ -19,6 +19,7 @@ ios/.build/
 ios/.bsp/
 ios/.swiftpm/
 ios/xtool/
+ios/Signing.local.xcconfig
 xcuserdata/
 DerivedData/
 

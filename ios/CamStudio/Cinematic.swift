@@ -5,29 +5,23 @@ import AVFoundation
 /// your Xcode/SDK predates iOS 26 the `#if compiler` guard compiles it out
 /// and the feature is simply reported as unavailable ("cinematic": "none").
 enum Cinematic {
-    static func isSupported(_ devices: [AVCaptureDevice]) -> Bool {
+    static func isSupported(_ format: AVCaptureDevice.Format) -> Bool {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            return devices.contains { d in d.formats.contains { $0.isCinematicVideoCaptureSupported } }
-        }
+        if #available(iOS 26.0, *) { return format.isCinematicVideoCaptureSupported }
         #endif
         return false
     }
 
-    /// Picks a cinematic-capable format of the requested size if one exists.
-    static func format(for device: AVCaptureDevice, width: Int32, height: Int32) -> AVCaptureDevice.Format? {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            return device.formats.first { f in
-                let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
-                return f.isCinematicVideoCaptureSupported && d.width == width && d.height == height
-            }
+    /// A cinematic-capable format of the requested size that reaches `fps`, if one exists.
+    static func format(for device: AVCaptureDevice, width: Int32, height: Int32, fps: Int) -> AVCaptureDevice.Format? {
+        device.formats.first { f in
+            let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+            return isSupported(f) && d.width == width && d.height == height &&
+                f.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= Double(fps) && Double(fps) <= $0.maxFrameRate }
         }
-        #endif
-        return nil
     }
 
-    /// Turns cinematic capture on/off for an input (session must be reconfigured).
+    /// Turns cinematic capture on/off for an input (inside a session configuration).
     static func enable(_ input: AVCaptureDeviceInput, _ on: Bool) -> Bool {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *), input.isCinematicVideoCaptureSupported {

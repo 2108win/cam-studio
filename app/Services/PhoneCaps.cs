@@ -30,6 +30,7 @@ public sealed class PhoneCaps
         public bool Torch;
         public List<string> Stabilization = new();
         public bool LowLightBoost;
+        public bool Cinematic = true;     // this lens can do caps.effects.cinematic (absent = yes)
     }
 
     public string Os = "";
@@ -77,6 +78,7 @@ public sealed class PhoneCaps
                         Kind = Str(l, "kind"),
                         FocalLength35 = l.TryGetProperty("focalLength35mm", out var f) && f.ValueKind == JsonValueKind.Number ? f.GetDouble() : 0,
                         Zoom = RangeOf(l, "zoom", "min", "max"),
+                        Cinematic = !(l.TryGetProperty("cinematic", out var cin) && cin.ValueKind == JsonValueKind.False),
                     };
                     // Per-lens controls win over the shared ones (protocol section 5).
                     var controls = l.TryGetProperty("controls", out var lc) ? lc : topControls;

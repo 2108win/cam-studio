@@ -15,25 +15,48 @@ final class PhoneServer {
         self.ui = ui
     }
 
+    private var onReady: ((UInt16) -> Void)?
+    private var onFailure: ((String) -> Void)?
+
     func start(onReady: @escaping (UInt16) -> Void, onFailure: @escaping (String) -> Void) {
+        self.onReady = onReady
+        self.onFailure = onFailure
+        listen()
+    }
+
+    /// iOS reclaims listening sockets while the app is suspended, so after the background the
+    /// listener has failed or is about to: start a fresh one (an open connection is not touched).
+    func resumeFromBackground() {
+        listen()
+    }
+
+    private func listen() {
+        listener?.cancel()
+        listener = nil
         let params = NWParameters.tcp
         params.includePeerToPeer = false
+        params.allowLocalEndpointReuse = true
         // Fixed port first (docs/protocol.md 1), so an address added by IP stays valid.
         guard let listener = (try? NWListener(using: params, on: 47321)) ?? (try? NWListener(using: params)) else {
-            onFailure("Không mở được cổng kết nối")
+            onFailure?("Không mở được cổng kết nối")
             return
         }
         let txt = NWTXTRecord([
             "v": "1", "id": store.deviceId, "name": store.deviceName, "model": store.model, "os": "ios",
         ])
         listener.service = NWListener.Service(name: store.deviceName, type: "_camstudio._tcp", txtRecord: txt)
-        listener.stateUpdateHandler = { [weak self] state in
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
+            guard let self, let listener, listener === self.listener else { return }
             switch state {
             case .ready:
-                self?.port = listener.port?.rawValue ?? 0
-                onReady(self?.port ?? 0)
+                self.port = listener.port?.rawValue ?? 0
+                self.onReady?(self.port)
             case .failed(let error):
-                onFailure("Không quảng bá được trên Wi‑Fi: \(error). Kiểm tra quyền Mạng cục bộ cho Cam Studio.")
+                self.onFailure?("Không quảng bá được trên Wi‑Fi: \(error). Kiểm tra quyền Mạng cục bộ cho Cam Studio.")
+                // Usually the socket was reclaimed in the background: try again shortly.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    if self?.listener === listener { self?.listen() }
+                }
             default:
                 break
             }
@@ -45,9 +68,11 @@ final class PhoneServer {
             self.session = s
             Thread {
                 s.run()
-                if self.session === s {
-                    self.session = nil
-                    ui.status(streaming: false, text: "Đang chờ máy tính kết nối…")
+                DispatchQueue.main.async {
+                    if self.session === s {
+                        self.session = nil
+                        ui.status(streaming: false, text: "Đang chờ máy tính kết nối…")
+                    }
                 }
             }.start()
         }
@@ -58,6 +83,7 @@ final class PhoneServer {
     func stop() {
         session?.close()
         listener?.cancel()
+        listener = nil
     }
 
     /// IPv4 addresses on Wi‑Fi/Ethernet, for the "add by IP" fallback.

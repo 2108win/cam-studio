@@ -29,6 +29,7 @@ final class AppModel: ObservableObject, Session.UI {
     private var pairingAnswer: Bool?
     private let pairingDone = DispatchSemaphore(value: 0)
     private var foreground = true
+    private var wasInBackground = false
     private var normalBrightness: CGFloat = 0.5
 
     var inForeground: Bool { foreground }
@@ -50,9 +51,18 @@ final class AppModel: ObservableObject, Session.UI {
     }
 
     func phaseChanged(_ phase: ScenePhase) {
-        foreground = phase == .active
-        if phase == .background { server?.session?.appBackgrounded() }
-        if phase == .active { addresses = PhoneServer.addresses().map { "\($0):\(server?.port ?? 0)" } }
+        // .inactive still means on screen (e.g. the system video-effects panel is over the app),
+        // and the camera keeps running there: only .background stops it.
+        foreground = phase != .background
+        if phase == .background {
+            wasInBackground = true
+            server?.session?.appBackgrounded()
+        }
+        if phase == .active {
+            if wasInBackground { server?.resumeFromBackground() }
+            wasInBackground = false
+            addresses = PhoneServer.addresses().map { "\($0):\(server?.port ?? 0)" }
+        }
     }
 
     // MARK: Session.UI (called from session threads)
@@ -125,6 +135,7 @@ struct ContentView: View {
                     .padding(.horizontal, 32)
             }
         }
+        .statusBarHidden(true)
         .contentShape(Rectangle())
         .onTapGesture { model.setDimmed(false) }
         .alert("Ghép đôi với \(model.pairing?.pcName ?? "máy tính")?",

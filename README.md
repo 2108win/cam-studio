@@ -5,7 +5,7 @@ Một app giống Camo Studio: lấy hình từ camera ngoài và đưa ra một
 **Nguồn hình:**
 - **Webcam USB / capture card:** đã chạy.
 - **Điện thoại Android qua Wi‑Fi:** đã chạy với Redmi 9T, dùng được cả 4 ống kính: siêu rộng 0.6×, chính 1×, macro và camera trước.
-- **iPhone qua Wi‑Fi:** app đã build được nhưng chưa thử trên iPhone thật.
+- **iPhone qua Wi‑Fi:** đã chạy trên iPhone 14 (iOS 27.2) với "PC giả" trên Mac (mọi ống kính, tới 4K và HDR, điện ảnh). Chưa thử với app PC Windows.
 - **Điện thoại qua USB:** dùng chung giao thức, sẽ làm sau.
 
 ## Cài đặt (bản phát hành)
@@ -39,8 +39,9 @@ Tải file ở trang [Releases](https://github.com/2108win/cam-studio/releases):
 |---|---|---|
 | Đặc tả giao thức (chung cho cả ba bên) | [docs/protocol.md](docs/protocol.md) | — |
 | App Android (Kotlin, Camera2 + MediaCodec) | [android/](android/) | Windows: `scripts\build-android.ps1` → `build\CamStudioPhone.apk`. Mac/Linux: `cd android && ./gradlew assembleRelease` |
-| App iPhone (Swift, AVFoundation + VideoToolbox) | [ios/](ios/) | Trên Mac bằng Xcode, hoặc trên Windows (WSL) bằng xtool. Xem [ios/README.md](ios/README.md) |
-| Kiểm tra mật mã khớp giữa các bên | [docs/protocol-vectors.json](docs/protocol-vectors.json) | `build\Release\camstudio-protocol-test.exe` (PC), `gradlew testDebugUnitTest` (Android), ⌘U trong Xcode (iOS) |
+| App iPhone (Swift, AVFoundation + VideoToolbox) | [ios/](ios/) | Trên Mac: `scripts/ios-run.sh` (Xcode + XcodeGen), hoặc trên Windows (WSL) bằng xtool. Xem [ios/README.md](ios/README.md) |
+| PC giả để thử app điện thoại trên Mac | [tools/fake_pc.swift](tools/fake_pc.swift) | `scripts/fake-pc.sh --lens all` |
+| Kiểm tra mật mã khớp giữa các bên | [docs/protocol-vectors.json](docs/protocol-vectors.json) | `build\Release\camstudio-protocol-test.exe` (PC), `gradlew testDebugUnitTest` (Android), scheme `CryptoTestsMac` trong Xcode (iOS, chạy ngay trên Mac) |
 
 **Cài app Android:**
 - Bật **Gỡ lỗi USB** rồi chạy `adb install build\CamStudioPhone.apk`.
