@@ -29,7 +29,10 @@ HRESULT ReadCameraFormats(const CameraDevice& cam, std::vector<FormatOption>& op
 class CaptureEngine
 {
 public:
-    enum class State { Stopped, Starting, Running, Failed };
+    // Waiting: the source dropped (phone app hidden, cable pulled, camera
+    // taken by another app) but the virtual camera stays up and the engine
+    // keeps retrying; `error` says what it is waiting for.
+    enum class State { Stopped, Starting, Running, Failed, Waiting };
 
     struct Status
     {
@@ -80,10 +83,19 @@ private:
     class Pipeline;
     friend class Pipeline;
 
+    // How one attempt at running the source ended.
+    enum class Outcome
+    {
+        Quit,  // Stop() was called
+        Lost,  // the source went away: retry while the virtual camera stays up
+        Fatal, // retrying cannot help (missing decoder, virtual camera refused…)
+    };
+
     void Run(CameraDevice cam, NativeFormat format);
-    void RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format);
-    void RunPhone(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format);
+    Outcome RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
+    Outcome RunPhone(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
     void Fail(const std::wstring& what, HRESULT hr);
+    void Wait(const std::wstring& what, HRESULT hr);
     void Notify() const;
     void UpdatePreview(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h);
     bool PreviewDue();

@@ -40,7 +40,8 @@ struct CsImage
 
 struct CsStatus
 {
-    int32_t state;            // 0 stopped, 1 starting, 2 running, 3 failed
+    int32_t state;            // 0 stopped, 1 starting, 2 running, 3 failed,
+                              // 4 waiting (source lost, virtual camera kept, retrying; see error)
     uint32_t width;           // virtual camera output
     uint32_t height;
     uint32_t cameraWidth;     // source frame

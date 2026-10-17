@@ -78,6 +78,7 @@ public enum EngineState
     Starting = 1,
     Running = 2,
     Failed = 3,
+    Waiting = 4, // source lost: the virtual camera stays up while the engine reconnects
 }
 
 internal static unsafe partial class Engine

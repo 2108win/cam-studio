@@ -87,24 +87,44 @@ public:
     ~Pipeline() { End(); }
 
     // Registers the virtual camera for this source size and marks the
-    // session running. Called again (after End) when the size changes.
+    // session running. Called again when the size changes, and when a lost
+    // source comes back: a virtual camera of the same size is kept, so apps
+    // using it (Discord, Zoom…) never lose it.
     HRESULT Begin(uint32_t width, uint32_t height, uint32_t fpsNum, uint32_t fpsDen, const GUID& subtype)
     {
         m_width = width;
         m_height = height;
         m_interval100ns = fpsNum ? 1e7 * fpsDen / fpsNum : 333333.0;
+        m_firstTs = -1;
+        m_received = m_dropped = 0;
         {
             std::lock_guard lk(m_engine.m_lock);
             m_layout = ComputeLayout(width, height, m_engine.EffectiveImageLocked());
         }
-        HRESULT hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
-            MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
-            CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
-        if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (chạy scripts\\register.ps1 bằng quyền Admin)"; return hr; }
-        MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
-        MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
-        hr = m_vcam->Start(nullptr);
-        if (FAILED(hr)) { m_failure = L"Không bật được camera ảo"; return hr; }
+        if (m_vcam && (m_vcamWidth != m_layout.outWidth || m_vcamHeight != m_layout.outHeight)) End();
+        if (!m_vcam)
+        {
+            HRESULT hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
+                MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
+                CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
+            if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (cài lại Cam Studio bằng Install.cmd)"; return hr; }
+            MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
+            MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
+            hr = m_vcam->Start(nullptr);
+            if (FAILED(hr))
+            {
+                m_vcam->Shutdown();
+                m_vcam.Reset();
+                // Seen after the camera service was restarted while in use: only a
+                // fresh Frame Server clears it (the app offers a button for that).
+                m_failure = hr == E_ACCESSDENIED
+                    ? L"Dịch vụ camera của Windows đang bị kẹt, không cho bật camera ảo"
+                    : L"Không bật được camera ảo";
+                return hr;
+            }
+            m_vcamWidth = m_layout.outWidth;
+            m_vcamHeight = m_layout.outHeight;
+        }
 
         std::lock_guard lk(m_engine.m_lock);
         auto& s = m_engine.m_status;
@@ -128,6 +148,9 @@ public:
             m_vcam.Reset();
         }
     }
+
+    // The virtual camera is registered (it outlives a lost source).
+    bool Live() const { return m_vcam != nullptr; }
 
     const std::wstring& Failure() const { return m_failure; }
 
@@ -233,6 +256,7 @@ private:
 
     CaptureEngine& m_engine;
     ComPtr<IMFVirtualCamera> m_vcam;
+    uint32_t m_vcamWidth = 0, m_vcamHeight = 0; // size the virtual camera was published with
     FrameWriter m_writer;
     std::wstring m_failure;
     uint32_t m_width = 0, m_height = 0;
@@ -376,6 +400,19 @@ void CaptureEngine::Fail(const std::wstring& what, HRESULT hr)
     Notify();
 }
 
+void CaptureEngine::Wait(const std::wstring& what, HRESULT hr)
+{
+    wchar_t buf[64] = {};
+    if (hr) swprintf_s(buf, L" (0x%08X)", static_cast<unsigned>(hr));
+    {
+        std::lock_guard lk(m_lock);
+        m_status.state = State::Waiting;
+        m_status.error = what + buf;
+        m_status.fps = 0;
+    }
+    Notify();
+}
+
 // Downscaled NV12 -> BGRA (BT.601 limited range) for the on-screen preview.
 void CaptureEngine::UpdatePreview(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h)
 {
@@ -430,21 +467,40 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
     }
     {
         Pipeline pipeline(*this);
-        if (cam.IsPhone()) RunPhone(pipeline, cam, format);
-        else RunWebcam(pipeline, cam, format);
+        while (!m_quit)
+        {
+            std::wstring why;
+            HRESULT hr = S_OK;
+            const Outcome outcome = cam.IsPhone() ? RunPhone(pipeline, cam, format, why, hr)
+                                                  : RunWebcam(pipeline, cam, format, why, hr);
+            if (outcome == Outcome::Quit || m_quit) break;
+            // Before the virtual camera exists there is nothing to keep alive:
+            // report the problem (wrong lens, camera busy…) as before.
+            if (outcome == Outcome::Fatal || !pipeline.Live())
+            {
+                Fail(why, hr);
+                break;
+            }
+            // Keep the virtual camera up (apps that use it keep it selected and
+            // show its "no signal" picture) and bring the source back by itself.
+            Wait(why, hr);
+            for (int i = 0; i < 20 && !m_quit; ++i) Sleep(100);
+        }
+        pipeline.End();
     }
     CoUninitialize();
     Notify();
 }
 
-void CaptureEngine::RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format)
+CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format,
+                                                std::wstring& why, HRESULT& hr)
 {
-    HRESULT hr = S_OK;
+    Outcome outcome = Outcome::Quit;
     ComPtr<IMFMediaSource> source;
     ComPtr<IMFSourceReader> reader;
     UINT32 width = 0, height = 0;
 
-#define STEP(expr, what) do { hr = (expr); if (FAILED(hr)) { Fail(what, hr); goto cleanup; } } while (0)
+#define STEP(expr, what) do { hr = (expr); if (FAILED(hr)) { why = what; outcome = Outcome::Lost; goto cleanup; } } while (0)
 
     // 1. Lock the camera to the chosen native format before the source
     //    reader exists, so the reader cannot renegotiate a smaller one.
@@ -484,7 +540,7 @@ void CaptureEngine::RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const
 
     // 3. Virtual camera.
     hr = pipeline.Begin(width, height, format.fpsNum, format.fpsDen, format.subtype);
-    if (FAILED(hr)) { Fail(pipeline.Failure(), hr); goto cleanup; }
+    if (FAILED(hr)) { why = pipeline.Failure(); outcome = Outcome::Fatal; goto cleanup; }
 
     // 4. Capture loop.
     while (!m_quit)
@@ -492,10 +548,13 @@ void CaptureEngine::RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const
         DWORD streamIndex = 0, flags = 0;
         LONGLONG ts = 0;
         ComPtr<IMFSample> sample;
-        STEP(reader->ReadSample(kVideoStream, 0, &streamIndex, &flags, &ts, &sample), L"Mất tín hiệu camera");
+        STEP(reader->ReadSample(kVideoStream, 0, &streamIndex, &flags, &ts, &sample),
+             L"Mất tín hiệu camera (bị rút ra, hoặc app khác đang dùng)");
         if (flags & (MF_SOURCE_READERF_ENDOFSTREAM | MF_SOURCE_READERF_ERROR))
         {
-            Fail(L"Camera đã ngắt kết nối", MF_E_END_OF_STREAM);
+            why = L"Camera đã ngắt kết nối";
+            hr = MF_E_END_OF_STREAM;
+            outcome = Outcome::Lost;
             goto cleanup;
         }
         if (!sample) continue;
@@ -523,13 +582,15 @@ void CaptureEngine::RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const
 
 cleanup:
 #undef STEP
-    pipeline.End();
     reader.Reset();
     if (source) source->Shutdown();
     cam.activate->ShutdownObject();
+    return m_quit ? Outcome::Quit : outcome;
 }
 
-void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format)
+
+CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format,
+                                               std::wstring& why, HRESULT& hr)
 {
     phone::PhoneLink& link = *cam.phone;
     const bool hevc = format.subtype == MFVideoFormat_HEVC;
@@ -538,19 +599,42 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
     const uint32_t kbps = std::clamp<uint32_t>(
         static_cast<uint32_t>(static_cast<uint64_t>(format.width) * format.height * fps / 10000), 2000, 60000);
 
+    // The connection is gone: the next attempt reconnects.
+    auto lost = [&](const std::wstring& what) {
+        link.Close();
+        why = what;
+        return Outcome::Lost;
+    };
+
+    // After a lost connection (phone app closed and reopened, Wi‑Fi dropped):
+    // reconnect quietly. Only an already-paired phone gets back in.
+    if (!link.Connected())
+    {
+        std::string error;
+        if (!link.Reconnect(error))
+        {
+            why = Widen(error);
+            return Outcome::Lost;
+        }
+    }
+
     if (!link.SendControl(json::Value::MakeObject()
             .Set("type", "start").Set("lens", format.phoneCamera)
             .Set("width", format.width).Set("height", format.height).Set("fps", fps)
             .Set("codec", hevc ? "hevc" : "h264").Set("bitrateKbps", kbps)))
-    {
-        Fail(L"Mất kết nối với điện thoại", 0);
-        return;
-    }
+        return lost(L"Mất kết nối với điện thoại");
 
     auto stateFrom = [&](const json::Value& v) {
         std::lock_guard lk(m_lock);
         if (!v["orientation"].IsNull()) m_sourceRotation = ((v["orientation"].Int() % 360) + 360) % 360;
         if (v["type"].Str() == "state") m_phoneState = v.Dump();
+    };
+    // A phone "error": some only need the user to bring the app back, the
+    // rest will not get better by asking again.
+    auto phoneError = [&](const json::Value& v) {
+        why = Widen(v["message"].Str("Điện thoại báo lỗi"));
+        const std::string code = v["code"].Str();
+        return code == "permission" || code == "unsupported" || code == "encoder" ? Outcome::Fatal : Outcome::Lost;
     };
 
     // Wait for "started" (or an error) before decoding anything.
@@ -563,43 +647,45 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
         if (!link.Receive(m, 500, timedOut))
         {
             if (timedOut && GetTickCount64() < deadline) continue;
-            Fail(timedOut ? L"Điện thoại không bắt đầu phát" : L"Mất kết nối với điện thoại", 0);
-            return;
+            return lost(timedOut ? L"Điện thoại không bắt đầu phát (app trên điện thoại đang bị ẩn?)"
+                                 : L"Mất kết nối với điện thoại");
         }
         if (m.kind != phone::Kind::Control) continue;
         json::Value v;
         try { v = m.Json(); } catch (const std::exception&) { continue; }
-        if (v["type"].Str() == "error") { Fail(Widen(v["message"].Str("Điện thoại báo lỗi")), 0); return; }
+        if (v["type"].Str() == "error") return phoneError(v);
         if (v["type"].Str() == "started") { started = v; stateFrom(v); break; }
     }
-    if (m_quit) return;
+    if (m_quit) return Outcome::Quit;
 
     const uint32_t width = static_cast<uint32_t>(started["width"].Int(format.width));
     const uint32_t height = static_cast<uint32_t>(started["height"].Int(format.height));
     VideoDecoder decoder;
-    HRESULT hr = decoder.Init(started["codec"].Str() == "h264" ? false : hevc, width, height);
+    hr = decoder.Init(started["codec"].Str() == "h264" ? false : hevc, width, height);
     if (FAILED(hr))
     {
-        Fail(hevc ? L"Không có bộ giải mã HEVC (cài \"HEVC Video Extensions\" từ Microsoft Store)" : L"Không tạo được bộ giải mã video", hr);
+        why = hevc ? L"Không có bộ giải mã HEVC (cài \"HEVC Video Extensions\" từ Microsoft Store)" : L"Không tạo được bộ giải mã video";
         link.SendControl(json::Value::MakeObject().Set("type", "stop"));
-        return;
+        return Outcome::Fatal;
     }
     hr = pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264);
     if (FAILED(hr))
     {
-        Fail(pipeline.Failure(), hr);
+        why = pipeline.Failure();
         link.SendControl(json::Value::MakeObject().Set("type", "stop"));
-        return;
+        return Outcome::Fatal;
     }
+    hr = S_OK;
 
     crypto::Bytes config;     // latest SPS/PPS(/VPS), prepended to keyframes
     bool waitKeyframe = true; // decoding starts at a keyframe
-    uint32_t lost = 0;
+    uint32_t lostFrames = 0;
     double decodeMs = 0;
     unsigned decoded = 0;
     ULONGLONG lastFrame = GetTickCount64();
     ULONGLONG lastStats = lastFrame;
     std::vector<uint8_t> unit;
+    Outcome outcome = Outcome::Quit;
 
     while (!m_quit)
     {
@@ -609,12 +695,15 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
         const ULONGLONG now = GetTickCount64();
         if (!got && !timedOut)
         {
-            Fail(L"Mất kết nối với điện thoại", 0);
+            outcome = lost(L"Mất kết nối với điện thoại");
             break;
         }
         if (now - lastFrame > 6000)
         {
-            Fail(L"Điện thoại ngừng gửi hình (app trên điện thoại bị ẩn hoặc màn hình tắt?)", 0);
+            // The app was hidden or the phone locked: the connection may be
+            // half-dead too, so start over with a fresh one.
+            link.SendControl(json::Value::MakeObject().Set("type", "stop"));
+            outcome = lost(L"Điện thoại ngừng gửi hình (app trên điện thoại bị ẩn hoặc màn hình tắt?)");
             break;
         }
 
@@ -623,16 +712,18 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
             json::Value v;
             try { v = m.Json(); } catch (const std::exception&) { continue; }
             const std::string type = v["type"].Str();
-            if (type == "error") { Fail(Widen(v["message"].Str("Điện thoại báo lỗi")), 0); break; }
-            if (type == "stopped") { Fail(L"Điện thoại đã dừng phát", 0); break; }
+            if (type == "error") { outcome = phoneError(v); break; }
+            if (type == "stopped") { why = L"Điện thoại đã dừng phát"; outcome = Outcome::Lost; break; }
             if (type == "state" || type == "started") stateFrom(v);
             // The phone was turned: rebuild the virtual camera in the new shape.
             if (pipeline.SizeChanged())
             {
                 pipeline.End();
-                if (FAILED(pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264)))
+                hr = pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264);
+                if (FAILED(hr))
                 {
-                    Fail(pipeline.Failure(), 0);
+                    why = pipeline.Failure();
+                    outcome = Outcome::Fatal;
                     break;
                 }
             }
@@ -655,15 +746,15 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
                 size = unit.size();
             }
             const double t0 = QpcMs();
-            hr = decoder.Decode(data, size, m.ptsUs * 10, [&](const uint8_t* nv12, long pitch, uint32_t, uint32_t) {
+            const HRESULT dhr = decoder.Decode(data, size, m.ptsUs * 10, [&](const uint8_t* nv12, long pitch, uint32_t, uint32_t) {
                 pipeline.Frame(nv12, pitch, m.ptsUs * 10);
             });
             decodeMs += QpcMs() - t0;
             ++decoded;
-            if (FAILED(hr))
+            if (FAILED(dhr))
             {
                 // Corrupt or missing data: ask for a fresh keyframe.
-                ++lost;
+                ++lostFrames;
                 waitKeyframe = true;
                 link.SendControl(json::Value::MakeObject().Set("type", "keyframe"));
             }
@@ -678,14 +769,14 @@ void CaptureEngine::RunPhone(Pipeline& pipeline, const CameraDevice& cam, const 
             link.SendControl(json::Value::MakeObject()
                 .Set("type", "stats").Set("recvFps", pipeline.LastFps())
                 .Set("decodeMs", decoded ? decodeMs / decoded : 0.0)
-                .Set("queueMs", 0).Set("lost", static_cast<int>(lost)));
-            lost = 0;
+                .Set("queueMs", 0).Set("lost", static_cast<int>(lostFrames)));
+            lostFrames = 0;
             decodeMs = 0;
             decoded = 0;
             lastStats = now;
         }
     }
 
-    link.SendControl(json::Value::MakeObject().Set("type", "stop"));
-    pipeline.End();
+    if (link.Connected()) link.SendControl(json::Value::MakeObject().Set("type", "stop"));
+    return m_quit ? Outcome::Quit : outcome;
 }

@@ -763,7 +763,7 @@ public sealed partial class MainWindow : Window
 
     // ---- Capture -----------------------------------------------------------------
 
-    private bool IsCapturing => (EngineState)Engine.GetStatus().State is EngineState.Running or EngineState.Starting;
+    private bool IsCapturing => (EngineState)Engine.GetStatus().State is EngineState.Running or EngineState.Starting or EngineState.Waiting;
 
     private void StartCapture()
     {
@@ -822,8 +822,57 @@ public sealed partial class MainWindow : Window
 
     private void ShowError(string message)
     {
+        ErrorBar.Severity = InfoBarSeverity.Error;
+        ErrorBar.Title = "Không bật được camera";
         ErrorBar.Message = message;
+        // Frame Server sometimes refuses every virtual camera after it was restarted
+        // while in use; only a fresh Frame Server fixes that.
+        if (message.Contains("0x80070005"))
+        {
+            var restart = new Button { Content = "Khởi động lại dịch vụ camera" };
+            ToolTipService.SetToolTip(restart, "Cần quyền Admin. App khác đang dùng camera sẽ mất hình vài giây.");
+            restart.Click += async (_, _) => await RestartCameraServiceAsync();
+            ErrorBar.ActionButton = restart;
+        }
+        else
+        {
+            ErrorBar.ActionButton = null;
+        }
         ErrorBar.IsOpen = true;
+    }
+
+    // Source lost but the virtual camera is still up: apps keep it selected.
+    private void ShowWaiting(string reason)
+    {
+        string message = $"{reason.TrimEnd('.', ' ')}. Camera ảo vẫn bật, hình sẽ tự quay lại khi nguồn sẵn sàng.";
+        if (ErrorBar.IsOpen && ErrorBar.Severity == InfoBarSeverity.Warning && ErrorBar.Message == message) return;
+        ErrorBar.Severity = InfoBarSeverity.Warning;
+        ErrorBar.Title = "Đang kết nối lại";
+        ErrorBar.Message = message;
+        ErrorBar.ActionButton = null;
+        ErrorBar.IsOpen = true;
+    }
+
+    private async System.Threading.Tasks.Task RestartCameraServiceAsync()
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
+            "-NoProfile -Command \"Stop-Service FrameServerMonitor -Force -ErrorAction SilentlyContinue; Restart-Service FrameServer -Force\"")
+        {
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+        };
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p is not null) await p.WaitForExitAsync();
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return; // UAC declined
+        }
+        ErrorBar.IsOpen = false;
+        StartCapture();
     }
 
     // ---- Tools -------------------------------------------------------------------
@@ -1103,6 +1152,8 @@ public sealed partial class MainWindow : Window
     {
         uint w, h;
         ulong id;
+        // Waiting for the source: show the placeholder, not the last frame frozen.
+        if (_lastState == EngineState.Waiting) return;
         Engine.cs_copy_preview(null, 0, &w, &h, &id); // size + id only
         if (id == _lastFrameId || w == 0 || h == 0) return;
 
@@ -1148,9 +1199,25 @@ public sealed partial class MainWindow : Window
                 if (_isPhone && _lensSwitchFrom >= 0)
                     DispatcherQueue.TryEnqueue(() => RevertLensSwitch(error));
             }
+            if (state == EngineState.Waiting)
+            {
+                ClearPreview();
+                if (_isPhone && _lensSwitchFrom >= 0)
+                {
+                    // The new lens never delivered a frame: treat it like a failed open.
+                    string error = s.ErrorText;
+                    Engine.cs_stop();
+                    SetToggleQuietly(false);
+                    DispatcherQueue.TryEnqueue(() => RevertLensSwitch(error));
+                }
+            }
+            if (state == EngineState.Running && _lastState == EngineState.Waiting && ErrorBar.Severity == InfoBarSeverity.Warning)
+                ErrorBar.IsOpen = false; // the source is back
             if (state is EngineState.Stopped) ClearPreview();
             _lastState = state;
         }
+        // While waiting the reason can change (app hidden -> phone unreachable…).
+        if (state == EngineState.Waiting && _lensSwitchFrom < 0) ShowWaiting(s.ErrorText);
         // A phone says "started" before the camera has really opened: only
         // frames prove the new lens works.
         if (running && s.FramesCaptured > 0) _lensSwitchFrom = -1;
@@ -1161,6 +1228,7 @@ public sealed partial class MainWindow : Window
             EngineState.Running when s.ConsumerActive != 0 => ($"Đang được dùng · {s.Width} × {s.Height}", "Đang được dùng", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
             EngineState.Running => ($"Sẵn sàng · {s.Width} × {s.Height}", "Đang phát", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
             EngineState.Failed => ("Lỗi", "Lỗi", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
+            EngineState.Waiting => ("Đang chờ nguồn hình…", "Đang chờ nguồn hình", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
             _ => ("Đang tắt", "Đã tắt", Color.FromArgb(255, 0x8A, 0x8A, 0x8A)),
         };
         _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : ""));
@@ -1173,8 +1241,13 @@ public sealed partial class MainWindow : Window
         LiveBadge.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         UpdateOverlayVisibility();
         LiveBadgeText.Text = $"{s.Width} × {s.Height}  ·  {s.Fps:0} fps";
-        PlaceholderTitle.Text = state == EngineState.Starting ? "Đang khởi động camera…" : "Camera ảo đang tắt";
-        PlaceholderStart.Visibility = running || state == EngineState.Starting ? Visibility.Collapsed : Visibility.Visible;
+        PlaceholderTitle.Text = state switch
+        {
+            EngineState.Starting => "Đang khởi động camera…",
+            EngineState.Waiting => "Đang chờ nguồn hình… Camera ảo vẫn bật",
+            _ => "Camera ảo đang tắt",
+        };
+        PlaceholderStart.Visibility = running || state is EngineState.Starting or EngineState.Waiting ? Visibility.Collapsed : Visibility.Visible;
 
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.

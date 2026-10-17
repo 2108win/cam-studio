@@ -259,8 +259,9 @@ CS_API int32_t cs_load_formats(int32_t camera)
     {
         // While this phone streams, its connection belongs to the capture
         // thread: reuse the capabilities read before.
-        const bool streaming = g_streamingCamera == camera && g_engine &&
-            g_engine->GetStatus().state == CaptureEngine::State::Running;
+        const auto state = g_engine ? g_engine->GetStatus().state : CaptureEngine::State::Stopped;
+        const bool streaming = g_streamingCamera == camera &&
+            (state == CaptureEngine::State::Running || state == CaptureEngine::State::Waiting);
         json::Value caps;
         if (streaming && !g_phoneCaps.empty())
         {

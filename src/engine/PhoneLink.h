@@ -51,6 +51,10 @@ public:
     // Connects, authenticates (pairing first if needed). Blocking; on
     // failure `error` is a message for the user (Vietnamese, UTF-8).
     bool Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error);
+    // Connects again to the last endpoint (re-resolved by device id, the
+    // phone's IP may have changed). Only for an already-paired phone: never
+    // starts pairing, since nobody is there to compare codes.
+    bool Reconnect(std::string& error);
     bool Connected() const { return m_socket != kInvalid; }
 
     const std::string& DeviceId() const { return m_deviceId; }
@@ -75,7 +79,11 @@ private:
     bool SendHandshake(const json::Value& v);
     bool ReadHandshake(json::Value& v, int timeoutMs);
 
+    bool ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
+                     bool allowPairing, std::string& error);
+
     uintptr_t m_socket = kInvalid;
+    Endpoint m_endpoint; // last one Connect() was given
     std::recursive_mutex m_sendLock; // Close() may run inside SendControl
     crypto::Bytes m_upKey, m_downKey;
     uint64_t m_sendCounter = 0;

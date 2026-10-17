@@ -110,8 +110,27 @@ void SavePairKey(const std::string& deviceId, const crypto::Bytes& key)
 
 bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error)
 {
+    return ConnectImpl(endpoint, onPairing, confirm, true, error);
+}
+
+bool PhoneLink::Reconnect(std::string& error)
+{
+    Endpoint endpoint = m_endpoint;
+    if (!m_deviceId.empty())
+    {
+        for (const Endpoint& e : KnownPhones())
+            if (e.deviceId == m_deviceId) { endpoint = e; break; }
+    }
+    if (endpoint.host.empty()) { error = "Chưa từng kết nối điện thoại này"; return false; }
+    return ConnectImpl(endpoint, nullptr, nullptr, false, error);
+}
+
+bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
+                            bool allowPairing, std::string& error)
+{
     static WinsockInit winsock;
     Close();
+    m_endpoint = endpoint;
 
     addrinfo hints{};
     hints.ai_family = AF_INET;
@@ -188,6 +207,7 @@ bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairi
     bool newPairing = false;
     if (kPair.empty() || !hello["paired"].Bool())
     {
+        if (!allowPairing) return fail("Điện thoại cần ghép đôi lại: chọn lại điện thoại trong danh sách camera");
         // The old key, if any, stays until a new pairing succeeds.
         if (!SendHandshake(json::Value::MakeObject().Set("type", "pairStart"))) return fail("Mất kết nối với điện thoại");
         if (onPairing) onPairing(crypto::Sas(t));

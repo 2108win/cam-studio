@@ -79,6 +79,19 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
 - **PC lens switching:** a phone reports "started" before the camera really opens. The PC only treats a
   lens switch as successful once frames arrive (`FramesCaptured > 0`). Otherwise it marks the lens broken
   and goes back to the previous one.
+- **A lost source must not take the virtual camera down.** Apps like Discord drop a camera that disappears.
+  - Once the virtual camera is up, `CaptureEngine::Run` keeps it registered when the source goes away:
+    phone app hidden, Wi‑Fi lost, webcam unplugged or taken by another app.
+  - The engine enters state `Waiting` (4) and retries every 2 s. For a phone, `PhoneLink::Reconnect()`
+    reconnects silently: never pairing, and re-resolved by device id.
+  - Meanwhile the DLL shows its "no signal" picture.
+  - Errors before the camera first starts still fail at once. The lens-switch revert relies on that.
+  - Tested on 2026-10-17 by killing and restarting `camstudio-fake-phone` while Discord was using the camera.
+- **Frame Server can get stuck:** `IMFVirtualCamera::Start` then returns `E_ACCESSDENIED` (0x80070005) for
+  every source, even builds that worked earlier.
+  - Seen right after the installer restarted Frame Server while Camo was running.
+  - Restarting Frame Server fixes it. The error bar offers a "Khởi động lại dịch vụ camera" button that
+    does this elevated.
 - **Android encoder:** some vendors reject optional MediaFormat keys, so `CameraStreamer.encoderFormat` has
   three fallback levels.
 - **Android app lifecycle:** the app must stay in the foreground. Android blocks the camera for
