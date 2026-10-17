@@ -104,21 +104,31 @@ public:
         if (m_vcam && (m_vcamWidth != m_layout.outWidth || m_vcamHeight != m_layout.outHeight)) End();
         if (!m_vcam)
         {
-            HRESULT hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
-                MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
-                CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
-            if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (cài lại Cam Studio bằng Install.cmd)"; return hr; }
-            MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
-            MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
-            hr = m_vcam->Start(nullptr);
-            if (FAILED(hr))
+            HRESULT hr = E_FAIL;
+            // E_ACCESSDENIED: an app still holds a camera instance we removed a
+            // moment ago. Retry a few times with a fresh registration.
+            for (int attempt = 0; attempt < 4; ++attempt)
             {
+                if (attempt) Sleep(500);
+                hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
+                    MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
+                    CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
+                if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (cài lại Cam Studio bằng Install.cmd)"; return hr; }
+                MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
+                MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
+                hr = m_vcam->Start(nullptr);
+                if (SUCCEEDED(hr)) break;
+                RemoveCamera(m_vcam.Get());
                 m_vcam->Shutdown();
                 m_vcam.Reset();
-                // Seen after the camera service was restarted while in use: only a
-                // fresh Frame Server clears it (the app offers a button for that).
+                if (hr != E_ACCESSDENIED) break;
+            }
+            if (FAILED(hr))
+            {
+                // An app (DirectShow, e.g. Discord) still holds an old instance of
+                // the camera: closing it, or a fresh Frame Server, clears this.
                 m_failure = hr == E_ACCESSDENIED
-                    ? L"Dịch vụ camera của Windows đang bị kẹt, không cho bật camera ảo"
+                    ? L"Một ứng dụng (thường là Discord) vẫn giữ camera ảo cũ. Tắt camera trong ứng dụng đó rồi bật lại, hoặc khởi động lại dịch vụ camera"
                     : L"Không bật được camera ảo";
                 return hr;
             }
@@ -144,9 +154,21 @@ public:
         if (m_vcam)
         {
             m_vcam->Stop();
+            RemoveCamera(m_vcam.Get());
             m_vcam->Shutdown();
             m_vcam.Reset();
         }
+    }
+
+    // Unregisters the camera outright. Without this a DirectShow app that
+    // keeps its graph after the camera went away (Discord does) holds the old
+    // instance, and Frame Server refuses the next one with E_ACCESSDENIED.
+    static void RemoveCamera(IMFVirtualCamera* vcam)
+    {
+        const HRESULT hr = vcam->Remove();
+        wchar_t msg[96];
+        swprintf_s(msg, L"[CamStudioEngine] IMFVirtualCamera::Remove 0x%08X\n", static_cast<unsigned>(hr));
+        OutputDebugStringW(msg);
     }
 
     // The virtual camera is registered (it outlives a lost source).

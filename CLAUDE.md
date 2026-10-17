@@ -87,11 +87,21 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
   - Meanwhile the DLL shows its "no signal" picture.
   - Errors before the camera first starts still fail at once. The lens-switch revert relies on that.
   - Tested on 2026-10-17 by killing and restarting `camstudio-fake-phone` while Discord was using the camera.
-- **Frame Server can get stuck:** `IMFVirtualCamera::Start` then returns `E_ACCESSDENIED` (0x80070005) for
-  every source, even builds that worked earlier.
-  - Seen right after the installer restarted Frame Server while Camo was running.
-  - Restarting Frame Server fixes it. The error bar offers a "Khởi động lại dịch vụ camera" button that
-    does this elevated.
+- **`E_ACCESSDENIED` (0x80070005) from `IMFVirtualCamera::Start`:**
+  - Cause: a **DirectShow** app (Discord loads `ksproxy`/`quartz`) keeps its graph on the old virtual camera
+    after we recreate it (source/size change). Frame Server then refuses the new instance until that app
+    lets go or Frame Server restarts.
+  - Reproduce with `camstudio-dshow-consumer` (`tools/dshow_consumer.cpp`).
+  - Fix: `Pipeline::End` calls `IMFVirtualCamera::Remove()` before `Shutdown()`, and `Begin` retries a denied
+    `Start` with a fresh registration. Verified on 2026-10-17: switching webcam ↔ phone while the DirectShow
+    consumer held the camera.
+  - The error bar still offers "Khởi động lại dịch vụ camera" as a last resort.
+- **Testing the virtual camera like an app does:** `camstudio-verify` options:
+  - `--mode N`: read a given format (e.g. 30 fps like Discord);
+  - `--hold S`: stay open, logging every 2 s;
+  - `--reopen S`: reopen whenever it disappears.
+
+  It prints no-signal frames and the min/max frame interval.
 - **Android encoder:** some vendors reject optional MediaFormat keys, so `CameraStreamer.encoderFormat` has
   three fallback levels.
 - **Android app lifecycle:** the app must stay in the foreground. Android blocks the camera for
