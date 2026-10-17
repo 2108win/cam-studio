@@ -17,6 +17,11 @@ public:
 
     HANDLE FrameEvent() const { return m_event; }
 
+    // Number of the newest frame the host published (0 = none yet), and of
+    // the last one Fill() delivered: equal means nothing new to send.
+    LONG64 LatestFrame() const { return m_header ? (m_header->latest >> 2) : 0; }
+    LONG64 DeliveredFrame() const { return m_delivered; }
+
     // Copies the latest host frame into an NV12 destination of any size,
     // scaling if needed. Draws a "no signal" pattern if the host is not
     // writing. Returns true when a live frame was delivered.
@@ -31,4 +36,5 @@ private:
     HANDLE m_event = nullptr;
     SharedFrameHeader* m_header = nullptr;
     bool m_active = false;
+    LONG64 m_delivered = 0;
 };

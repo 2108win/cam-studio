@@ -51,10 +51,16 @@ HRESULT FrameReader::Open(uint32_t nativeWidth, uint32_t nativeHeight)
         m_header->width = nativeWidth;
         m_header->height = nativeHeight;
         m_header->stride = nativeWidth;
+        m_header->slots = CAMSTUDIO_SLOTS;
         m_header->frameBytes = CamStudioNv12Bytes(nativeWidth, nativeHeight);
-        m_header->sequence = 0;
+        m_header->latest = 0;
         m_header->writeTime100ns = 0;
         m_header->readerActive = 0;
+        for (uint32_t s = 0; s < CAMSTUDIO_SLOTS; ++s)
+        {
+            m_header->slotSeq[s] = 0;
+            m_header->slotReaders[s] = 0;
+        }
         MemoryBarrier();
         m_header->magic = CAMSTUDIO_MAGIC;
     }
@@ -81,28 +87,47 @@ void FrameReader::SetActive(bool active)
 
 bool FrameReader::Fill(uint8_t* dst, LONG pitch, uint32_t width, uint32_t height, LONGLONG now100ns)
 {
-    if (m_header)
+    if (m_header && m_header->slots == CAMSTUDIO_SLOTS)
     {
-        const uint8_t* src = reinterpret_cast<const uint8_t*>(m_header + 1);
         const uint32_t sw = m_header->width;
         const uint32_t sh = m_header->height;
 
-        bool copied = false;
-        for (int attempt = 0; attempt < 3; ++attempt)
+        // "No signal" only when the host really stopped (or never wrote):
+        // racing the writer just means trying the newer frame.
+        for (int attempt = 0; attempt < 4; ++attempt)
         {
-            const LONG64 seq1 = m_header->sequence;
-            if (seq1 == 0) break;                       // host never wrote
-            if (seq1 & 1) { YieldProcessor(); continue; } // write in progress
-            if (now100ns - m_header->writeTime100ns > CAMSTUDIO_STALE_100NS) break;
+            const LONG64 latest = m_header->latest;
+            if (latest == 0) break;                                              // host never wrote
+            if (now100ns - m_header->writeTime100ns > CAMSTUDIO_STALE_100NS) break; // host stopped
+            const uint32_t slot = static_cast<uint32_t>(latest & 3);
+            if (slot >= CAMSTUDIO_SLOTS) break;
 
-            Nv12Scale(src, sw, sw, sh, dst, pitch, width, height);
-            copied = true;
-
-            MemoryBarrier();
-            if (m_header->sequence == seq1) return true;
+            InterlockedIncrement(&m_header->slotReaders[slot]);
+            const LONG64 seq1 = m_header->slotSeq[slot];
+            bool ok = false;
+            if (!(seq1 & 1))
+            {
+                Nv12Scale(CamStudioSlot(m_header, slot), sw, sw, sh, dst, pitch, width, height);
+                MemoryBarrier();
+                ok = m_header->slotSeq[slot] == seq1;
+            }
+            InterlockedDecrement(&m_header->slotReaders[slot]);
+            if (ok)
+            {
+                m_delivered = latest >> 2;
+                return true;
+            }
         }
-        // Retries exhausted: a slightly torn frame beats a placeholder.
-        if (copied) return true;
+        // Still racing after several tries (several readers at a very high
+        // rate): a possibly torn copy of the latest frame beats a grey flash.
+        const LONG64 latest = m_header->latest;
+        if (latest != 0 && now100ns - m_header->writeTime100ns <= CAMSTUDIO_STALE_100NS)
+        {
+            Nv12Scale(CamStudioSlot(m_header, static_cast<uint32_t>(latest & 3) % CAMSTUDIO_SLOTS), sw, sw, sh,
+                      dst, pitch, width, height);
+            m_delivered = latest >> 2;
+            return true;
+        }
     }
 
     DrawNoSignal(dst, pitch, width, height, now100ns);

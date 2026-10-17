@@ -82,5 +82,6 @@ private:
     uint32_t m_height = 0;
     LONGLONG m_interval100ns = 333333;
     LONGLONG m_lastDelivery100ns = 0;
+    LONGLONG m_nextDue100ns = 0; // when the next sample is due (0: deliver at once)
     HANDLE m_timer = nullptr;
 };

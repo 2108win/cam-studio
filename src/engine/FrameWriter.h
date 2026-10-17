@@ -28,7 +28,8 @@ public:
         HANDLE mapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, CAMSTUDIO_MAPPING_NAME);
         if (!mapping) return;
         auto* header = static_cast<SharedFrameHeader*>(MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
-        if (!header || header->magic != CAMSTUDIO_MAGIC || header->version != CAMSTUDIO_VERSION)
+        if (!header || header->magic != CAMSTUDIO_MAGIC || header->version != CAMSTUDIO_VERSION ||
+            header->slots != CAMSTUDIO_SLOTS)
         {
             if (header) UnmapViewOfFile(header);
             CloseHandle(mapping);
@@ -51,12 +52,22 @@ public:
     void Write(const uint8_t* src, long srcPitch, uint32_t w, uint32_t h)
     {
         if (!m_header) return;
-        uint8_t* dst = reinterpret_cast<uint8_t*>(m_header + 1);
 
-        InterlockedIncrement64(&m_header->sequence); // odd: writing
-        Nv12Scale(src, srcPitch, w, h, dst, static_cast<long>(m_header->stride), m_header->width, m_header->height);
+        // A slot that is neither the one readers are told to use nor being read.
+        const LONG64 latest = m_header->latest;
+        const uint32_t latestSlot = latest ? static_cast<uint32_t>(latest & 3) : CAMSTUDIO_SLOTS;
+        uint32_t slot = CAMSTUDIO_SLOTS;
+        for (uint32_t s = 0; s < CAMSTUDIO_SLOTS && slot == CAMSTUDIO_SLOTS; ++s)
+            if (s != latestSlot && m_header->slotReaders[s] == 0) slot = s;
+        for (uint32_t s = 0; s < CAMSTUDIO_SLOTS && slot == CAMSTUDIO_SLOTS; ++s)
+            if (s != latestSlot) slot = s; // every other slot busy: the reader's seqlock catches it
+
+        InterlockedIncrement64(&m_header->slotSeq[slot]); // odd: writing
+        Nv12Scale(src, srcPitch, w, h, CamStudioSlot(m_header, slot), static_cast<long>(m_header->stride),
+                  m_header->width, m_header->height);
+        InterlockedIncrement64(&m_header->slotSeq[slot]); // even: done
         InterlockedExchange64(&m_header->writeTime100ns, MFGetSystemTime());
-        InterlockedIncrement64(&m_header->sequence); // even: done
+        InterlockedExchange64(&m_header->latest, (((latest >> 2) + 1) << 2) | slot);
         if (m_event) SetEvent(m_event);
     }
 

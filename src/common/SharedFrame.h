@@ -26,8 +26,10 @@ inline constexpr GUID CAMSTUDIO_ATTR_NATIVE_FPS =
 
 // Kernel object names. "Global\" is required: the reader runs in session 0
 // and cannot see the host's session-local namespace.
-#define CAMSTUDIO_MAPPING_NAME   L"Global\\CamStudioVCam_Frames_v1"
-#define CAMSTUDIO_EVENT_NAME     L"Global\\CamStudioVCam_NewFrame_v1"
+// v2: triple-buffered (v1 had one buffer, and readers that met a write in
+// progress showed "no signal" or a torn frame: flicker in Discord at 100 fps).
+#define CAMSTUDIO_MAPPING_NAME   L"Global\\CamStudioVCam_Frames_v2"
+#define CAMSTUDIO_EVENT_NAME     L"Global\\CamStudioVCam_NewFrame_v2"
 
 // The media source (LocalService, which holds SeCreateGlobalPrivilege)
 // creates the objects with this DACL so the unelevated host can open them:
@@ -36,10 +38,15 @@ inline constexpr GUID CAMSTUDIO_ATTR_NATIVE_FPS =
 #define CAMSTUDIO_OBJECT_SDDL L"D:(A;;GA;;;SY)(A;;GA;;;LS)(A;;GA;;;BA)(A;;GRGW;;;IU)(A;;GRGW;;;AU)"
 
 constexpr uint32_t CAMSTUDIO_MAGIC   = 0x31534D43; // "CMS1"
-constexpr uint32_t CAMSTUDIO_VERSION = 1;
+constexpr uint32_t CAMSTUDIO_VERSION = 2;
 
 // Frames older than this are treated as "no signal".
 constexpr int64_t CAMSTUDIO_STALE_100NS = 2'000'0000; // 2 s
+
+// Frame slots. The writer fills a slot that is neither the latest one nor
+// being read, then publishes it; a reader copies the latest slot. With three
+// slots neither side waits for the other.
+constexpr uint32_t CAMSTUDIO_SLOTS = 3;
 
 #pragma pack(push, 8)
 struct SharedFrameHeader
@@ -49,16 +56,21 @@ struct SharedFrameHeader
     uint32_t width;          // NV12 frame width the mapping was sized for
     uint32_t height;         // NV12 frame height
     uint32_t stride;         // bytes per luma row (== width)
-    uint32_t reserved0;
-    uint64_t frameBytes;     // stride * height * 3 / 2
-    // Seqlock: the writer sets it odd, copies the frame, then sets it even.
-    // Readers retry if it was odd or changed during their copy.
-    volatile LONG64 sequence;
+    uint32_t slots;          // CAMSTUDIO_SLOTS
+    uint64_t frameBytes;     // one slot: stride * height * 3 / 2
+    // Latest complete frame: (frame number << 2) | slot. 0 = nothing written yet.
+    volatile LONG64 latest;
     volatile LONG64 writeTime100ns; // MFGetSystemTime() of the last frame
     volatile LONG   readerActive;   // >0 while a stream is running
     uint32_t reserved1;
-    uint8_t  pad[64];
-    // NV12 payload follows at offset sizeof(SharedFrameHeader).
+    // Per-slot seqlock (odd while the writer fills it): a reader that raced
+    // the writer notices and retries with the newer latest slot.
+    volatile LONG64 slotSeq[CAMSTUDIO_SLOTS];
+    // Readers copying each slot right now: the writer avoids those slots.
+    volatile LONG   slotReaders[CAMSTUDIO_SLOTS];
+    uint32_t reserved2;
+    uint8_t  pad[32];
+    // CAMSTUDIO_SLOTS NV12 frames follow at offset sizeof(SharedFrameHeader).
 };
 #pragma pack(pop)
 
@@ -69,5 +81,10 @@ inline uint64_t CamStudioNv12Bytes(uint32_t w, uint32_t h)
 
 inline uint64_t CamStudioMappingBytes(uint32_t w, uint32_t h)
 {
-    return sizeof(SharedFrameHeader) + CamStudioNv12Bytes(w, h);
+    return sizeof(SharedFrameHeader) + CAMSTUDIO_SLOTS * CamStudioNv12Bytes(w, h);
+}
+
+inline uint8_t* CamStudioSlot(SharedFrameHeader* h, uint32_t slot)
+{
+    return reinterpret_cast<uint8_t*>(h + 1) + slot * h->frameBytes;
 }

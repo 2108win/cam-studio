@@ -1,4 +1,4 @@
-﻿// Verifies step 1 end to end, the way a consumer app (Zoom, OBS...) sees it:
+// Verifies step 1 end to end, the way a consumer app (Zoom, OBS...) sees it:
 //   1. the "Cam Studio" virtual camera exists,
 //   2. its largest format equals the physical camera's native resolution,
 //   3. 30 frames can be read at that size, and they are live video rather
@@ -89,6 +89,7 @@ int wmain(int argc, wchar_t** argv)
     std::wstring selector;
     std::wstring dumpPath;
     int frameTarget = 30;
+    int modeIndex = -1; // --mode: read this virtual camera format instead of the largest
     UINT32 expectW = 0, expectH = 0;
     for (int i = 1; i < argc; ++i)
     {
@@ -96,6 +97,7 @@ int wmain(int argc, wchar_t** argv)
         if (a == L"--device" && i + 1 < argc) selector = argv[++i];
         else if (a == L"--frames" && i + 1 < argc) frameTarget = _wtoi(argv[++i]);
         else if (a == L"--dump" && i + 1 < argc) dumpPath = argv[++i];
+        else if (a == L"--mode" && i + 1 < argc) modeIndex = _wtoi(argv[++i]);
         else if (a == L"--expect" && i + 1 < argc)
         {
             // For sources that are not a local webcam (phones): the size the
@@ -104,7 +106,7 @@ int wmain(int argc, wchar_t** argv)
         }
         else
         {
-            fwprintf(stderr, L"Usage: camstudio-verify [--device <index|name> | --expect WxH] [--frames N] [--dump frame.bmp]\n");
+            fwprintf(stderr, L"Usage: camstudio-verify [--device <index|name> | --expect WxH] [--mode N] [--frames N] [--dump frame.bmp]\n");
             return 2;
         }
     }
@@ -154,6 +156,16 @@ int wmain(int argc, wchar_t** argv)
 
     const NativeFormat* largest = PickLargest(formats);
     if (!largest) return Fail(L"virtual camera has no formats");
+    if (modeIndex >= 0)
+    {
+        // Read like an app that picked a smaller mode (Discord: 30 fps).
+        auto it = std::find_if(formats.begin(), formats.end(), [&](const NativeFormat& f) { return static_cast<int>(f.index) == modeIndex; });
+        if (it == formats.end()) return Fail(L"--mode: no such format index");
+        largest = &*it;
+        expected.width = it->width;
+        expected.height = it->height;
+        wprintf(L"Reading mode    : [%u] %ux%u @ %.2f\n", it->index, it->width, it->height, it->Fps());
+    }
     if (largest->width != expected.width || largest->height != expected.height)
     {
         fwprintf(stderr, L"FAIL: largest virtual format %ux%u != native %ux%u\n",
@@ -169,6 +181,8 @@ int wmain(int argc, wchar_t** argv)
     if (FAILED(MFCreateSourceReaderFromMediaSource(source.Get(), nullptr, &reader))) return Fail(L"source reader");
 
     int got = 0, live = 0, sizeErrors = 0;
+    LONGLONG prevTs = -1;            // sample timestamps: how even the cadence is
+    double minGapMs = 1e9, maxGapMs = 0;
     const ULONGLONG start = GetTickCount64();
     ULONGLONG firstFrame = 0;
     while (got < frameTarget && GetTickCount64() - start < 20000)
@@ -181,6 +195,13 @@ int wmain(int argc, wchar_t** argv)
         if (flags & MF_SOURCE_READERF_ERROR) break;
         if (!sample) continue;
         if (!firstFrame) firstFrame = GetTickCount64();
+        if (prevTs >= 0 && got > 5) // skip start-up
+        {
+            const double gap = (ts - prevTs) / 10000.0;
+            minGapMs = std::min(minGapMs, gap);
+            maxGapMs = std::max(maxGapMs, gap);
+        }
+        prevTs = ts;
 
         ComPtr<IMFMediaType> cur;
         reader->GetCurrentMediaType(kVideoStream, &cur);
@@ -210,6 +231,8 @@ int wmain(int argc, wchar_t** argv)
 
     wprintf(L"Frames read     : %d (%d live, %d size errors), %.1f fps\n", got, live, sizeErrors,
         (got > 1 && secs > 0) ? (got - 1) / secs : 0.0);
+    wprintf(L"No-signal frames: %d\n", got - live);
+    if (maxGapMs > 0) wprintf(L"Frame interval  : %.1f .. %.1f ms\n", minGapMs, maxGapMs);
 
     reader.Reset();
     source->Shutdown();

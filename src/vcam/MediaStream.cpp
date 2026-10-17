@@ -288,6 +288,7 @@ HRESULT MediaStream::StartLocked(IMFMediaType* mediaType, bool sendEvent)
         MFGetAttributeRatio(m_currentType.Get(), MF_MT_FRAME_RATE, &num, &den);
         m_interval100ns = (num > 0) ? static_cast<LONGLONG>(10'000'000) * (den ? den : 1) / num : 333333;
         m_lastDelivery100ns = 0;
+        m_nextDue100ns = 0;
         VcamLog(L"Stream start %ux%u @ %u/%u", m_width, m_height, num, den);
     }
 
@@ -363,12 +364,11 @@ HRESULT MediaStream::DeliverLocked(IUnknown* token)
 
 void MediaStream::PaceUntilNextFrame(LONGLONG interval)
 {
-    LONGLONG last;
+    LONGLONG due;
     {
         std::lock_guard lk(m_lock);
-        last = m_lastDelivery100ns;
+        due = m_nextDue100ns;
     }
-    if (last == 0) return;
 
     auto waitUntil = [&](LONGLONG target, HANDLE extra) {
         const LONGLONG now = MFGetSystemTime();
@@ -380,10 +380,24 @@ void MediaStream::PaceUntilNextFrame(LONGLONG interval)
         WaitForMultipleObjects(extra ? 2 : 1, handles, FALSE, INFINITE);
     };
 
-    // Never deliver faster than half an interval, and prefer to wake on a
-    // fresh host frame so latency stays low. Give up waiting after 1.5x.
-    waitUntil(last + interval / 2, nullptr);
-    waitUntil(last + interval * 3 / 2, m_reader->FrameEvent());
+    // Deliver on a fixed schedule at the rate the app asked for: a 30 fps
+    // consumer of a 100 fps source gets one frame every 33 ms, not one per
+    // host write (uneven timestamps stutter in apps like Discord).
+    const LONGLONG now = MFGetSystemTime();
+    if (due == 0 || now - due > interval)
+    {
+        due = now; // first frame, or the app fell behind: restart the schedule
+    }
+    else
+    {
+        waitUntil(due, nullptr);
+        // Source slower than the consumer: wait a little for a fresh frame
+        // rather than repeat the last one, never more than half an interval.
+        if (m_reader->LatestFrame() == m_reader->DeliveredFrame())
+            waitUntil(due + interval / 2, m_reader->FrameEvent());
+    }
+    std::lock_guard lk(m_lock);
+    m_nextDue100ns = due + interval;
 }
 
 void MediaStream::WorkerLoop()
