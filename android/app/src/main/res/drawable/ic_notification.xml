@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon: the camera mark alone, white on transparent (Android tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="100" android:viewportHeight="100">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M23,30h32a9,9 0 0 1 9,9v22a9,9 0 0 1 -9,9h-32a9,9 0 0 1 -9,-9v-22a9,9 0 0 1 9,-9z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,44L86,33L86,67L66,56z" />
+</vector>

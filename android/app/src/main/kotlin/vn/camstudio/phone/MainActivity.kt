@@ -40,6 +40,7 @@ class MainActivity : Activity(), Session.Ui {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val title = TextView(this).apply {
@@ -111,6 +112,11 @@ class MainActivity : Activity(), Session.Ui {
         server = PhoneServer(this, this, CameraSource(this, this))
         server.start()
         status("Đang chờ máy tính kết nối…")
+        CrashLog.takeLast(this)?.let { crash ->
+            screenStatus.setTextIsSelectable(true)
+            screenStatus.setTextColor(Color.rgb(0xFF, 0x9A, 0x9A))
+            screenStatus.text = "Lần trước app bị lỗi (chụp màn hình này gửi cho người hỗ trợ):\n$crash"
+        }
 
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
@@ -123,7 +129,7 @@ class MainActivity : Activity(), Session.Ui {
         orientation.enable()
         address.text = server.addresses().joinToString("\n") { "$it:${server.port}" }
         ScreenService.listener = { text -> runOnUiThread { showScreenState(text) } }
-        showScreenState(if (ScreenService.running) screenStatus.text.toString() else "")
+        if (ScreenService.running) showScreenState(screenStatus.text.toString()) else screenButton.text = "Chia sẻ màn hình sang máy tính"
     }
 
     override fun onPause() {

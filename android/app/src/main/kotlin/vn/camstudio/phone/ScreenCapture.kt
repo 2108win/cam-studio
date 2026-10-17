@@ -26,15 +26,24 @@ import java.util.concurrent.TimeUnit
  * The phone screen through MediaProjection, drawn into an encoder's input surface.
  *
  * One VirtualDisplay lives for the whole sharing session (Android 14 allows a single one per
- * consent) and renders into a SurfaceTexture; streams attach and detach their encoder surface.
- * An OpenGL pass copies the latest picture into the encoder:
+ * consent) and renders into a SurfaceTexture. The SurfaceTexture starts detached from OpenGL and
+ * is attached only while a stream's encoder surface exists, so nothing needs an off-screen EGL
+ * surface (some drivers have none that fits a recordable config). An OpenGL pass copies the
+ * latest picture into the encoder:
  *  - always at the stream's portrait size: a landscape screen is turned a quarter turn
  *    clockwise into it and the PC turns it back ("orientation" 270), like the iPhone;
  *  - again every 250 ms while the screen is still (the PC drops a source that is silent for 6 s,
  *    and one that joins needs a picture now);
  *  - never faster than the stream's frame rate.
+ * Every GL-thread callback is guarded: a failure ends sharing with a message instead of taking
+ * the whole app (and its camera) down.
  */
-class ScreenCapture(context: Context, private val projection: MediaProjection, onStopped: () -> Unit) {
+class ScreenCapture(
+    context: Context,
+    private val projection: MediaProjection,
+    /** Sharing ended: "" when Android or the person stopped it, else what went wrong. */
+    private val onStopped: (String) -> Unit,
+) {
     private val displays = context.getSystemService(DisplayManager::class.java)
     private val display: Display = displays.getDisplay(Display.DEFAULT_DISPLAY)
     private val thread = HandlerThread("screen-gl").apply { start() }
@@ -51,14 +60,15 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
     private var eglDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext = EGL14.EGL_NO_CONTEXT
     private var eglConfig: EGLConfig? = null
-    private var idleSurface = EGL14.EGL_NO_SURFACE // 1x1 pbuffer, or none (surfaceless)
     private var program = 0
     private var texture = 0
-    private lateinit var surfaceTexture: SurfaceTexture
-    private lateinit var displaySurface: Surface
+    private var attached = false            // surfaceTexture attached to our GL context
+    private var frameQueued = false         // the virtual display drew a picture we have not taken yet
+    private var hasFrame = false            // the texture holds a picture (this stream)
+    private val surfaceTexture = SurfaceTexture(false) // API 26: created detached from any GL context
+    private val displaySurface = Surface(surfaceTexture)
     private var virtualDisplay: VirtualDisplay? = null
     private val texMatrix = FloatArray(16)
-    private var hasFrame = false
     private var contentW = 0
     private var contentH = 0
     private var dpi = 320
@@ -70,12 +80,13 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
     private var lastDrawNs = 0L
     private var drawPending = false
     private var onOrientation: ((Int) -> Unit)? = null
+    @Volatile private var failed = false
 
     private val quad: FloatBuffer = floatBuffer(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
     private val st: FloatBuffer = floatBuffer(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)
 
     private val tick = object : Runnable {
-        override fun run() {
+        override fun run() = guarded("vẽ lại màn hình") {
             val now = System.nanoTime()
             if (target != EGL14.EGL_NO_SURFACE && hasFrame && now - lastDrawNs > 250_000_000L) draw(now) // still screen
             handler.postDelayed(this, 100)
@@ -86,23 +97,24 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
         override fun onDisplayAdded(id: Int) {}
         override fun onDisplayRemoved(id: Int) {}
         override fun onDisplayChanged(id: Int) {
-            if (id == Display.DEFAULT_DISPLAY) followDisplay()
+            if (id == Display.DEFAULT_DISPLAY) guarded("xoay màn hình") { followDisplay() }
         }
     }
 
     init {
         val (w, h) = realSize()
         portraitSize = minOf(w, h) to maxOf(w, h)
+        contentW = w
+        contentH = h
+        orientation = if (w > h) 270 else 0
+        surfaceTexture.setDefaultBufferSize(w, h)
+        surfaceTexture.setOnFrameAvailableListener({ guarded("nhận hình màn hình") { onFrameAvailable() } }, handler)
         // Android 14 requires the callback before the virtual display exists.
         projection.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() = onStopped()
+            override fun onStop() = onStopped("")
         }, handler)
         onGl {
-            setupGl()
-            surfaceTexture.setDefaultBufferSize(w, h)
-            contentW = w
-            contentH = h
-            orientation = if (w > h) 270 else 0
+            setupEgl()
             virtualDisplay = projection.createVirtualDisplay("Cam Studio", w, h, dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, displaySurface, null, handler)
         }
@@ -114,12 +126,25 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
         detachOnGl()
         target = EGL14.eglCreateWindowSurface(eglDisplay, eglConfig, surface, intArrayOf(EGL14.EGL_NONE), 0)
         if (target == EGL14.EGL_NO_SURFACE) throw IllegalStateException("eglCreateWindowSurface 0x${Integer.toHexString(EGL14.eglGetError())}")
+        check(EGL14.eglMakeCurrent(eglDisplay, target, target, eglContext)) { "eglMakeCurrent 0x${Integer.toHexString(EGL14.eglGetError())}" }
+        if (program == 0) program = buildProgram()
+        texture = newTexture()
+        surfaceTexture.attachToGLContext(texture)
+        attached = true
+        hasFrame = false
         targetW = width
         targetH = height
         minIntervalNs = 1_000_000_000L / fps.coerceIn(1, 60)
         lastDrawNs = 0
         this.onOrientation = onOrientation
-        if (hasFrame) draw(System.nanoTime()) // the screen may be still: start from what is there
+        if (frameQueued) {
+            takeFrame()
+            draw(System.nanoTime()) // start from what is on screen now
+        } else {
+            // The screen is still and its last picture went to an earlier stream: ask for a new one.
+            virtualDisplay?.surface = null
+            virtualDisplay?.surface = displaySurface
+        }
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, 100)
     }
@@ -127,7 +152,7 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
     fun detach() = onGl { detachOnGl() }
 
     /** A frame now (a keyframe request: the screen may be still). */
-    fun redraw() = handler.post { if (target != EGL14.EGL_NO_SURFACE && hasFrame) draw(System.nanoTime()) }
+    fun redraw() = handler.post { guarded("vẽ màn hình") { if (target != EGL14.EGL_NO_SURFACE && hasFrame) draw(System.nanoTime()) } }
 
     fun release() {
         displays.unregisterDisplayListener(displayListener)
@@ -135,11 +160,9 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
             detachOnGl()
             virtualDisplay?.release()
             virtualDisplay = null
-            if (::surfaceTexture.isInitialized) surfaceTexture.release()
-            if (::displaySurface.isInitialized) displaySurface.release()
+            surfaceTexture.release()
+            displaySurface.release()
             if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
-                EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-                if (idleSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, idleSurface)
                 EGL14.eglDestroyContext(eglDisplay, eglContext)
                 EGL14.eglTerminate(eglDisplay)
             }
@@ -151,14 +174,31 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
 
     // ---- GL thread -----------------------------------------------------------------------
 
+    private fun guarded(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            if (failed) return
+            failed = true
+            val message = "Lỗi khi $what: ${t.javaClass.simpleName}${t.message?.let { " ($it)" } ?: ""}"
+            handler.post { onStopped(message) }
+        }
+    }
+
     private fun detachOnGl() {
         handler.removeCallbacks(tick)
         onOrientation = null
         if (target != EGL14.EGL_NO_SURFACE) {
-            makeIdleCurrent()
+            EGL14.eglMakeCurrent(eglDisplay, target, target, eglContext)
+            if (attached) {
+                surfaceTexture.detachFromGLContext() // also deletes the texture
+                attached = false
+            }
+            EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             EGL14.eglDestroySurface(eglDisplay, target)
             target = EGL14.EGL_NO_SURFACE
         }
+        hasFrame = false
     }
 
     /** The phone was turned: follow it so the mirrored screen fills the virtual display. */
@@ -177,12 +217,10 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
     }
 
     private fun onFrameAvailable() {
-        if (eglDisplay == EGL14.EGL_NO_DISPLAY) return
-        if (target != EGL14.EGL_NO_SURFACE) EGL14.eglMakeCurrent(eglDisplay, target, target, eglContext) else makeIdleCurrent()
-        surfaceTexture.updateTexImage()
-        surfaceTexture.getTransformMatrix(texMatrix)
-        hasFrame = true
-        if (target == EGL14.EGL_NO_SURFACE) return
+        frameQueued = true
+        if (!attached || target == EGL14.EGL_NO_SURFACE) return // nobody streams: the picture waits
+        EGL14.eglMakeCurrent(eglDisplay, target, target, eglContext)
+        takeFrame()
         val now = System.nanoTime()
         val wait = lastDrawNs + minIntervalNs * 9 / 10 - now
         if (wait <= 0) {
@@ -191,10 +229,20 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
             // Faster than the stream's rate: draw the newest picture when it is due.
             drawPending = true
             handler.postDelayed({
-                drawPending = false
-                if (target != EGL14.EGL_NO_SURFACE) draw(System.nanoTime())
+                guarded("vẽ màn hình") {
+                    drawPending = false
+                    if (target != EGL14.EGL_NO_SURFACE && hasFrame) draw(System.nanoTime())
+                }
             }, wait / 1_000_000 + 1)
         }
+    }
+
+    /** Latest picture into the texture (our context is current on the target). */
+    private fun takeFrame() {
+        surfaceTexture.updateTexImage()
+        surfaceTexture.getTransformMatrix(texMatrix)
+        frameQueued = false
+        hasFrame = true
     }
 
     private fun draw(now: Long) {
@@ -221,50 +269,34 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
         lastDrawNs = now
     }
 
-    private fun setupGl() {
+    private fun setupEgl() {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         val version = IntArray(2)
         check(EGL14.eglInitialize(eglDisplay, version, 0, version, 1)) { "eglInitialize" }
-        // Recordable (feeds a MediaCodec surface); a pbuffer as well if the driver allows both.
-        eglConfig = chooseConfig(EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT) ?: chooseConfig(EGL14.EGL_WINDOW_BIT)
-            ?: throw IllegalStateException("no EGL config")
-        eglContext = EGL14.eglCreateContext(eglDisplay, eglConfig, EGL14.EGL_NO_CONTEXT,
-            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
-        idleSurface = runCatching {
-            EGL14.eglCreatePbufferSurface(eglDisplay, eglConfig, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
-        }.getOrDefault(EGL14.EGL_NO_SURFACE)
-        makeIdleCurrent()
-
-        program = buildProgram()
-        val tex = IntArray(1)
-        GLES20.glGenTextures(1, tex, 0)
-        texture = tex[0]
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        surfaceTexture = SurfaceTexture(texture)
-        surfaceTexture.setOnFrameAvailableListener({ onFrameAvailable() }, handler)
-        displaySurface = Surface(surfaceTexture)
-    }
-
-    private fun chooseConfig(surfaceType: Int): EGLConfig? {
         val attribs = intArrayOf(
             EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
             EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-            EGL_RECORDABLE_ANDROID, 1,
-            EGL14.EGL_SURFACE_TYPE, surfaceType,
+            EGL_RECORDABLE_ANDROID, 1, // feeds a MediaCodec input surface
             EGL14.EGL_NONE,
         )
         val configs = arrayOfNulls<EGLConfig>(1)
         val count = IntArray(1)
-        return if (EGL14.eglChooseConfig(eglDisplay, attribs, 0, configs, 0, 1, count, 0) && count[0] > 0) configs[0] else null
+        check(EGL14.eglChooseConfig(eglDisplay, attribs, 0, configs, 0, 1, count, 0) && count[0] > 0) { "no EGL config" }
+        eglConfig = configs[0]
+        eglContext = EGL14.eglCreateContext(eglDisplay, eglConfig, EGL14.EGL_NO_CONTEXT,
+            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
+        check(eglContext != EGL14.EGL_NO_CONTEXT) { "eglCreateContext 0x${Integer.toHexString(EGL14.eglGetError())}" }
     }
 
-    /** Current without drawing anywhere: the pbuffer, or no surface at all (EGL_KHR_surfaceless_context). */
-    private fun makeIdleCurrent() {
-        EGL14.eglMakeCurrent(eglDisplay, idleSurface, idleSurface, eglContext)
+    private fun newTexture(): Int {
+        val tex = IntArray(1)
+        GLES20.glGenTextures(1, tex, 0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, tex[0])
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        return tex[0]
     }
 
     private fun buildProgram(): Int {
@@ -301,7 +333,7 @@ class ScreenCapture(context: Context, private val projection: MediaProjection, o
         handler.post {
             try { block() } catch (t: Throwable) { error = t } finally { done.countDown() }
         }
-        done.await(5, TimeUnit.SECONDS)
+        if (!done.await(5, TimeUnit.SECONDS)) throw IllegalStateException("GL thread did not answer")
         error?.let { throw it }
     }
 

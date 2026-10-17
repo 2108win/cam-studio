@@ -27,6 +27,11 @@ class ScreenService : Service(), Session.Ui {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        CrashLog.install(this)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopSharing()
@@ -44,7 +49,7 @@ class ScreenService : Service(), Session.Ui {
         try {
             val projection = getSystemService(MediaProjectionManager::class.java).getMediaProjection(code, data)
                 ?: throw IllegalStateException("Android không cấp quyền ghi màn hình")
-            val c = ScreenCapture(this, projection) { stopSharing() }
+            val c = ScreenCapture(this, projection) { message -> stopSharing(message) }
             capture = c
             val s = ScreenSource(c)
             source = s
@@ -101,7 +106,7 @@ class ScreenService : Service(), Session.Ui {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, ScreenService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Cam Studio đang chia sẻ màn hình")
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
