@@ -30,6 +30,25 @@ PC duyệt `_camstudio._tcp` và đưa mỗi máy vào danh sách camera, ví d�
 
 **iOS:** `Info.plist` bắt buộc có `NSLocalNetworkUsageDescription` và `NSBonjourServices = ["_camstudio._tcp"]`. Thiếu thì việc quảng bá thất bại mà không báo lỗi gì.
 
+### 1.1 Chia sẻ màn hình (iPhone)
+
+Trên iPhone, màn hình được chia sẻ bằng một tiện ích ReplayKit (Broadcast Upload Extension) chạy trong tiến trình riêng.
+- **Người dùng bật trên iPhone:** bấm nút trong app, hoặc giữ nút Ghi màn hình trong Trung tâm điều khiển. PC không bật được.
+- **Dịch vụ riêng:** trong lúc chia sẻ, tiện ích quảng bá một dịch vụ `_camstudio._tcp` thứ hai, PC đưa nó vào danh sách như một nguồn riêng:
+
+| Trường | Giá trị |
+|---|---|
+| Cổng | **47322** nếu trống, nếu không thì một cổng trống bất kỳ |
+| TXT `id` | `<deviceId>:screen`, để PC coi là nguồn khác với camera |
+| TXT `name` | tên máy + ` · Màn hình`, ví dụ "iPhone · Màn hình" |
+| TXT `src` | `screen` |
+
+- **`hello` vẫn dùng `deviceId` gốc:** khóa ghép đôi của PC gắn với id này, nên một PC đã ghép với app thì kết nối thẳng vào màn hình.
+- **Tiện ích không ghép đôi được:** nó không có màn hình để hỏi. Nếu PC gửi `pairStart`, tiện ích trả `error` với `code = "notPaired"`.
+- **`caps`:** chỉ có một ống kính `{"id": "screen", "facing": "screen", "kind": "screen"}`, không có điều khiển. `modes` gồm kích thước gốc của ReplayKit (888×1920 trên iPhone 14) và các bản thu nhỏ.
+- **Hướng xoay:** khung luôn là khung dọc của màn hình. Khi xoay máy, `orientation` trong `state` đổi theo, giống camera.
+- **Màn hình đứng yên vẫn có khung:** ReplayKit chỉ gửi khung khi màn hình thay đổi. Vì vậy tiện ích gửi lại khung cuối vài lần mỗi giây (PC ngắt nguồn im lặng quá 6 giây), và gửi ngay một khung khi bắt đầu phát hoặc khi được xin `keyframe`.
+
 **Tường lửa:** PC chỉ kết nối ra ngoài (ra điện thoại), nên Windows không hiện hộp thoại tường lửa.
 
 ---
@@ -229,8 +248,8 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
   "lenses": [
     {
       "id": "back-triple",              // id ổn định do app đặt
-      "facing": "back",                 // back | front | external
-      "kind": "virtual",                // wide | ultraWide | telephoto | trueDepth | virtual | external
+      "facing": "back",                 // back | front | external | screen
+      "kind": "virtual",                // wide | ultraWide | telephoto | trueDepth | virtual | external | screen
       "label": "Camera sau (tự đổi ống kính)",
       "members": ["back-ultra", "back-wide", "back-tele"],   // chỉ có ở camera ảo
       "zoom": { "min": 1.0, "max": 125.0, "switchOver": [2.0, 6.0], "displayMultiplier": 0.5 },
@@ -310,6 +329,7 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | `unsupported` | Thông số yêu cầu không có trong `caps` |
 | `thermal` | Máy quá nóng nên đã giảm chất lượng hoặc dừng |
 | `encoder` | Bộ mã hóa phần cứng bị lỗi |
+| `notPaired` | Nơi nhận kết nối không tự ghép đôi được (tiện ích chia sẻ màn hình của iPhone): ghép đôi trong app trước |
 
 ---
 

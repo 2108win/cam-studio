@@ -12,6 +12,7 @@
 //   build/fake-pc --lens back-wide-1 --width 3840 --height 2160 --fps 30 --codec hevc
 //   build/fake-pc --set '{"zoom":2,"torch":0.5}'    send a "set" part way through each stream
 //   build/fake-pc --effects                         open the iPhone's video-effects panel while streaming
+//   build/fake-pc --screen                          the iPhone's shared screen (TXT src=screen) instead
 //   build/fake-pc --forget                          drop saved pairing keys, pair again
 //
 // The PC side of pairing is accepted automatically; the code is printed so it can be compared
@@ -37,6 +38,7 @@ struct Options {
     var seconds = 5.0
     var set: [String: Any]?
     var effects = false
+    var screen = false
     var forget = false
     var out = "build/fake-pc-out"
 
@@ -67,6 +69,7 @@ struct Options {
                 }
                 o.set = json
             case "--effects": o.effects = true
+            case "--screen": o.screen = true
             case "--forget": o.forget = true
             case "--out": o.out = value(a)
             default: fail("unknown option \(a) (see the header of tools/fake_pc.swift)")
@@ -110,7 +113,8 @@ struct PcState: Codable {
 
 // MARK: - discovery
 
-func discover(timeout: TimeInterval) -> NWEndpoint {
+/// The first phone found: its camera service, or with `screen` its shared-screen service.
+func discover(timeout: TimeInterval, screen: Bool) -> NWEndpoint {
     let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_camstudio._tcp", domain: nil), using: .tcp)
     let found = DispatchSemaphore(value: 0)
     var endpoint: NWEndpoint?
@@ -126,13 +130,17 @@ func discover(timeout: TimeInterval) -> NWEndpoint {
             }
             log("found \(r.endpoint)  \(txt)")
         }
-        if endpoint == nil, let first = results.first {
-            endpoint = first.endpoint
+        let wanted = results.first { r in
+            guard case .bonjour(let record) = r.metadata else { return !screen }
+            return (record["src"] == "screen") == screen
+        }
+        if endpoint == nil, let wanted {
+            endpoint = wanted.endpoint
             found.signal()
         }
     }
     browser.start(queue: DispatchQueue(label: "browse"))
-    log("browsing _camstudio._tcp …")
+    log("browsing _camstudio._tcp for \(screen ? "a shared screen" : "a phone camera") …")
     if found.wait(timeout: .now() + timeout) == .timedOut {
         fail("no phone found over mDNS in \(Int(timeout)) s; try --host <ip shown in the phone app>")
     }
@@ -611,7 +619,7 @@ struct FakePc {
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
         let endpoint: NWEndpoint = o.host.map { .hostPort(host: NWEndpoint.Host($0), port: NWEndpoint.Port(rawValue: o.port)!) }
-            ?? discover(timeout: 15)
+            ?? discover(timeout: 15, screen: o.screen)
         let link = Link(endpoint)
         do {
             try link.connect()

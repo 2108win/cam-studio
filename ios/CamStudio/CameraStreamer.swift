@@ -1,39 +1,29 @@
 ﻿import AVFoundation
 import UIKit
-import VideoToolbox
 
-/// AVCaptureSession -> VideoToolbox hardware encoder -> Annex-B packets.
+/// AVCaptureSession -> VideoEncoder (VideoToolbox) -> Annex-B packets.
 /// Controls from the PC ("set", docs/protocol.md 4.3) are applied live.
 final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    struct Callbacks {
-        var config: (Data) -> Void
-        var frame: (Data, Int64, Bool) -> Void   // payload, ptsUs, keyframe
-        var state: ([String: Any]) -> Void
-        var error: (String, String) -> Void       // code, message
-    }
-
     let lens: CameraCaps.Lens
     let width: Int32
     let height: Int32
     let fps: Int
     private(set) var codec: String                // h264 | hevc | hevc10 (falls back to hevc without 10-bit)
     private var bitrate: Int
-    private let callbacks: Callbacks
+    private let callbacks: StreamCallbacks
 
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "camstudio.capture", qos: .userInteractive)
     private var input: AVCaptureDeviceInput?
-    private var encoder: VTCompressionSession?
-    private var lastFormat: CMFormatDescription?
-    private var forceKeyframe = true
+    private var encoder: VideoEncoder?
     private var rotation: AVCaptureDevice.RotationCoordinator?
     private var rotationObserver: NSKeyValueObservation?
     private var stateTimer: Timer?
     private var controls: [String: Any] = [:]
     private var cinematicOn = false
 
-    init(lens: CameraCaps.Lens, width: Int32, height: Int32, fps: Int, codec: String, bitrate: Int, callbacks: Callbacks) {
+    init(lens: CameraCaps.Lens, width: Int32, height: Int32, fps: Int, codec: String, bitrate: Int, callbacks: StreamCallbacks) {
         self.lens = lens
         self.width = width
         self.height = height
@@ -107,7 +97,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         session.commitConfiguration()
         committed = true
 
-        try makeEncoder()
+        encoder = try VideoEncoder(width: width, height: height, fps: fps, codec: codec, bitrate: bitrate, callbacks: callbacks)
         session.startRunning()
 
         rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
@@ -115,7 +105,6 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             self?.publishState()
         }
         DispatchQueue.main.async { [weak self] in
-            UIDevice.current.isBatteryMonitoringEnabled = true
             guard let self else { return }
             self.stateTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.publishState() }
         }
@@ -127,10 +116,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         rotation = nil
         DispatchQueue.main.async { self.stateTimer?.invalidate() }
         queue.sync {
-            if let encoder {
-                VTCompressionSessionCompleteFrames(encoder, untilPresentationTimeStamp: .invalid)
-                VTCompressionSessionInvalidate(encoder)
-            }
+            encoder?.invalidate()
             encoder = nil
         }
     }
@@ -155,134 +141,18 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     // MARK: - encoder
 
-    private func makeEncoder() throws {
-        let codecType = codec.hasPrefix("hevc") ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264
-        let spec: [CFString: Any] = [kVTVideoEncoderSpecification_EnableLowLatencyRateControl: true]
-        var session: VTCompressionSession?
-        var status = VTCompressionSessionCreate(
-            allocator: nil, width: width, height: height, codecType: codecType,
-            encoderSpecification: spec as CFDictionary, imageBufferAttributes: nil, compressedDataAllocator: nil,
-            outputCallback: nil, refcon: nil, compressionSessionOut: &session)
-        if status != noErr {
-            // The low-latency encoder does not take every codec/size on every
-            // device: fall back to the default hardware encoder.
-            status = VTCompressionSessionCreate(
-                allocator: nil, width: width, height: height, codecType: codecType,
-                encoderSpecification: nil, imageBufferAttributes: nil, compressedDataAllocator: nil,
-                outputCallback: nil, refcon: nil, compressionSessionOut: &session)
-        }
-        guard status == noErr, let session else { throw WireError.protocolError("VTCompressionSessionCreate \(status)") }
-
-        func set(_ key: CFString, _ value: Any) { VTSessionSetProperty(session, key: key, value: value as CFTypeRef) }
-        set(kVTCompressionPropertyKey_RealTime, true)
-        set(kVTCompressionPropertyKey_AllowFrameReordering, false)
-        set(kVTCompressionPropertyKey_AverageBitRate, bitrate)
-        set(kVTCompressionPropertyKey_ExpectedFrameRate, fps)
-        set(kVTCompressionPropertyKey_MaxKeyFrameInterval, fps)
-        set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 1)
-        switch codec {
-        case "hevc10":
-            set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main10_AutoLevel)
-            set(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_2020)
-            set(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_2100_HLG)
-            set(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_2020)
-        case "hevc":
-            set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel)
-        default:
-            set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel)
-        }
-        VTCompressionSessionPrepareToEncodeFrames(session)
-        encoder = session
-    }
-
     func setBitrate(_ bps: Int) {
         bitrate = bps
-        queue.async {
-            if let encoder = self.encoder {
-                VTSessionSetProperty(encoder, key: kVTCompressionPropertyKey_AverageBitRate, value: bps as CFTypeRef)
-            }
-        }
+        queue.async { self.encoder?.setBitrate(bps) }
     }
 
     func requestKeyframe() {
-        queue.async { self.forceKeyframe = true }
+        queue.async { self.encoder?.requestKeyframe() }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let encoder, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        var props: CFDictionary?
-        if forceKeyframe {
-            props = [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
-            forceKeyframe = false
-        }
-        VTCompressionSessionEncodeFrame(encoder, imageBuffer: image, presentationTimeStamp: pts, duration: .invalid,
-                                        frameProperties: props, infoFlagsOut: nil) { [weak self] status, _, sample in
-            guard status == noErr, let sample, let self else { return }
-            self.emit(sample)
-        }
-    }
-
-    /// AVCC -> Annex-B: 4-byte lengths become start codes; parameter sets
-    /// from the format description go out as VIDEO_CONFIG when they change.
-    private func emit(_ sample: CMSampleBuffer) {
-        let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
-        let keyframe = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
-
-        if let format = CMSampleBufferGetFormatDescription(sample), keyframe || lastFormat == nil {
-            if lastFormat == nil || !CMFormatDescriptionEqual(format, otherFormatDescription: lastFormat) || keyframe {
-                lastFormat = format
-                if let config = Self.parameterSets(format, hevc: codec.hasPrefix("hevc")) { callbacks.config(config) }
-            }
-        }
-
-        guard let block = CMSampleBufferGetDataBuffer(sample) else { return }
-        // Copy out: the block buffer is not guaranteed to be contiguous.
-        let length = CMBlockBufferGetDataLength(block)
-        var avcc = Data(count: length)
-        let copied = avcc.withUnsafeMutableBytes { raw in
-            CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: raw.baseAddress!)
-        }
-        guard copied == noErr else { return }
-        var annexB = Data(capacity: length + 16)
-        var offset = 0
-        avcc.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            let bytes = raw.bindMemory(to: UInt8.self).baseAddress!
-            while offset + 4 <= length {
-                let nalLength = Int(bytes[offset]) << 24 | Int(bytes[offset + 1]) << 16 | Int(bytes[offset + 2]) << 8 | Int(bytes[offset + 3])
-                offset += 4
-                guard nalLength > 0, offset + nalLength <= length else { break }
-                annexB.append(contentsOf: [0, 0, 0, 1])
-                annexB.append(bytes + offset, count: nalLength)
-                offset += nalLength
-            }
-        }
-        let ptsUs = Int64(CMSampleBufferGetPresentationTimeStamp(sample).seconds * 1_000_000)
-        callbacks.frame(annexB, ptsUs, keyframe)
-    }
-
-    private static func parameterSets(_ format: CMFormatDescription, hevc: Bool) -> Data? {
-        var count = 0
-        let countStatus = hevc
-            ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil,
-                                                                 parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
-            : CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil,
-                                                                 parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
-        guard countStatus == noErr else { return nil }
-        var out = Data()
-        for i in 0..<count {
-            var pointer: UnsafePointer<UInt8>?
-            var size = 0
-            let status = hevc
-                ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer,
-                                                                     parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
-                : CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer,
-                                                                     parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
-            guard status == noErr, let pointer else { continue }
-            out.append(contentsOf: [0, 0, 0, 1])
-            out.append(pointer, count: size)
-        }
-        return out.isEmpty ? nil : out
+        guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        encoder?.encode(image, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
     }
 
     // MARK: - controls
@@ -414,14 +284,7 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         state["orientation"] = orientation
         state["bitrateKbps"] = bitrate / 1000
-        state["battery"] = Int(max(0, UIDevice.current.batteryLevel) * 100)
-        state["charging"] = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
-        state["thermal"] = switch ProcessInfo.processInfo.thermalState {
-        case .nominal: "nominal"
-        case .fair: "fair"
-        case .serious: "serious"
-        default: "critical"
-        }
+        state.merge(DeviceStatus.fields()) { _, new in new }
         callbacks.state(state)
     }
 }

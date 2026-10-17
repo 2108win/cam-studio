@@ -2,17 +2,43 @@ import Foundation
 import Security
 import UIKit
 
-/// This phone's identity and the PCs it is paired with. Pairing keys live
-/// in the Keychain (this device only, after first unlock).
+/// This phone's identity and the PCs it is paired with, in the Keychain (this device only, after
+/// first unlock). The app and the screen-broadcast extension share both through a Keychain
+/// access group: Keychain Sharing works with the team's wildcard provisioning profile, while an
+/// App Group would need an App ID registered for the bundle id.
 final class Store {
+    /// "<team>.vn.camstudio.shared", from Info.plist (CamStudioKeychainGroup, expanded by Xcode).
+    /// nil in the xtool build, which has no Keychain Sharing entitlement: then everything stays
+    /// in the app's own access group, as before.
+    static let sharedGroup: String? = {
+        guard let g = Bundle.main.object(forInfoDictionaryKey: "CamStudioKeychainGroup") as? String,
+              !g.contains("$("), !g.hasPrefix(".") else { return nil }
+        return g
+    }()
+
+    private static let pairingService = "vn.camstudio.pairing"
+    private static let deviceService = "vn.camstudio.device"
+
     /// Generated once (Swift writes UUIDs upper-case) and used verbatim on
     /// the wire forever after.
-    let deviceId: String = {
-        if let id = UserDefaults.standard.string(forKey: "deviceId") { return id }
-        let id = UUID().uuidString
-        UserDefaults.standard.set(id, forKey: "deviceId")
-        return id
-    }()
+    let deviceId: String
+
+    init() {
+        if let legacy = UserDefaults.standard.string(forKey: "deviceId") {
+            // The app's own defaults (every build so far): that id wins, so a PC paired before
+            // keeps its key; the Keychain copy is what the extension reads.
+            if Store.read(Store.deviceService, "deviceId").flatMap({ String(data: $0, encoding: .utf8) }) != legacy {
+                Store.save(Store.deviceService, "deviceId", Data(legacy.utf8))
+            }
+            deviceId = legacy
+        } else if let data = Store.read(Store.deviceService, "deviceId"), let id = String(data: data, encoding: .utf8) {
+            deviceId = id
+        } else {
+            deviceId = UUID().uuidString
+            Store.save(Store.deviceService, "deviceId", Data(deviceId.utf8))
+            if Bundle.main.bundlePath.hasSuffix(".app") { UserDefaults.standard.set(deviceId, forKey: "deviceId") }
+        }
+    }
 
     var deviceName: String { UIDevice.current.name }
 
@@ -24,8 +50,40 @@ final class Store {
         }
     }
 
-    func pairKey(clientId: String) -> Data? {
-        var query = baseQuery(clientId)
+    func pairKey(clientId: String) -> Data? { Store.read(Store.pairingService, clientId) }
+
+    func savePairKey(clientId: String, key: Data) { Store.save(Store.pairingService, clientId, key) }
+
+    /// Copies pairing keys saved by older builds (the app's own access group) into the shared
+    /// one, so the screen-broadcast extension knows every PC paired before. Called at app launch.
+    func shareLegacyKeys() {
+        guard let group = Store.sharedGroup else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Store.pairingService,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var items: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &items) == errSecSuccess, let list = items as? [[String: Any]] else { return }
+        for item in list where item[kSecAttrAccessGroup as String] as? String != group {
+            guard let clientId = item[kSecAttrAccount as String] as? String, let key = item[kSecValueData as String] as? Data,
+                  Store.read(Store.pairingService, clientId, group: group) == nil else { continue }
+            Store.save(Store.pairingService, clientId, key)
+        }
+    }
+
+    // MARK: - Keychain
+
+    /// The shared group first, then any group this process can read (keys from older builds).
+    private static func read(_ service: String, _ account: String) -> Data? {
+        if let group = sharedGroup, let data = read(service, account, group: group) { return data }
+        return read(service, account, group: nil)
+    }
+
+    private static func read(_ service: String, _ account: String, group: String?) -> Data? {
+        var query = baseQuery(service, account, group: group)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -33,19 +91,27 @@ final class Store {
         return item as? Data
     }
 
-    func savePairKey(clientId: String, key: Data) {
-        SecItemDelete(baseQuery(clientId) as CFDictionary)
-        var add = baseQuery(clientId)
-        add[kSecValueData as String] = key
+    private static func save(_ service: String, _ account: String, _ data: Data) {
+        let group = sharedGroup
+        SecItemDelete(baseQuery(service, account, group: group) as CFDictionary)
+        var add = baseQuery(service, account, group: group)
+        add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(add as CFDictionary, nil)
+        if SecItemAdd(add as CFDictionary, nil) != errSecSuccess, group != nil {
+            // Entitlement missing after all: the app's own access group.
+            add[kSecAttrAccessGroup as String] = nil
+            SecItemDelete(baseQuery(service, account, group: nil) as CFDictionary)
+            SecItemAdd(add as CFDictionary, nil)
+        }
     }
 
-    private func baseQuery(_ clientId: String) -> [String: Any] {
-        [
+    private static func baseQuery(_ service: String, _ account: String, group: String?) -> [String: Any] {
+        var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "vn.camstudio.pairing",
-            kSecAttrAccount as String: clientId,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
         ]
+        if let group { q[kSecAttrAccessGroup as String] = group }
+        return q
     }
 }

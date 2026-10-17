@@ -1,15 +1,15 @@
-import AVFoundation
-import Foundation
 import CryptoKit
+import Foundation
 import Network
-import UIKit
 
 /// One PC connection: handshake and pairing (docs/protocol.md section 3),
-/// then control messages and the video stream with adaptive bitrate (6).
-/// Runs on its own thread (blocking reads).
+/// then control messages and the video stream of a MediaSource with
+/// adaptive bitrate (6). Runs on its own thread (blocking reads).
 final class Session {
     protocol UI: AnyObject {
         var inForeground: Bool { get }
+        /// False in the screen-broadcast extension: it has no screen to ask on.
+        var canPair: Bool { get }
         /// Shows the pairing code; blocks until the user answers (false on timeout).
         func confirmPairing(pcName: String, code: String) -> Bool
         func status(streaming: Bool, text: String)
@@ -19,9 +19,9 @@ final class Session {
     private let connection: Connection
     private let store: Store
     private weak var ui: UI?
-    private let caps = CameraCaps()
+    private let source: MediaSource
     private var channel: SecureChannel?
-    private var streamer: CameraStreamer?
+    private var streaming = false
     private var pcName = "máy tính"
     private var closed = false
 
@@ -36,10 +36,11 @@ final class Session {
     private var lastCongestion: TimeInterval = 0
     private var waitingForKeyframe = false
 
-    init(connection: NWConnection, store: Store, ui: UI) {
+    init(connection: NWConnection, store: Store, ui: UI, source: MediaSource) {
         self.connection = Connection(connection)
         self.store = store
         self.ui = ui
+        self.source = source
     }
 
     func run() {
@@ -92,6 +93,11 @@ final class Session {
 
         var next = try connection.readHandshake()
         if next["type"] as? String == "pairStart" {
+            guard ui?.canPair == true else {
+                try connection.writeHandshake(["type": "error", "code": "notPaired",
+                                               "message": "Hãy ghép đôi máy tính này trong app Cam Studio trên iPhone trước"])
+                throw WireError.protocolError("pairing is not possible here")
+            }
             guard ui?.inForeground == true else {
                 try connection.writeHandshake(["type": "error", "code": "background", "message": "Hãy mở app Cam Studio trên iPhone để ghép đôi"])
                 throw WireError.protocolError("pairing while in background")
@@ -125,7 +131,7 @@ final class Session {
             guard msg.kind == Wire.kindControl, let json = msg.json() else { continue }
             switch json["type"] as? String {
             case "getCaps":
-                sendControl(caps.toJson(store: store))
+                sendControl(source.caps(store: store))
             case "start":
                 startStream(json)
             case "stop":
@@ -133,9 +139,9 @@ final class Session {
                 sendControl(["type": "stopped", "reason": "pc"])
                 ui?.status(streaming: false, text: "Đã kết nối với \(pcName)")
             case "set":
-                streamer?.set(json)
+                if streaming { source.set(json) }
             case "keyframe":
-                streamer?.requestKeyframe()
+                if streaming { source.requestKeyframe() }
             case "stats":
                 if (json["lost"] as? Int ?? 0) > 0 || (json["queueMs"] as? Double ?? 0) > 200 { congestion() }
             case "showSystemEffects":
@@ -148,57 +154,45 @@ final class Session {
 
     private func startStream(_ json: [String: Any]) {
         stopStream()
-        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
-            return sendError("permission", "Chưa cấp quyền Camera cho Cam Studio (Cài đặt > Cam Studio > Camera)")
-        }
-        guard ui?.inForeground == true else {
+        guard !source.needsForeground || ui?.inForeground == true else {
             return sendError("background", "Hãy mở app Cam Studio trên iPhone: iOS chỉ cho dùng camera khi app đang mở")
         }
-        guard let lens = caps.lens(json["lens"] as? String ?? "") else {
-            return sendError("unsupported", "Không có ống kính \(json["lens"] ?? "")")
-        }
-        let width = Int32(json["width"] as? Int ?? 1920)
-        let height = Int32(json["height"] as? Int ?? 1080)
-        let fps = json["fps"] as? Int ?? 30
-        let codec = json["codec"] as? String ?? "hevc"
         targetBitrate = (json["bitrateKbps"] as? Int ?? 8000) * 1000
         currentBitrate = targetBitrate
         waitingForKeyframe = false
         pendingLock.lock(); pending.removeAll(); pendingLock.unlock()
 
-        let s = CameraStreamer(lens: lens, width: width, height: height, fps: fps, codec: codec, bitrate: currentBitrate,
-            callbacks: .init(
-                config: { [weak self] data in self?.enqueue(Out(kind: Wire.kindVideoConfig, data: data, ptsUs: 0, flags: 0, queuedAt: Date().timeIntervalSince1970)) },
-                frame: { [weak self] data, pts, key in
-                    self?.enqueue(Out(kind: Wire.kindVideoFrame, data: data, ptsUs: pts, flags: key ? Wire.flagKeyframe : 0, queuedAt: Date().timeIntervalSince1970))
-                },
-                state: { [weak self] state in self?.sendControl(state) },
-                error: { [weak self] code, message in
-                    self?.sendError(code, message)
-                    self?.ui?.status(streaming: false, text: message)
-                }))
+        let callbacks = StreamCallbacks(
+            config: { [weak self] data in self?.enqueue(Out(kind: Wire.kindVideoConfig, data: data, ptsUs: 0, flags: 0, queuedAt: Date().timeIntervalSince1970)) },
+            frame: { [weak self] data, pts, key in
+                self?.enqueue(Out(kind: Wire.kindVideoFrame, data: data, ptsUs: pts, flags: key ? Wire.flagKeyframe : 0, queuedAt: Date().timeIntervalSince1970))
+            },
+            state: { [weak self] state in self?.sendControl(state) },
+            error: { [weak self] code, message in
+                self?.sendError(code, message)
+                self?.ui?.status(streaming: false, text: message)
+            })
         do {
-            try s.start(stabilization: json["stabilization"] as? String, cinematic: json["cinematic"] as? Bool ?? false)
+            let (started, label) = try source.start(json, bitrate: currentBitrate, callbacks: callbacks)
+            streaming = true
+            sendControl(started)
+            ui?.status(streaming: true, text: "Đang phát \(label) → \(pcName)")
+        } catch let e as StreamError {
+            sendError(e.code, e.message)
         } catch {
-            return sendError("unsupported", "Không bắt đầu quay được: \(error)")
+            sendError("unsupported", "Không bắt đầu phát được: \(error)")
         }
-        streamer = s
-        sendControl([
-            "type": "started", "lens": lens.id, "width": Int(width), "height": Int(height), "fps": fps,
-            "codec": s.codec, "hdr": s.codec == "hevc10", "orientation": s.orientation,
-        ])
-        ui?.status(streaming: true, text: "Đang phát \(lens.label) · \(width)×\(height) · \(fps) fps → \(pcName)")
     }
 
     private func stopStream() {
-        streamer?.stop()
-        streamer = nil
+        if streaming { source.stop() }
+        streaming = false
         pendingLock.lock(); pending.removeAll(); pendingLock.unlock()
     }
 
     /// Called when the app leaves the foreground: iOS interrupts the camera.
     func appBackgrounded() {
-        guard streamer != nil else { return }
+        guard streaming, source.needsForeground else { return }
         stopStream()
         sendError("background", "App Cam Studio trên iPhone đã bị ẩn: hãy mở lại app")
     }
@@ -260,7 +254,7 @@ final class Session {
     private func congestion() {
         waitingForKeyframe = true
         pendingLock.lock(); pending.removeAll { $0.kind == Wire.kindVideoFrame }; pendingLock.unlock()
-        streamer?.requestKeyframe()
+        if streaming { source.requestKeyframe() }
         let now = Date().timeIntervalSince1970
         if now - lastCongestion > 1 { // at most one step per second
             lastCongestion = now
@@ -271,7 +265,7 @@ final class Session {
     private func setBitrate(_ bps: Int) {
         guard bps != currentBitrate else { return }
         currentBitrate = bps
-        streamer?.setBitrate(bps)
+        if streaming { source.setBitrate(bps) }
         sendControl(["type": "bitrate", "kbps": bps / 1000])
     }
 }

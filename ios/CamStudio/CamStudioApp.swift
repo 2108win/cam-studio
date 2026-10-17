@@ -1,4 +1,5 @@
 import AVFoundation
+import ReplayKit
 import SwiftUI
 
 /// The iPhone side of Cam Studio. The PC picks lens, size and controls;
@@ -33,12 +34,15 @@ final class AppModel: ObservableObject, Session.UI {
     private var normalBrightness: CGFloat = 0.5
 
     var inForeground: Bool { foreground }
+    var canPair: Bool { true }
 
     func start() {
         guard server == nil else { return }
         UIApplication.shared.isIdleTimerDisabled = true
         AVCaptureDevice.requestAccess(for: .video) { _ in }
-        let server = PhoneServer(ui: self)
+        let store = Store()
+        store.shareLegacyKeys()
+        let server = PhoneServer(ui: self, source: CameraSource(), kind: .camera, store: store)
         server.start(onReady: { [weak self] port in
             DispatchQueue.main.async {
                 self?.addresses = PhoneServer.addresses().map { "\($0):\(port)" }
@@ -133,6 +137,20 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.gray)
                     .padding(.horizontal, 32)
+                Button {
+                    BroadcastPicker.show()
+                } label: {
+                    Label("Chia sẻ màn hình sang máy tính", systemImage: "rectangle.on.rectangle")
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .background(BroadcastPicker.Host().frame(width: 1, height: 1).opacity(0.02))
+                Text("Trên PC, màn hình hiện thành nguồn \"iPhone · Màn hình\". Ghép đôi bằng camera trước, rồi mới chia sẻ màn hình.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.gray)
+                    .padding(.horizontal, 32)
             }
         }
         .statusBarHidden(true)
@@ -146,5 +164,27 @@ struct ContentView: View {
             let code = model.pairing?.code ?? ""
             Text("Kiểm tra mã trên máy tính có giống mã này không:\n\n\(code.prefix(3)) \(code.suffix(3))\n\nChỉ đồng ý nếu hai mã giống nhau.")
         }
+    }
+}
+
+/// The system broadcast picker, the only way to start a screen broadcast: it lists the
+/// CamStudioScreen extension ("Cam Studio") and asks the person to start. Kept in the view tree
+/// (a tiny host) and opened by tapping its own button from ours.
+enum BroadcastPicker {
+    private static let view: RPSystemBroadcastPickerView = {
+        let v = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        // Derived, not hard-coded: xtool prefixes bundle ids with the team.
+        v.preferredExtension = (Bundle.main.bundleIdentifier ?? "vn.camstudio.phone") + ".screen"
+        v.showsMicrophoneButton = false
+        return v
+    }()
+
+    static func show() {
+        (view.subviews.first { $0 is UIButton } as? UIButton)?.sendActions(for: .touchUpInside)
+    }
+
+    struct Host: UIViewRepresentable {
+        func makeUIView(context: Context) -> UIView { BroadcastPicker.view }
+        func updateUIView(_ uiView: UIView, context: Context) {}
     }
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The app and the screen-broadcast extension share the deviceId and the pairing keys through
+     this Keychain access group (Store.swift). Works with the team's wildcard profile. -->
+<plist version="1.0">
+<dict>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)vn.camstudio.shared</string>
+    </array>
+</dict>
+</plist>

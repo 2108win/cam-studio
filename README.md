@@ -5,7 +5,8 @@ Một app giống Camo Studio: lấy hình từ camera ngoài và đưa ra một
 **Nguồn hình:**
 - **Webcam USB / capture card:** đã chạy.
 - **Điện thoại Android qua Wi‑Fi:** đã chạy với Redmi 9T, dùng được cả 4 ống kính: siêu rộng 0.6×, chính 1×, macro và camera trước.
-- **iPhone qua Wi‑Fi:** đã chạy trên iPhone 14 (iOS 27.2) với "PC giả" trên Mac (mọi ống kính, tới 4K và HDR, điện ảnh). Chưa thử với app PC Windows.
+- **iPhone qua Wi‑Fi:** đã chạy trên iPhone 14 (iOS 27.2) với "PC giả" trên Mac (mọi ống kính, tới 4K và HDR, điện ảnh), và PC Windows đã phát được 4K từ iPhone.
+  - **Chia sẻ màn hình iPhone:** màn hình hiện trên PC thành nguồn "iPhone · Màn hình". Đã thử với PC giả, chưa thử với PC Windows. Xem [ios/README.md](ios/README.md).
 - **Điện thoại qua USB:** dùng chung giao thức, sẽ làm sau.
 
 ## Cài đặt (bản phát hành)

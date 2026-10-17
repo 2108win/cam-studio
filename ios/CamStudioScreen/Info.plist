@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The screen-broadcast extension (Xcode build only). Bundle id, version and executable keys are
+     added by Xcode. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Cam Studio</string>
+    <!-- Keychain group shared with the screen-broadcast extension (Store.swift); Xcode expands it,
+         the xtool build leaves it as is and Store then ignores it. -->
+    <key>CamStudioKeychainGroup</key>
+    <string>$(AppIdentifierPrefix)vn.camstudio.shared</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.broadcast-services-upload</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).SampleHandler</string>
+        <key>RPBroadcastProcessMode</key>
+        <string>RPBroadcastProcessModeSampleBuffer</string>
+    </dict>
+    <!-- Without these two, Bonjour advertising fails silently (docs/protocol.md 1). -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Cam Studio cần mạng cục bộ để máy tính trong nhà tìm và kết nối tới điện thoại.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_camstudio._tcp</string>
+    </array>
+</dict>
+</plist>

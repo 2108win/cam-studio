@@ -116,10 +116,15 @@ bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairi
 bool PhoneLink::Reconnect(std::string& error)
 {
     Endpoint endpoint = m_endpoint;
-    if (!m_deviceId.empty())
+    // Find it again by the TXT id it was found under: the iPhone's shared screen advertises
+    // "<deviceId>:screen" (docs/protocol.md 1.1) while its hello carries the camera's deviceId,
+    // so the hello id alone would bring a screen link back to the camera. A manual entry only
+    // knows the hello id: it takes a discovered address on the same port only.
+    const std::string id = m_endpoint.deviceId.empty() ? m_deviceId : m_endpoint.deviceId;
+    if (!id.empty())
     {
         for (const Endpoint& e : KnownPhones())
-            if (e.deviceId == m_deviceId) { endpoint = e; break; }
+            if (e.deviceId == id && (!m_endpoint.manual || e.port == m_endpoint.port)) { endpoint = e; break; }
     }
     if (endpoint.host.empty()) { error = "Chưa từng kết nối điện thoại này"; return false; }
     return ConnectImpl(endpoint, nullptr, nullptr, false, error);

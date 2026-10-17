@@ -16,12 +16,16 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"        # CFBundleShortVersionString, as the v0.1.0 release
+    CURRENT_PROJECT_VERSION: "1"      # CFBundleVersion: an extension must have one, equal to the app's
 targets:
   CamStudio:
     type: application
     platform: iOS
     sources:
       - path: CamStudio
+    dependencies:
+      - target: CamStudioScreen      # embedded in PlugIns
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: vn.camstudio.phone
@@ -29,6 +33,28 @@ targets:
         # Same Info.plist as the xtool build (xtool.yml); Xcode merges in the standard keys.
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: CamStudio.entitlements
+  # Screen sharing: a ReplayKit broadcast upload extension that serves the screen to the PC as a
+  # second source (port 47322). Shares the protocol code with the app, not the camera code.
+  CamStudioScreen:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CamStudioScreen
+      - path: CamStudio/Crypto.swift
+      - path: CamStudio/Wire.swift
+      - path: CamStudio/Store.swift
+      - path: CamStudio/Session.swift
+      - path: CamStudio/PhoneServer.swift
+      - path: CamStudio/StreamSupport.swift
+      - path: CamStudio/VideoEncoder.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: vn.camstudio.phone.screen
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: CamStudioScreen/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: CamStudioScreen/CamStudioScreen.entitlements
   CamStudioTests:
     type: bundle.unit-test
     platform: iOS

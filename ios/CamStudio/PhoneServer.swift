@@ -5,14 +5,35 @@ import Network
 /// with the TXT record of docs/protocol.md section 1. One PC at a time: a
 /// new connection replaces the old one.
 final class PhoneServer {
-    private let store = Store()
+    /// The app serves the cameras; the broadcast extension serves the screen as a second,
+    /// separate source on its own port.
+    enum Kind { case camera, screen }
+
+    private let store: Store
+    private let source: MediaSource
+    private let kind: Kind
     private var listener: NWListener?
     private(set) var session: Session?
     private weak var ui: Session.UI?
     private(set) var port: UInt16 = 0
 
-    init(ui: Session.UI) {
+    init(ui: Session.UI, source: MediaSource, kind: Kind, store: Store = Store()) {
         self.ui = ui
+        self.source = source
+        self.kind = kind
+        self.store = store
+    }
+
+    /// TXT record. The screen gets its own TXT id and name so the PC lists it as another source;
+    /// its "hello" still carries the real deviceId, which the PC's pairing key belongs to.
+    private var txt: [String: String] {
+        var t = ["v": "1", "id": store.deviceId, "name": store.deviceName, "model": store.model, "os": "ios"]
+        if kind == .screen {
+            t["id"] = store.deviceId + ":screen"
+            t["name"] = store.deviceName + " · Màn hình"
+            t["src"] = "screen"
+        }
+        return t
     }
 
     private var onReady: ((UInt16) -> Void)?
@@ -37,14 +58,13 @@ final class PhoneServer {
         params.includePeerToPeer = false
         params.allowLocalEndpointReuse = true
         // Fixed port first (docs/protocol.md 1), so an address added by IP stays valid.
-        guard let listener = (try? NWListener(using: params, on: 47321)) ?? (try? NWListener(using: params)) else {
+        let fixedPort: NWEndpoint.Port = kind == .camera ? 47321 : 47322
+        guard let listener = (try? NWListener(using: params, on: fixedPort)) ?? (try? NWListener(using: params)) else {
             onFailure?("Không mở được cổng kết nối")
             return
         }
-        let txt = NWTXTRecord([
-            "v": "1", "id": store.deviceId, "name": store.deviceName, "model": store.model, "os": "ios",
-        ])
-        listener.service = NWListener.Service(name: store.deviceName, type: "_camstudio._tcp", txtRecord: txt)
+        let txt = self.txt
+        listener.service = NWListener.Service(name: txt["name"], type: "_camstudio._tcp", txtRecord: NWTXTRecord(txt))
         listener.stateUpdateHandler = { [weak self, weak listener] state in
             guard let self, let listener, listener === self.listener else { return }
             switch state {
@@ -64,7 +84,7 @@ final class PhoneServer {
         listener.newConnectionHandler = { [weak self] connection in
             guard let self, let ui = self.ui else { connection.cancel(); return }
             self.session?.close()
-            let s = Session(connection: connection, store: self.store, ui: ui)
+            let s = Session(connection: connection, store: self.store, ui: ui, source: self.source)
             self.session = s
             Thread {
                 s.run()

@@ -47,6 +47,7 @@ scripts/fake-pc.sh --lens all --seconds 4
 scripts/fake-pc.sh --lens back-wide --width 3840 --height 2160 --codec hevc --bitrate 25000
 scripts/fake-pc.sh --lens back-dualWide --set '{"cinematic":true}'
 scripts/fake-pc.sh --lens front-trueDepth --effects     # mở bảng hiệu ứng hệ thống khi đang phát
+scripts/fake-pc.sh --screen --lens all                  # màn hình đang chia sẻ (bật chia sẻ trên iPhone trước)
 ```
 
 Công cụ này chỉ theo đúng giao thức, nên về nguyên tắc cũng thử được app Android. Tuy vậy, chưa ai chạy nó với Android.
@@ -61,6 +62,8 @@ Công cụ này chỉ theo đúng giao thức, nên về nguyên tắc cũng th�
 4. Build: `cd /mnt/d/winlax/job/cam-studio/ios && xtool dev build`. Cắm iPhone và chạy `xtool dev` để cài lên máy. iPhone cần được nối vào WSL qua USBIPD, xem [hướng dẫn của xtool](https://xtool.sh/documentation/xtool/installation-linux).
 
 Với tài khoản Apple miễn phí: app chạy được 7 ngày rồi phải cài lại, và xtool thêm tiền tố vào bundle id (ví dụ `XTL-1234.vn.camstudio.phone`).
+
+Bản xtool chỉ có app chính, **không có chia sẻ màn hình**: tiện ích ReplayKit chỉ build bằng Xcode trên Mac.
 
 Test `CryptoTests` chạy trên Mac (scheme `CryptoTestsMac`).
 
@@ -78,6 +81,12 @@ iPhone sẽ hỏi hai quyền: **Camera** và **Mạng cục bộ**. Phải cho 
 - **HDR:** HDR HLG 10‑bit (HEVC Main10) trên máy có hỗ trợ.
 - **Điều khiển từ PC:** zoom, lấy nét, phơi sáng (ISO, tốc độ màn trập, bù sáng), cân bằng trắng theo Kelvin, đèn flash, chống rung (kể cả điện ảnh), tăng sáng khi thiếu sáng.
 - **Hiệu ứng hệ thống** (Xóa phông, Ánh sáng studio, Center Stage, Thay nền): Apple không cho app tự bật các hiệu ứng này. Từ PC, bấm "Mở hiệu ứng hệ thống trên điện thoại"; bảng hiệu ứng sẽ hiện trên iPhone, bạn bật ở đó, và hiệu ứng áp dụng thẳng vào hình gửi sang PC.
+- **Chia sẻ màn hình sang PC:** trong app, bấm **Chia sẻ màn hình sang máy tính** rồi **Bắt đầu phát**. Cũng bật được từ Trung tâm điều khiển: giữ nút Ghi màn hình, chọn Cam Studio.
+  - **Trên PC:** màn hình hiện thành một nguồn riêng, **"iPhone · Màn hình"**, chọn như một camera.
+  - **Dùng app khác thoải mái:** khác với camera, việc chia sẻ vẫn chạy khi bạn chuyển sang app khác. Xoay máy thì hình trên PC xoay theo.
+  - **Ghép đôi trước:** PC phải ghép đôi với iPhone (qua camera) ít nhất một lần, vì phần chia sẻ màn hình không tự hiện hộp thoại ghép đôi được.
+  - **Cách hoạt động:** đây là một tiện ích ReplayKit ([CamStudioScreen/](CamStudioScreen/)) chạy riêng, cổng 47322. Nó dùng chung deviceId và khóa ghép đôi với app qua Keychain Sharing. Chi tiết ở [docs/protocol.md](../docs/protocol.md) mục 1.1.
+  - **Dừng:** chạm dấu đỏ ở góc màn hình rồi chọn Dừng.
 - **Điện ảnh (xóa phông có chuyển nét):** chỉ có trên iOS 26 với iPhone hỗ trợ.
   - Bật/tắt ngay lúc đang phát, hiệu ứng áp thẳng vào hình gửi sang PC.
   - Chỉ một số ống kính hỗ trợ. Trên iPhone 14 là `back-dualWide` và `front-trueDepth`, ở 1080p 30 fps. Caps báo riêng cho từng ống kính.
@@ -85,12 +94,18 @@ iPhone sẽ hỏi hai quyền: **Camera** và **Mạng cục bộ**. Phải cho 
 
 ## Giới hạn
 
-- **Phải để app mở khi đang phát:** iOS dừng camera của app chạy nền, nên app tự làm tối màn hình để đỡ tốn pin.
+- **Phải để app mở khi phát camera:** iOS dừng camera của app chạy nền, nên app tự làm tối màn hình để đỡ tốn pin. Chia sẻ màn hình thì không cần.
+- **Chia sẻ màn hình:**
+  - nội dung có bản quyền (Netflix…) hiện màn đen;
+  - iPhone hiện dấu đỏ suốt lúc chia sẻ;
+  - không có âm thanh, không điều khiển iPhone từ PC được;
+  - cài lại app thì buổi chia sẻ đang chạy bị dừng.
 - **Tên máy:** iOS chỉ cho app biết tên chung "iPhone", nên PC hiện "iPhone (Wi‑Fi)" chứ không phải tên bạn đặt.
 - **Đã chạy thật** trên iPhone 14 (iOS 27.2) với PC giả trên Mac. Các phần đã thử:
   - tìm qua mDNS và theo IP, ghép đôi, đọc caps;
   - mọi ống kính; 1080p30, 1080p60, 4K30 HEVC, HDR 10‑bit;
   - zoom, đèn, lấy nét, phơi sáng, cân bằng trắng (tự động và thủ công);
-  - điện ảnh, bảng hiệu ứng hệ thống, xoay máy, ẩn app rồi mở lại.
+  - điện ảnh, bảng hiệu ứng hệ thống, xoay máy, ẩn app rồi mở lại;
+  - chia sẻ màn hình: 888×1920 khoảng 30 fps (H.264 và HEVC), chuyển sang app khác, xoay ngang cả hai chiều, màn hình đứng yên, camera chạy song song.
 
-  **Chưa thử với app PC Windows thật.**
+  **App PC Windows thật:** đã thấy PC ghép đôi và phát 4K từ camera iPhone. Các nút điều khiển và chia sẻ màn hình trên PC thật chưa kiểm tra.

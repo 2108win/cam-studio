@@ -33,6 +33,10 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <!-- Keychain group shared with the screen-broadcast extension (Store.swift); Xcode expands it,
+         the xtool build leaves it as is and Store then ignores it. -->
+    <key>CamStudioKeychainGroup</key>
+    <string>$(AppIdentifierPrefix)vn.camstudio.shared</string>
     <key>NSCameraUsageDescription</key>
     <string>Cam Studio gửi hình camera sang máy tính để dùng làm webcam.</string>
     <key>NSMicrophoneUsageDescription</key>
