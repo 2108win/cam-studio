@@ -81,6 +81,53 @@ bool SaveNv12AsBmp(const std::wstring& path, const uint8_t* nv12, uint32_t w, ui
 }
 } // namespace
 
+// --reopen: behave like a video-call app (Discord) that, when the camera
+// disappears, immediately looks it up again and reopens it. Logs each open
+// and how it ended, so a virtual camera that cannot come back is visible.
+int ReopenLoop(int seconds)
+{
+    const ULONGLONG start = GetTickCount64();
+    auto at = [&] { return (GetTickCount64() - start) / 1000.0; };
+    int opens = 0;
+    while (GetTickCount64() - start < static_cast<ULONGLONG>(seconds) * 1000)
+    {
+        auto cams = EnumerateCameras();
+        const CameraDevice* vcam = nullptr;
+        for (const auto& c : cams) if (IsOurVirtualCamera(c)) vcam = &c;
+        if (!vcam) { Sleep(20); continue; }
+        ComPtr<IMFMediaSource> source;
+        HRESULT hr = vcam->activate->ActivateObject(IID_PPV_ARGS(&source));
+        ComPtr<IMFSourceReader> reader;
+        if (SUCCEEDED(hr)) hr = MFCreateSourceReaderFromMediaSource(source.Get(), nullptr, &reader);
+        if (FAILED(hr))
+        {
+            wprintf(L"[%6.1f s] open failed 0x%08X\n", at(), static_cast<unsigned>(hr));
+            fflush(stdout);
+            vcam->activate->ShutdownObject();
+            Sleep(20);
+            continue;
+        }
+        ++opens;
+        int frames = 0;
+        for (;;)
+        {
+            DWORD si = 0, flags = 0;
+            LONGLONG ts = 0;
+            ComPtr<IMFSample> sample;
+            hr = reader->ReadSample(kVideoStream, 0, &si, &flags, &ts, &sample);
+            if (FAILED(hr) || (flags & MF_SOURCE_READERF_ERROR)) break;
+            if (sample && frames++ == 0) { wprintf(L"[%6.1f s] open #%d streaming\n", at(), opens); fflush(stdout); }
+            if (GetTickCount64() - start >= static_cast<ULONGLONG>(seconds) * 1000) break;
+        }
+        wprintf(L"[%6.1f s] open #%d ended after %d frames (0x%08X)\n", at(), opens, frames, static_cast<unsigned>(hr));
+        fflush(stdout);
+        reader.Reset();
+        source->Shutdown();
+        vcam->activate->ShutdownObject();
+    }
+    return 0;
+}
+
 int wmain(int argc, wchar_t** argv)
 {
     _setmode(_fileno(stdout), _O_U8TEXT);
@@ -90,6 +137,8 @@ int wmain(int argc, wchar_t** argv)
     std::wstring dumpPath;
     int frameTarget = 30;
     int modeIndex = -1; // --mode: read this virtual camera format instead of the largest
+    int holdSeconds = 0; // --hold: stay open like a video call, logging every 2 s
+    int reopenSeconds = 0; // --reopen: reopen at once whenever the camera goes away (like Discord)
     UINT32 expectW = 0, expectH = 0;
     for (int i = 1; i < argc; ++i)
     {
@@ -98,6 +147,8 @@ int wmain(int argc, wchar_t** argv)
         else if (a == L"--frames" && i + 1 < argc) frameTarget = _wtoi(argv[++i]);
         else if (a == L"--dump" && i + 1 < argc) dumpPath = argv[++i];
         else if (a == L"--mode" && i + 1 < argc) modeIndex = _wtoi(argv[++i]);
+        else if (a == L"--hold" && i + 1 < argc) holdSeconds = _wtoi(argv[++i]);
+        else if (a == L"--reopen" && i + 1 < argc) reopenSeconds = _wtoi(argv[++i]);
         else if (a == L"--expect" && i + 1 < argc)
         {
             // For sources that are not a local webcam (phones): the size the
@@ -106,13 +157,21 @@ int wmain(int argc, wchar_t** argv)
         }
         else
         {
-            fwprintf(stderr, L"Usage: camstudio-verify [--device <index|name> | --expect WxH] [--mode N] [--frames N] [--dump frame.bmp]\n");
+            fwprintf(stderr, L"Usage: camstudio-verify [--device <index|name> | --expect WxH] [--mode N] [--frames N | --hold seconds | --reopen seconds] [--dump frame.bmp]\n");
             return 2;
         }
     }
 
     if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) || FAILED(MFStartup(MF_VERSION)))
         return Fail(L"MF init");
+
+    if (reopenSeconds > 0)
+    {
+        const int rc = ReopenLoop(reopenSeconds);
+        MFShutdown();
+        CoUninitialize();
+        return rc;
+    }
 
     auto cams = EnumerateCameras();
 
@@ -185,13 +244,33 @@ int wmain(int argc, wchar_t** argv)
     double minGapMs = 1e9, maxGapMs = 0;
     const ULONGLONG start = GetTickCount64();
     ULONGLONG firstFrame = 0;
-    while (got < frameTarget && GetTickCount64() - start < 20000)
+    ULONGLONG lastReport = start;
+    int reportGot = 0, reportLive = 0;
+    auto keepGoing = [&] {
+        const ULONGLONG elapsed = GetTickCount64() - start;
+        return holdSeconds > 0 ? elapsed < static_cast<ULONGLONG>(holdSeconds) * 1000
+                               : got < frameTarget && elapsed < 20000;
+    };
+    while (keepGoing())
     {
+        if (holdSeconds > 0 && GetTickCount64() - lastReport >= 2000)
+        {
+            wprintf(L"[%5.1f s] %d frames, %d live\n", (GetTickCount64() - start) / 1000.0, got - reportGot, live - reportLive);
+            fflush(stdout);
+            reportGot = got;
+            reportLive = live;
+            lastReport = GetTickCount64();
+        }
         DWORD si = 0, flags = 0;
         LONGLONG ts = 0;
         ComPtr<IMFSample> sample;
         HRESULT hr = reader->ReadSample(kVideoStream, 0, &si, &flags, &ts, &sample);
-        if (FAILED(hr)) { fwprintf(stderr, L"ReadSample 0x%08X\n", hr); break; }
+        if (FAILED(hr))
+        {
+            wprintf(L"[%5.1f s] ReadSample 0x%08X (camera gone for this app)\n", (GetTickCount64() - start) / 1000.0, hr);
+            fflush(stdout);
+            break;
+        }
         if (flags & MF_SOURCE_READERF_ERROR) break;
         if (!sample) continue;
         if (!firstFrame) firstFrame = GetTickCount64();
@@ -240,6 +319,7 @@ int wmain(int argc, wchar_t** argv)
     MFShutdown();
     CoUninitialize();
 
+    if (holdSeconds > 0) return 0;
     if (got < frameTarget) return Fail(L"not enough frames");
     if (sizeErrors) return Fail(L"frames had the wrong size");
     if (live < got / 2) return Fail(L"frames are the no-signal pattern: host is not feeding the camera");

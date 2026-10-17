@@ -39,3 +39,8 @@ add_executable(camstudio-protocol-test src/verify/protocol_test.cpp src/engine/C
 # End-to-end check of resolution and live frames.
 add_executable(camstudio-verify src/verify/main.cpp)
 target_link_libraries(camstudio-verify PRIVATE mfplat mfuuid mf mfreadwrite ole32)
+
+# Opens the virtual camera through DirectShow (ksproxy) like Discord, and keeps
+# holding it when it goes away: reproduces consumers that never let go.
+add_executable(camstudio-dshow-consumer tools/dshow_consumer.cpp)
+target_link_libraries(camstudio-dshow-consumer PRIVATE strmiids ole32 oleaut32)
