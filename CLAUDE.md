@@ -148,6 +148,18 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
     The extension re-sends the last frame and starts from the newest one, because the PC drops a
     source that is silent for 6 s.
   - **Reinstall:** reinstalling the app ends a running broadcast; the person has to start it again.
+- **Android screen sharing:** same protocol as iOS (port 47322, TXT `id=<deviceId>:screen`,
+  `notPaired`). The pieces:
+  - `ScreenService`: a foreground service of type `mediaProjection`. Consent comes from `MainActivity`,
+    once per sharing session.
+  - `ScreenCapture`: one VirtualDisplay for the whole session (Android 14 allows only one per consent).
+    It draws through a SurfaceTexture into OpenGL, then into the encoder surface of each stream.
+  - Output is always portrait. A landscape screen is turned 90° clockwise, with `orientation` 270.
+  - The last picture is re-drawn every 250 ms while the screen is still.
+  - Sizes are multiples of 16.
+  - `Session` streams any `MediaSource` (`CameraSource`, `ScreenSource`), like iOS. `CameraStreamer` is
+    unchanged.
+  - Written on 2026-10-17. It compiles but **has not run on a device yet**.
 - **The phone serves one PC at a time:** a new connection replaces the old one. A test from the
   fake PC on the Mac kicks the user's real Windows PC off (and the PC's reconnect kicks the fake
   PC). Ask before testing while the user's PC may be streaming.

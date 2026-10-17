@@ -3,13 +3,17 @@ package vn.camstudio.phone
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.OrientationEventListener
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
@@ -24,6 +28,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : Activity(), Session.Ui {
     private lateinit var status: TextView
     private lateinit var address: TextView
+    private lateinit var screenButton: Button
+    private lateinit var screenStatus: TextView
     private lateinit var server: PhoneServer
     private lateinit var orientation: OrientationEventListener
     @Volatile private var resumed = false
@@ -59,11 +65,21 @@ class MainActivity : Activity(), Session.Ui {
         val hint = TextView(this).apply {
             text = "Trên PC: mở Cam Studio, chọn điện thoại này trong danh sách camera.\n" +
                 "Nếu không thấy, chọn \"Thêm theo địa chỉ IP\" và nhập địa chỉ ở trên.\n" +
-                "Giữ ứng dụng này mở trong lúc dùng camera."
+                "Giữ ứng dụng này mở trong lúc dùng camera.\n" +
+                "Chia sẻ màn hình thì vẫn chạy khi bạn mở ứng dụng khác."
             textSize = 13f
             setTextColor(Color.rgb(0x88, 0x88, 0x88))
             gravity = Gravity.CENTER
             setPadding(48, 40, 48, 0)
+        }
+        screenButton = Button(this).apply {
+            setOnClickListener { toggleScreenSharing() }
+        }
+        screenStatus = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.rgb(0x9A, 0xC8, 0xFF))
+            gravity = Gravity.CENTER
+            setPadding(48, 16, 48, 0)
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -73,6 +89,11 @@ class MainActivity : Activity(), Session.Ui {
             addView(status)
             addView(address)
             addView(hint)
+            addView(screenButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = 48
+            })
+            addView(screenStatus)
             setOnClickListener { setDimmed(false) } // tap to light the screen up
         })
 
@@ -87,7 +108,7 @@ class MainActivity : Activity(), Session.Ui {
             }
         }
 
-        server = PhoneServer(this, this)
+        server = PhoneServer(this, this, CameraSource(this, this))
         server.start()
         status("Đang chờ máy tính kết nối…")
 
@@ -101,6 +122,8 @@ class MainActivity : Activity(), Session.Ui {
         resumed = true
         orientation.enable()
         address.text = server.addresses().joinToString("\n") { "$it:${server.port}" }
+        ScreenService.listener = { text -> runOnUiThread { showScreenState(text) } }
+        showScreenState(if (ScreenService.running) screenStatus.text.toString() else "")
     }
 
     override fun onPause() {
@@ -110,14 +133,59 @@ class MainActivity : Activity(), Session.Ui {
     }
 
     override fun onDestroy() {
+        ScreenService.listener = null
         server.stop()
         super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            askScreenCapture() // the notification is optional: share either way
+            return
+        }
         if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
             status("Cần quyền Camera để gửi hình sang máy tính")
         }
+    }
+
+    // ---- screen sharing ----------------------------------------------------------------
+
+    private fun toggleScreenSharing() {
+        if (ScreenService.running) {
+            ScreenService.stop(this)
+            return
+        }
+        // The "sharing" notification (with its Stop button) needs this on Android 13+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+            return
+        }
+        askScreenCapture()
+    }
+
+    private fun askScreenCapture() {
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        @Suppress("DEPRECATION")
+        startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_SCREEN)
+    }
+
+    @Deprecated("Activity result API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_SCREEN) return
+        if (resultCode == RESULT_OK && data != null) {
+            ScreenService.start(this, resultCode, data)
+            showScreenState("Đang chuẩn bị chia sẻ màn hình…")
+        } else {
+            showScreenState("")
+        }
+    }
+
+    private fun showScreenState(text: String) {
+        screenButton.text = if (ScreenService.running) "Dừng chia sẻ màn hình" else "Chia sẻ màn hình sang máy tính"
+        screenStatus.text = text
     }
 
     // ---- Session.Ui ------------------------------------------------------------------
@@ -144,6 +212,11 @@ class MainActivity : Activity(), Session.Ui {
         }
         latch.await(2, TimeUnit.MINUTES)
         return accepted
+    }
+
+    private companion object {
+        const val REQUEST_SCREEN = 10
+        const val REQUEST_NOTIFICATIONS = 11
     }
 
     private fun setDimmed(dim: Boolean) {

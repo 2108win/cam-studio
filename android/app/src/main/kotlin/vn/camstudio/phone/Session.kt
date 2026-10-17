@@ -1,8 +1,6 @@
 package vn.camstudio.phone
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
@@ -18,12 +16,16 @@ import org.json.JSONObject
 /**
  * One PC connection: handshake and pairing (docs/protocol.md section 3),
  * then control messages and the video stream with adaptive bitrate (6).
+ * What is streamed comes from `source` (cameras or screen).
  */
 class Session(
     private val context: Context,
     private val socket: Socket,
     private val store: Store,
     private val ui: Ui,
+    private val source: MediaSource,
+    /** False for the shared screen: it never pairs (no one to compare codes), it reuses the camera's keys. */
+    private val canPair: Boolean = true,
 ) {
     interface Ui {
         val inForeground: Boolean
@@ -34,10 +36,8 @@ class Session(
         fun status(streaming: Boolean, text: String)
     }
 
-    private val caps by lazy { CameraCaps(context) }
     private var channel: SecureChannel? = null
-    private var streamer: CameraStreamer? = null
-    private var streamLens: CameraCaps.Lens? = null
+    @Volatile private var streaming = false
     private var pcName = "máy tính"
     @Volatile private var closed = false
 
@@ -49,7 +49,6 @@ class Session(
     private var currentBitrate = 8_000_000
     private var lastCongestion = 0L
     private var waitingForKeyframe = false
-    private var lastOrientation = -1
 
     fun run() {
         try {
@@ -107,6 +106,11 @@ class Session(
 
         var next = io.read()
         if (next.optString("type") == "pairStart") {
+            if (!canPair) {
+                io.write(JSONObject().put("type", "error").put("code", "notPaired")
+                    .put("message", "Hãy ghép đôi với camera của điện thoại trước (chọn điện thoại trong danh sách camera trên PC)"))
+                throw ProtocolException("screen cannot pair")
+            }
             if (!ui.inForeground) {
                 io.write(JSONObject().put("type", "error").put("code", "background")
                     .put("message", "Hãy mở app Cam Studio trên điện thoại để ghép đôi"))
@@ -143,15 +147,15 @@ class Session(
             if (msg.kind != Wire.KIND_CONTROL) continue
             val json = msg.json()
             when (json.optString("type")) {
-                "getCaps" -> sendControl(caps.toJson(store.deviceName))
+                "getCaps" -> sendControl(source.caps(store))
                 "start" -> startStream(json)
                 "stop" -> {
                     stopStream()
                     sendControl(JSONObject().put("type", "stopped").put("reason", "pc"))
                     ui.status(false, "Đã kết nối với $pcName")
                 }
-                "set" -> streamer?.set(json)
-                "keyframe" -> streamer?.requestKeyframe()
+                "set" -> if (streaming) source.set(json)
+                "keyframe" -> if (streaming) source.requestKeyframe()
                 "stats" -> onStats(json)
                 "showSystemEffects" -> sendError("unsupported", "Android không có bảng hiệu ứng video hệ thống")
             }
@@ -160,90 +164,53 @@ class Session(
 
     private fun startStream(json: JSONObject) {
         stopStream()
-        if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            return sendError("permission", "Chưa cấp quyền Camera cho Cam Studio trên điện thoại")
-        }
-        if (!ui.inForeground) {
+        if (source.needsForeground && !ui.inForeground) {
             return sendError("background", "Hãy mở app Cam Studio trên điện thoại: Android chỉ cho dùng camera khi app đang mở")
         }
-        val lens = caps.lens(json.optString("lens")) ?: return sendError("unsupported", "Không có ống kính ${json.optString("lens")}")
-        val width = json.getInt("width")
-        val height = json.getInt("height")
-        val fps = json.getInt("fps")
-        val codec = json.optString("codec", "h264")
         targetBitrate = json.optInt("bitrateKbps", 8000) * 1000
         currentBitrate = targetBitrate
         waitingForKeyframe = false
         queue.clear()
 
-        val s = CameraStreamer(context, lens, width, height, fps, codec, currentBitrate, object : CameraStreamer.Listener {
-            override fun onConfig(data: ByteArray, length: Int) =
-                enqueue(Out(Wire.KIND_VIDEO_CONFIG, data.copyOf(length), 0, 0, System.nanoTime()))
+        val started = try {
+            source.start(json, currentBitrate, object : StreamCallbacks {
+                override fun onConfig(data: ByteArray, length: Int) =
+                    enqueue(Out(Wire.KIND_VIDEO_CONFIG, data.copyOf(length), 0, 0, System.nanoTime()))
 
-            override fun onFrame(data: ByteArray, length: Int, ptsUs: Long, keyframe: Boolean) =
-                enqueue(Out(Wire.KIND_VIDEO_FRAME, data.copyOf(length), ptsUs,
-                    if (keyframe) Wire.FLAG_KEYFRAME else 0, System.nanoTime()))
+                override fun onFrame(data: ByteArray, length: Int, ptsUs: Long, keyframe: Boolean) =
+                    enqueue(Out(Wire.KIND_VIDEO_FRAME, data.copyOf(length), ptsUs,
+                        if (keyframe) Wire.FLAG_KEYFRAME else 0, System.nanoTime()))
 
-            override fun onState(state: JSONObject) {
-                state.put("orientation", orientationFor(lens))
-                state.put("battery", batteryPercent())
-                state.put("charging", isCharging())
-                state.put("thermal", thermalName())
-                sendControl(state)
-            }
+                override fun onState(state: JSONObject) {
+                    state.put("battery", batteryPercent())
+                    state.put("charging", isCharging())
+                    state.put("thermal", thermalName())
+                    sendControl(state)
+                }
 
-            override fun onError(code: String, message: String) {
-                sendError(code, message)
-                ui.status(false, message)
-            }
-        })
-        try {
-            s.start(json.optString("stabilization", null))
-        } catch (e: CameraStreamer.OpenFailed) {
-            s.stop()
-            return sendError("busy", "Điện thoại không mở được ${lens.label}: ${e.message ?: e.cause?.javaClass?.simpleName}")
-        } catch (e: Exception) {
-            s.stop()
-            // Many codec errors have no message: report the type and where it came from.
-            val where = e.stackTrace.firstOrNull()?.let { " tại ${it.className.substringAfterLast('.')}.${it.methodName}" } ?: ""
-            return sendError("encoder", "Không khởi động được bộ mã hóa ${codec.uppercase()} ${width}×$height: " +
-                "${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}$where")
+                override fun onError(code: String, message: String) {
+                    sendError(code, message)
+                    ui.status(false, message)
+                }
+            })
+        } catch (e: StreamError) {
+            return sendError(e.code, e.message ?: e.code)
         }
-        streamer = s
-        streamLens = lens
-        lastOrientation = orientationFor(lens)
-        sendControl(JSONObject()
-            .put("type", "started").put("lens", lens.id)
-            .put("width", width).put("height", height).put("fps", fps)
-            .put("codec", codec).put("hdr", codec == "hevc10")
-            .put("orientation", lastOrientation))
-        ui.status(true, "Đang phát ${lens.label} · ${width}×$height · $fps fps → $pcName")
+        streaming = true
+        sendControl(started.message)
+        ui.status(true, "Đang phát ${started.label} → $pcName")
     }
 
     private fun stopStream() {
-        streamer?.stop()
-        streamer = null
-        streamLens = null
+        if (streaming) source.stop()
+        streaming = false
         queue.clear()
-    }
-
-    /** Clockwise rotation the PC must apply (Camera2 JPEG_ORIENTATION rule). */
-    private fun orientationFor(lens: CameraCaps.Lens): Int {
-        val sensor = lens.ch.get(android.hardware.camera2.CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
-        val device = ui.deviceRotation
-        return if (lens.facing == "front") (sensor - device + 360) % 360 else (sensor + device) % 360
     }
 
     /** Called by the activity when the phone is turned. */
     fun onRotationChanged() {
-        val lens = streamLens ?: return
-        val o = orientationFor(lens)
-        if (o != lastOrientation) {
-            lastOrientation = o
-            sendControl(JSONObject().put("type", "state").put("orientation", o))
-        }
+        if (streaming) source.onRotationChanged()
     }
-
     // ---- sending ---------------------------------------------------------------------
 
     private fun sendControl(json: JSONObject) {
@@ -293,7 +260,7 @@ class Session(
         val now = System.nanoTime()
         waitingForKeyframe = true
         queue.removeIf { it.kind == Wire.KIND_VIDEO_FRAME } // stale frames: drop all
-        streamer?.requestKeyframe()
+        if (streaming) source.requestKeyframe()
         if (now - lastCongestion > 1_000_000_000L) { // at most one step per second
             lastCongestion = now
             setBitrate(maxOf(1_000_000, (currentBitrate * 0.7).toInt()))
@@ -307,7 +274,7 @@ class Session(
     private fun setBitrate(bps: Int) {
         if (bps == currentBitrate) return
         currentBitrate = bps
-        streamer?.setBitrate(bps)
+        if (streaming) source.setBitrate(bps)
         sendControl(JSONObject().put("type", "bitrate").put("kbps", bps / 1000))
     }
 

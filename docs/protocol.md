@@ -30,7 +30,7 @@ PC duyệt `_camstudio._tcp` và đưa mỗi máy vào danh sách camera, ví d�
 
 **iOS:** `Info.plist` bắt buộc có `NSLocalNetworkUsageDescription` và `NSBonjourServices = ["_camstudio._tcp"]`. Thiếu thì việc quảng bá thất bại mà không báo lỗi gì.
 
-### 1.1 Chia sẻ màn hình (iPhone)
+### 1.1 Chia sẻ màn hình (iPhone, Android)
 
 Trên iPhone, màn hình được chia sẻ bằng một tiện ích ReplayKit (Broadcast Upload Extension) chạy trong tiến trình riêng.
 - **Người dùng bật trên iPhone:** bấm nút trong app, hoặc giữ nút Ghi màn hình trong Trung tâm điều khiển. PC không bật được.
@@ -48,6 +48,14 @@ Trên iPhone, màn hình được chia sẻ bằng một tiện ích ReplayKit (
 - **`caps`:** chỉ có một ống kính `{"id": "screen", "facing": "screen", "kind": "screen"}`, không có điều khiển. `modes` gồm kích thước gốc của ReplayKit (888×1920 trên iPhone 14) và các bản thu nhỏ.
 - **Hướng xoay:** khung luôn là khung dọc của màn hình. Khi xoay máy, `orientation` trong `state` đổi theo, giống camera.
 - **Màn hình đứng yên vẫn có khung:** ReplayKit chỉ gửi khung khi màn hình thay đổi. Vì vậy tiện ích gửi lại khung cuối vài lần mỗi giây (PC ngắt nguồn im lặng quá 6 giây), và gửi ngay một khung khi bắt đầu phát hoặc khi được xin `keyframe`.
+
+**Android:** dùng cùng cổng, cùng TXT, cùng `caps` và cùng lỗi `notPaired`. Chỉ khác cách lấy màn hình:
+- **Cách lấy màn hình:** MediaProjection, chạy ngay trong app, trong một foreground service loại `mediaProjection`.
+- **Bật:** người dùng bấm "Chia sẻ màn hình sang máy tính" trong app rồi đồng ý trong hộp thoại của hệ thống. Mỗi lần chia sẻ phải đồng ý lại (Android 14 trở lên).
+- **Tắt:** bấm "Dừng" trong thông báo, bấm lại nút trong app, hoặc dùng nút dừng của hệ thống.
+- **Chạy nền:** vẫn chạy khi đang mở ứng dụng khác.
+- **Hướng xoay:** khung luôn dọc. Khi máy nằm ngang, app xoay màn hình ngang một phần tư vòng theo chiều kim đồng hồ để vừa khung dọc, và báo `orientation = 270` để PC xoay lại.
+- **Kích thước:** mọi kích thước đều là bội số của 16.
 
 **Tường lửa:** PC chỉ kết nối ra ngoài (ra điện thoại), nên Windows không hiện hộp thoại tường lửa.
 
