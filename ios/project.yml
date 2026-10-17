@@ -27,11 +27,14 @@ targets:
       # App icon (scripts/make-icon-ios.swift). Outside CamStudio/ so the SwiftPM/xtool build
       # does not pick it up as a resource.
       - path: Resources/Assets.xcassets
+      # Privacy manifest (App Store Connect rejects an upload without one); the extension has a copy.
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - target: CamStudioScreen      # embedded in PlugIns
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: vn.camstudio.phone
+        PRODUCT_BUNDLE_IDENTIFIER: $(CAMSTUDIO_BUNDLE_ID)   # Signing.xcconfig
         TARGETED_DEVICE_FAMILY: "1,2"
         # Same Info.plist as the xtool build (xtool.yml); Xcode merges in the standard keys.
         INFOPLIST_FILE: Info.plist
@@ -52,9 +55,11 @@ targets:
       - path: CamStudio/PhoneServer.swift
       - path: CamStudio/StreamSupport.swift
       - path: CamStudio/VideoEncoder.swift
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: vn.camstudio.phone.screen
+        PRODUCT_BUNDLE_IDENTIFIER: $(CAMSTUDIO_BUNDLE_ID).screen
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_FILE: CamStudioScreen/Info.plist
         GENERATE_INFOPLIST_FILE: YES

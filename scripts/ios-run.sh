@@ -22,6 +22,11 @@ fi
 
 xcodegen --quiet
 dd=../build/ios-dd
+# A bundle id of your own (for TestFlight, see ios-archive.sh): make sure it lands on the right team.
+if grep -q '^ *CAMSTUDIO_BUNDLE_ID' Signing.local.xcconfig; then
+    source ../scripts/ios-team.sh
+    ios_confirm_team "$(ios_setting DEVELOPMENT_TEAM)" "$(ios_setting PRODUCT_BUNDLE_IDENTIFIER)"
+fi
 
 if [[ "${1:-}" != "--no-test" ]]; then
     echo "== CryptoTests (Mac)"
@@ -42,5 +47,7 @@ echo "== Build cho iPhone $udid"
 xcodebuild build -quiet -project CamStudio.xcodeproj -scheme CamStudio -destination "platform=iOS,id=$udid" \
     -derivedDataPath "$dd" -allowProvisioningUpdates -allowProvisioningDeviceRegistration
 echo "== Cài và mở app"
-xcrun devicectl device install app --device "$udid" "$dd/Build/Products/Debug-iphoneos/CamStudio.app" >/dev/null
-xcrun devicectl device process launch --terminate-existing --device "$udid" vn.camstudio.phone
+app="$dd/Build/Products/Debug-iphoneos/CamStudio.app"
+xcrun devicectl device install app --device "$udid" "$app" >/dev/null
+xcrun devicectl device process launch --terminate-existing --device "$udid" \
+    "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"

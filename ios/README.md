@@ -35,6 +35,38 @@ open CamStudio.xcodeproj
 
 **Icon app:** giống logo bản PC và Android (máy quay trắng trên nền xanh), nằm ở [Resources/Assets.xcassets](Resources/Assets.xcassets). Muốn vẽ lại thì chạy `swift scripts/make-icon-ios.swift` từ thư mục gốc. Script vẽ theo đúng tỉ lệ của `scripts/make-icon.ps1`. Bản build bằng xtool chưa có icon này.
 
+## Đưa lên TestFlight
+
+Cần **tài khoản Apple Developer Program trả phí**. Personal Team (tài khoản miễn phí) không upload được.
+
+1. Đăng nhập tài khoản đó trong Xcode › Settings › Accounts.
+2. Ghi team và bundle id vào `ios/Signing.local.xcconfig` (file này không đưa lên git):
+   ```
+   DEVELOPMENT_TEAM = ABCDE12345
+   CAMSTUDIO_BUNDLE_ID = com.tenban.camstudio
+   ```
+   - **Đổi team và bundle id cùng một lần sửa.** Xcode tự đăng ký bundle id trên team đang ký, và id đã đăng ký thì không chuyển sang tài khoản khác được. Ghi id mới mà team vẫn là team cũ, chỉ cần chạy một script là id đó thuộc về team cũ. `vn.camstudio.phone` đã mất theo cách này. Lần đầu build một id trên một team, cả hai script hiện tên team và hỏi lại trước khi đăng ký.
+   - Bundle id mặc định `vn.camstudio.phone` chỉ dùng để build vào máy. Tiện ích chia sẻ màn hình tự lấy id `<bundle id>.screen`.
+   - Đổi team hay bundle id thì iPhone coi đây là app mới: PC phải ghép đôi lại.
+   - `scripts/ios-run.sh` cũng đọc file này, nên bản build vào máy dùng luôn id mới.
+3. Archive:
+   ```bash
+   scripts/ios-archive.sh
+   ```
+   - Script tạo project, archive bản Release, rồi mở bản archive trong **Xcode › Organizer**.
+   - Lần đầu, Xcode tự đăng ký hai bundle id (app và tiện ích) trên tài khoản.
+   - Số build mặc định lấy theo ngày giờ, ví dụ `20261017.2230`. Mỗi lần upload phải dùng số lớn hơn lần trước. Có thể tự đặt bằng `--build N`, nhưng sau khi đã upload một bản theo ngày giờ thì số nhỏ như `7` sẽ bị từ chối.
+   - Muốn kiểm tra bản Release biên dịch được mà chưa có tài khoản: `scripts/ios-archive.sh --unsigned`. Bản này không upload được.
+4. Trên [App Store Connect](https://appstoreconnect.apple.com), vào **Apps › +  › New App** và chọn bundle id ở bước 2. Tên app phải chưa ai dùng trên App Store.
+5. Trong Organizer, chọn bản archive, bấm **Distribute App › TestFlight & App Store** rồi **Upload**. Xcode tự lo chứng chỉ phân phối.
+6. **Mã hóa:** sau khi xử lý xong, App Store Connect hỏi về mã hóa (export compliance) cho từng bản build. App có tự mã hóa kết nối tới PC (ECDH, AES‑GCM qua CryptoKit). Chưa trả lời thì bản build chưa mời người thử được.
+
+App có sẵn [Resources/PrivacyInfo.xcprivacy](Resources/PrivacyInfo.xcprivacy) cho cả app và tiện ích:
+- không theo dõi người dùng, không thu thập dữ liệu;
+- khai báo `UserDefaults` với lý do CA92.1.
+
+App Store Connect từ chối bản upload nếu thiếu file này.
+
 ## Thử trên Mac, không cần PC Windows
 
 [tools/fake_pc.swift](../tools/fake_pc.swift) là một "PC giả" chạy trên Mac. Nó làm đúng việc của app PC:

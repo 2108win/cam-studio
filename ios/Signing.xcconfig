@@ -1,4 +1,9 @@
 // Signing team for this Mac, kept out of git: XcodeGen regenerates the project and would drop a
 // team picked in Xcode. Signing.local.xcconfig holds one line (scripts/ios-run.sh writes it once):
 //   DEVELOPMENT_TEAM = ABCDE12345
+// It can also set the bundle id (the screen extension is that id + ".screen"). The default is
+// only registered for development on the wildcard profile; TestFlight needs an id registered on
+// the team's own account (scripts/ios-archive.sh):
+//   CAMSTUDIO_BUNDLE_ID = com.example.camstudio
+CAMSTUDIO_BUNDLE_ID = vn.camstudio.phone
 #include? "Signing.local.xcconfig"
