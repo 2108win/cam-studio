@@ -13,6 +13,9 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
 constexpr ULONGLONG kPreviewIntervalMs = 33; // ~30 fps is plenty for a preview
+// Source closed after this long with no app on the camera and no preview on
+// screen (an app switching cameras or a quick glance should not reopen it).
+constexpr ULONGLONG kIdleCloseMs = 5000;
 
 inline uint8_t Clamp255(int v)
 {
@@ -113,7 +116,7 @@ public:
                 hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
                     MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
                     CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
-                if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (cài lại Cam Studio bằng Install.cmd)"; return hr; }
+                if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (hãy cài lại Cam Studio bằng file CamStudio-Setup)"; return hr; }
                 MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
                 MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
                 hr = m_vcam->Start(nullptr);
@@ -173,6 +176,15 @@ public:
 
     // The virtual camera is registered (it outlives a lost source).
     bool Live() const { return m_vcam != nullptr; }
+
+    // Some app is streaming from the virtual camera right now (Frame Server
+    // started our source's stream). Cheap: the mapping is looked up at most
+    // twice a second until it exists.
+    bool ConsumerActive()
+    {
+        m_writer.TryOpen();
+        return m_writer.ConsumerActive();
+    }
 
     const std::wstring& Failure() const { return m_failure; }
 
@@ -313,7 +325,7 @@ void CaptureEngine::Start(const CameraDevice& cam, const NativeFormat& format, c
         m_camera = cam;
         m_format = format;
         m_image = image;
-        m_sourceRotation = 0;
+        m_sourceRotation = ExpectedRotationLocked(cam, format);
         m_phoneState.clear();
     }
     StartLocked();
@@ -359,6 +371,48 @@ std::string CaptureEngine::PhoneState() const
 {
     std::lock_guard lk(m_lock);
     return m_phoneState;
+}
+
+int CaptureEngine::ExpectedRotationLocked(const CameraDevice& cam, const NativeFormat& format) const
+{
+    if (!cam.IsPhone()) return 0;
+    const auto it = m_rotationMemory.find(cam.name + L"|" + Widen(format.phoneCamera));
+    if (it != m_rotationMemory.end()) return it->second;
+    // First time: phones are usually held upright. Their camera sensors are
+    // mounted sideways (90), and an Android screen streams landscape (270).
+    return format.phoneCamera == "screen" ? 270 : 90;
+}
+
+bool CaptureEngine::SourceWanted(Pipeline& pipeline)
+{
+    return m_previewEnabled || pipeline.ConsumerActive();
+}
+
+bool CaptureEngine::StillWanted(Pipeline& pipeline, ULONGLONG& idleSince)
+{
+    if (SourceWanted(pipeline))
+    {
+        idleSince = 0;
+        return true;
+    }
+    const ULONGLONG now = GetTickCount64();
+    if (!idleSince) idleSince = now;
+    return now - idleSince < kIdleCloseMs;
+}
+
+void CaptureEngine::SetStandby(bool standby)
+{
+    {
+        std::lock_guard lk(m_lock);
+        if (m_status.standby == standby) return;
+        m_status.standby = standby;
+        if (standby)
+        {
+            m_status.fps = 0;
+            m_status.consumerActive = false;
+        }
+    }
+    Notify();
 }
 
 ImageSettings CaptureEngine::EffectiveImageLocked() const
@@ -500,11 +554,34 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
         Pipeline pipeline(*this);
         while (!m_quit)
         {
+            // Standby: nothing needs a picture (no app on the camera, preview
+            // hidden). The virtual camera is published so apps can find and
+            // open it, but the source stays closed: no webcam light, no phone
+            // encoding or Wi‑Fi traffic, no decoding. Opening it wakes us.
+            if (!SourceWanted(pipeline))
+            {
+                if (!pipeline.Live())
+                {
+                    const HRESULT hr = pipeline.Begin(format.width, format.height, format.fpsNum, format.fpsDen, format.subtype);
+                    if (FAILED(hr)) { Fail(pipeline.Failure(), hr); break; }
+                }
+                {
+                    std::lock_guard lk(m_lock);
+                    if (m_status.state == State::Waiting) m_status.state = State::Running; // nothing to wait for now
+                    m_status.error.clear();
+                }
+                SetStandby(true);
+                for (int i = 0; i < 2 && !m_quit && !SourceWanted(pipeline); ++i) Sleep(100);
+                continue;
+            }
+            SetStandby(false);
+
             std::wstring why;
             HRESULT hr = S_OK;
             const Outcome outcome = cam.IsPhone() ? RunPhone(pipeline, cam, format, why, hr)
                                                   : RunWebcam(pipeline, cam, format, why, hr);
             if (outcome == Outcome::Quit || m_quit) break;
+            if (outcome == Outcome::Idle) continue; // back to standby
             // Before the virtual camera exists there is nothing to keep alive:
             // report the problem (wrong lens, camera busy…) as before.
             if (outcome == Outcome::Fatal || !pipeline.Live())
@@ -530,6 +607,7 @@ CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const Camera
     ComPtr<IMFMediaSource> source;
     ComPtr<IMFSourceReader> reader;
     UINT32 width = 0, height = 0;
+    ULONGLONG idleSince = 0;
 
 #define STEP(expr, what) do { hr = (expr); if (FAILED(hr)) { why = what; outcome = Outcome::Lost; goto cleanup; } } while (0)
 
@@ -576,6 +654,8 @@ CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const Camera
     // 4. Capture loop.
     while (!m_quit)
     {
+        // Nobody needs the picture any more: close the webcam (its light goes off).
+        if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; goto cleanup; }
         DWORD streamIndex = 0, flags = 0;
         LONGLONG ts = 0;
         ComPtr<IMFSample> sample;
@@ -657,7 +737,11 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
 
     auto stateFrom = [&](const json::Value& v) {
         std::lock_guard lk(m_lock);
-        if (!v["orientation"].IsNull()) m_sourceRotation = ((v["orientation"].Int() % 360) + 360) % 360;
+        if (!v["orientation"].IsNull())
+        {
+            m_sourceRotation = ((v["orientation"].Int() % 360) + 360) % 360;
+            m_rotationMemory[cam.name + L"|" + Widen(format.phoneCamera)] = m_sourceRotation;
+        }
         if (v["type"].Str() == "state") m_phoneState = v.Dump();
     };
     // A phone "error": some only need the user to bring the app back, the
@@ -717,9 +801,12 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     ULONGLONG lastStats = lastFrame;
     std::vector<uint8_t> unit;
     Outcome outcome = Outcome::Quit;
+    ULONGLONG idleSince = 0;
 
     while (!m_quit)
     {
+        // Nobody needs the picture any more: the phone stops encoding and sending.
+        if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
         phone::Message m;
         bool timedOut = false;
         const bool got = link.Receive(m, 500, timedOut);

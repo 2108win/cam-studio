@@ -1,146 +1,212 @@
+<div align="center">
+
+<img src="app/Assets/CamStudio.png" width="96" alt="Cam Studio" />
+
 # Cam Studio
 
-Một app giống Camo Studio: lấy hình từ camera ngoài và đưa ra một **camera ảo** ("Cam Studio") ở **độ phân giải gốc** của camera. Zoom, Teams, OBS và trình duyệt đều dùng được camera ảo này.
+**Biến webcam, điện thoại Android hay iPhone thành camera cho máy tính, ở đúng độ phân giải gốc của camera.**
 
-**Nguồn hình:**
-- **Webcam USB / capture card:** đã chạy.
-- **Điện thoại Android qua Wi‑Fi:** đã chạy với Redmi 9T, dùng được cả 4 ống kính: siêu rộng 0.6×, chính 1×, macro và camera trước.
-  - **Chia sẻ màn hình Android:**
-    - **Cách bật:** trong app, bấm "Chia sẻ màn hình sang máy tính" rồi đồng ý. Trên PC, màn hình hiện thành nguồn "<tên máy> · Màn hình".
-    - **Chạy nền:** vẫn chạy khi bạn mở ứng dụng khác.
-    - **Cách dừng:** bấm "Dừng" trong thông báo.
-    - **Tình trạng:** đã chạy với Redmi 9T: dọc, cả hai chiều ngang, khi đang ở màn hình chính, và tự kết nối lại sau khi dừng rồi bật lại.
-- **iPhone qua Wi‑Fi:** đã chạy trên iPhone 14 (iOS 27.2) với "PC giả" trên Mac (mọi ống kính, tới 4K và HDR, điện ảnh), và PC Windows đã phát được 4K từ iPhone.
-  - **Chia sẻ màn hình iPhone:** màn hình hiện trên PC thành nguồn "iPhone · Màn hình". Đã thử với PC giả, chưa thử với PC Windows. Xem [ios/README.md](ios/README.md).
-- **Điện thoại qua USB:** dùng chung giao thức, sẽ làm sau.
+Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một camera tên **"Cam Studio"**.
 
-## Cài đặt (bản phát hành)
+[![Bản mới nhất](https://img.shields.io/github/v/release/2108win/cam-studio?label=b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t&color=0A6ED1)](https://github.com/2108win/cam-studio/releases/latest)
+![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
+![Android 8+](https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)
+![iOS 17+](https://img.shields.io/badge/iOS-17%2B-000000?logo=apple&logoColor=white)
 
-Tải file ở trang [Releases](https://github.com/2108win/cam-studio/releases):
+[**⬇ Tải cho Windows**](https://github.com/2108win/cam-studio/releases/latest) · [**⬇ Tải cho Android**](https://github.com/2108win/cam-studio/releases/latest) · [Hướng dẫn iPhone](ios/README.md)
 
-- **Windows 11:**
-  - Tải `CamStudio-<phiên bản>-win-x64.zip` và giải nén.
-  - Bấm đúp `Install.cmd`, rồi bấm Yes khi Windows hỏi quyền Admin.
-  - Mở **Cam Studio** từ Start menu.
-  - Gỡ cài đặt trong Settings › Apps.
-- **Android 8 trở lên:**
-  - Chép `CamStudio-<phiên bản>-android.apk` sang điện thoại rồi mở file để cài.
-  - Điện thoại sẽ hỏi quyền cài app từ nguồn ngoài, hãy cho phép.
+<img src="docs/images/pc-app-phone-screen.png" width="760" alt="Cam Studio trên Windows, đang phát màn hình một chiếc Redmi 9T" />
 
-Đóng gói bản mới bằng `scripts\package-release.ps1`. Kết quả nằm trong `build\dist`.
+</div>
 
-## Điện thoại làm webcam (Wi‑Fi)
+---
 
-- **Chạy trên PC:** [CamStudio.exe](app/) tự tìm điện thoại trong cùng mạng Wi‑Fi (mDNS `_camstudio._tcp`). Nếu mạng chặn mDNS, chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại.
-- **Ghép đôi lần đầu:** PC và điện thoại cùng hiện một **mã 6 số**. Bấm **Đồng ý** trên điện thoại nếu hai mã giống nhau. Sau lần này, kết nối tự xác thực, và mọi dữ liệu đều được mã hóa AES‑256‑GCM.
-- **Tận dụng hết camera của điện thoại:**
-  - Điện thoại tự báo **mọi ống kính**: góc rộng, siêu rộng, tele, camera trước, và camera ảo tự đổi ống kính.
-  - Kèm theo mọi độ phân giải/fps mà bộ mã hóa phần cứng hỗ trợ, cùng HDR, chống rung và các chỉnh tay.
-  - PC dựng bảng điều khiển (icon điện thoại ở thanh công cụ) từ đúng những gì máy đó có.
-  - **iPhone:** có thêm nút mở bảng hiệu ứng hệ thống (Xóa phông, Ánh sáng studio, Center Stage). Chế độ Điện ảnh có từ iOS 26.
-- **Xoay điện thoại:** hướng ảnh và khung dọc/ngang trên PC tự đổi theo.
-- **Mạng yếu:** bitrate tự giảm để hình không bị trễ dồn.
+## Vì sao dùng Cam Studio
 
-| Phần | Thư mục | Build |
+- **Độ phân giải gốc:** camera ảo phát đúng kích thước camera thật cho ra (1080p, 4K…), không bị ép xuống 720p.
+- **Điện thoại làm webcam qua Wi‑Fi:** dùng được mọi ống kính của máy:
+  - góc rộng, siêu rộng 0.6×, tele, macro, camera trước;
+  - kể cả những ống kính mà Xiaomi/Redmi giấu đi với ứng dụng khác.
+- **Chia sẻ màn hình điện thoại:** màn hình Android hoặc iPhone hiện trên PC như một camera. Hình luôn đúng chiều khi xoay máy.
+- **Điều khiển ngay trên khung hình:**
+  - đổi ống kính, zoom, đèn flash, bù sáng, chạm để lấy nét;
+  - chỉnh tay ISO, tốc độ màn trập, cân bằng trắng.
+- **Chỉnh hình:** lật, xoay, cắt khung theo tỉ lệ, zoom số, chỉnh sáng, tương phản, độ bão hòa, nhiệt độ màu.
+- **Rất nhẹ:** chỉ bật camera khi có ứng dụng dùng (xem [bên dưới](#nhẹ-và-tiết-kiệm)).
+- **Không bị rớt camera:** khi điện thoại tạm ẩn app hay mất Wi‑Fi, Discord vẫn giữ camera "Cam Studio" và hình tự quay lại khi nguồn sẵn sàng.
+- **An toàn:**
+  - ghép đôi bằng mã 6 số, so khớp trên cả hai máy;
+  - mọi dữ liệu giữa điện thoại và PC đều mã hóa AES‑256‑GCM;
+  - không đi qua máy chủ nào, mọi thứ ở trong mạng nhà bạn.
+
+## Tải về và cài đặt
+
+| Thiết bị | Tải | Cài đặt |
 |---|---|---|
-| Đặc tả giao thức (chung cho cả ba bên) | [docs/protocol.md](docs/protocol.md) | — |
-| App Android (Kotlin, Camera2 + MediaCodec) | [android/](android/) | Windows: `scripts\build-android.ps1` → `build\CamStudioPhone.apk`. Mac/Linux: `cd android && ./gradlew assembleRelease` |
-| App iPhone (Swift, AVFoundation + VideoToolbox) | [ios/](ios/) | Trên Mac: `scripts/ios-run.sh` (Xcode + XcodeGen), hoặc trên Windows (WSL) bằng xtool. Xem [ios/README.md](ios/README.md) |
-| PC giả để thử app điện thoại trên Mac | [tools/fake_pc.swift](tools/fake_pc.swift) | `scripts/fake-pc.sh --lens all` |
-| Kiểm tra mật mã khớp giữa các bên | [docs/protocol-vectors.json](docs/protocol-vectors.json) | `build\Release\camstudio-protocol-test.exe` (PC), `gradlew testDebugUnitTest` (Android), scheme `CryptoTestsMac` trong Xcode (iOS, chạy ngay trên Mac) |
+| **Windows 11** (64‑bit) | `CamStudio-Setup-<phiên bản>.exe` trong [Releases](https://github.com/2108win/cam-studio/releases/latest) | Bấm đúp file, bấm **Có** khi Windows hỏi quyền, rồi **Tiếp tục** đến hết. Không cần cài thêm .NET hay Visual C++. |
+| **Android** 8.0 trở lên | `CamStudio-<phiên bản>-android.apk` | Chép sang điện thoại, mở file và cho phép cài. Cập nhật: cài đè lên bản cũ. |
+| **iPhone** iOS 17 trở lên | build từ mã nguồn | Xem [ios/README.md](ios/README.md): build bằng Xcode trên Mac, hoặc bằng xtool trên Windows. |
 
-**Cài app Android:**
-- Bật **Gỡ lỗi USB** rồi chạy `adb install build\CamStudioPhone.apk`.
-- Hoặc chép file APK sang điện thoại rồi mở để cài.
+> [!NOTE]
+> Ứng dụng chưa có chữ ký số, nên Windows có thể hiện **"Windows protected your PC"**. Bấm **More info** rồi **Run anyway**.
 
-## Kiến trúc
+Gỡ cài đặt trong **Settings › Apps › Installed apps › Cam Studio**.
 
+## Bắt đầu nhanh
+
+**Webcam USB hoặc capture card**
+1. Mở **Cam Studio**, chọn camera ở góc trên bên trái.
+2. Bật công tắc **Camera ảo**.
+3. Trong Discord, Zoom, OBS…: chọn camera **Cam Studio**.
+
+**Điện thoại làm camera**
+1. Cài app lên điện thoại. Điện thoại và máy tính phải dùng chung một mạng Wi‑Fi.
+2. Mở app trên điện thoại. Trên PC, chọn tên điện thoại trong danh sách camera.
+3. Lần đầu, hai máy hiện cùng một mã 6 số: bấm **Đồng ý** ở cả hai bên.
+4. Bật **Camera ảo**. Đổi ống kính và zoom ngay trên khung hình.
+
+<img src="docs/images/android-app.png" width="360" align="right" alt="App Cam Studio trên Android" />
+
+**Chia sẻ màn hình điện thoại**
+1. **Android:** trong app, bấm **Chia sẻ màn hình sang máy tính**, rồi bấm **Bắt đầu ngay**.
+   **iPhone:** bấm nút chia sẻ màn hình trong app.
+2. Trên PC, chọn nguồn **"<tên máy> · Màn hình"**.
+3. Bạn cứ dùng điện thoại bình thường, màn hình vẫn được chia sẻ. Bấm **Dừng** trong thông báo để tắt.
+
+> [!TIP]
+> - **Không thấy điện thoại?** Chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại.
+> - **Dùng camera điện thoại:** cần để app mở trên màn hình. Android và iOS không cho ứng dụng chạy nền dùng camera. App tự làm tối màn hình để đỡ tốn pin.
+
+<br clear="right" />
+
+## Nhẹ và tiết kiệm
+
+Bật **Camera ảo** một lần là xong. Bạn không cần tự bật hay tắt:
+
+- **Không có ứng dụng nào dùng camera và cửa sổ Cam Studio đang ẩn:**
+  - nguồn hình đóng hẳn: webcam tắt đèn, điện thoại ngừng mã hóa và gửi hình;
+  - camera "Cam Studio" vẫn có sẵn để ứng dụng khác chọn.
+- **Khi Discord, Zoom… mở camera:** nguồn tự bật lại sau khoảng 0,5–2 giây.
+- **Khi ứng dụng đó tắt camera:** 5 giây sau nguồn tự đóng.
+- **Khi thu xuống khay:** bộ nhớ được trả lại cho Windows.
+
+Đo trên PC thật, webcam 1920×1080 @ 100 fps:
+
+| Trạng thái | CPU (một nhân) | RAM | Webcam |
+|---|---|---|---|
+| Đang mở cửa sổ, xem trước 100 fps | ~21% | ~165 MB | đang bật |
+| **Ẩn xuống khay, không ứng dụng nào dùng** | **~0,1%** | **~45 MB** | **tắt** |
+| Ẩn, phát màn hình điện thoại, chưa ai dùng | ~0,3% | ~47 MB | điện thoại không mã hóa |
+
+Nếu muốn Cam Studio luôn sẵn sàng: bật **Chạy cùng Windows** khi cài, hoặc trong **Cài đặt** của app. App sẽ chạy ẩn ở khay.
+
+## Câu hỏi thường gặp
+
+<details>
+<summary><b>Discord, Zoom không thấy camera "Cam Studio"</b></summary>
+
+Mở Cam Studio và bật **Camera ảo**. Sau đó chọn lại camera trong Discord hoặc Zoom (có ứng dụng phải tắt camera rồi bật lại mới thấy camera mới).
+</details>
+
+<details>
+<summary><b>Báo lỗi "Không bật được camera ảo (0x80070005)"</b></summary>
+
+Một ứng dụng (thường là Discord) vẫn giữ camera ảo cũ. Tắt camera trong ứng dụng đó rồi bật lại. Nếu vẫn lỗi, bấm nút **Khởi động lại dịch vụ camera** ngay trên thanh báo lỗi.
+</details>
+
+<details>
+<summary><b>Hình bị ngược trái phải</b></summary>
+
+Bấm nút **Lật ngang** ở thanh công cụ. Một số ứng dụng (Discord, Zoom) tự lật hình xem trước của bạn, nhưng người khác vẫn thấy hình đúng chiều.
+</details>
+
+<details>
+<summary><b>Điện thoại báo "app bị ẩn" hoặc hình đứng</b></summary>
+
+- **Camera điện thoại:** chỉ chạy khi app đang mở trên màn hình. Mở lại app, hình sẽ tự quay lại trên PC.
+- **Chia sẻ màn hình:** chạy cả khi app ẩn.
+</details>
+
+<details>
+<summary><b>Điện thoại Xiaomi/Redmi thiếu ống kính siêu rộng hoặc macro</b></summary>
+
+Cam Studio tự tìm các ống kính mà MIUI giấu đi. Ống kính nào điện thoại không cho mở thì sẽ không hiện, để tránh lỗi.
+</details>
+
+## Dành cho nhà phát triển
+
+```mermaid
+flowchart LR
+    W[Webcam USB] --> E
+    A[App Android<br/>Camera2 · MediaProjection] -- "Wi‑Fi, mã hóa<br/>H.264 / HEVC" --> E
+    I[App iPhone<br/>AVFoundation · ReplayKit] -- "Wi‑Fi, mã hóa<br/>H.264 / HEVC" --> E
+    E[CamStudioEngine.dll<br/>C++ · Media Foundation] -- "bộ nhớ chung NV12" --> V[CamStudioVCam.dll<br/>camera ảo, chạy trong Frame Server]
+    U[CamStudio.exe<br/>WinUI 3 · C#] -- C API --> E
+    V --> D[Discord · Zoom · OBS…]
 ```
-webcam USB ──► CamStudioEngine.dll ──(shared memory Global\, NV12)──► CamStudioVCam.dll ──► Zoom / OBS / Teams
-               chụp ở chế độ đã chọn                                   (Frame Server nạp,
-               MJPG/YUY2 → NV12                                         chạy trong session 0)
-               xoay/lật → cắt khung/zoom
-               MFCreateVirtualCamera
-                    ▲
-                    │ C API (P/Invoke)
-               CamStudio.exe (WinUI 3, C#)
+
+| Phần | Thư mục | Ngôn ngữ |
+|---|---|---|
+| Ứng dụng Windows | [`app/`](app/) | C# · WinUI 3 · .NET 10 |
+| Engine: chụp, giải mã, xoay/cắt/chỉnh màu, kết nối điện thoại | [`src/engine/`](src/engine/) | C++ · Media Foundation |
+| Camera ảo (Media Foundation virtual camera) | [`src/vcam/`](src/vcam/) | C++ · COM/WRL |
+| App Android | [`android/`](android/) | Kotlin · Camera2 · MediaCodec |
+| App iPhone | [`ios/`](ios/) | Swift · AVFoundation · VideoToolbox |
+| Giao thức điện thoại ⇄ PC | [`docs/protocol.md`](docs/protocol.md) | — |
+| Công cụ kiểm thử | [`src/verify/`](src/verify/), [`tools/`](tools/) | C++ · Swift · Python |
+
+<details>
+<summary><b>Build</b></summary>
+
+**Windows** (cần Visual Studio 2022 Build Tools với C++, .NET SDK 10):
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1           # engine, camera ảo, app
+powershell -ExecutionPolicy Bypass -File scripts\register.ps1        # (Admin) đăng ký camera ảo cho bản build
 ```
 
-- **`app/`**: giao diện **WinUI 3** (C#, .NET 10, Windows App SDK đóng gói kèm, không cần cài thêm).
-  - **Phong cách Windows 11:** nền Mica, thanh tiêu đề riêng, các thẻ cài đặt giống app Settings.
-  - **Giao diện:** Sáng/Tối theo Windows, hoặc chọn tay.
-- **`src/engine`**: `CamStudioEngine.dll`, phần xử lý camera viết bằng C++, có C API ở [EngineApi.h](src/engine/EngineApi.h).
-  - Chạy ở luồng riêng, khóa chế độ native đã chọn trước khi tạo source reader.
-  - Xoay/lật, rồi cắt theo tỉ lệ và zoom số (bilinear).
-  - Đăng ký camera ảo (lifetime `Session`) theo đúng kích thước đầu ra.
-- **`src/vcam`**: camera ảo dạng Media Foundation media source (COM, dùng WRL), dựa theo [mẫu VirtualCamera](https://github.com/microsoft/Windows-Camera/tree/master/Samples/VirtualCamera) (MIT) của Microsoft.
-  - **Định dạng cung cấp:** kích thước đầu ra trước tiên, sau đó các cỡ nhỏ hơn cùng tỉ lệ khung hình. Mỗi cỡ có fps gốc, và có thêm bản 30 fps nếu fps gốc cao hơn 30.
-- **`src/verify`**: mở camera ảo theo cách một app bình thường mở. Nó kiểm tra định dạng lớn nhất có bằng độ phân giải gốc của camera thật không, và đọc 30 khung hình để chắc đó là hình thật chứ không phải màn hình "no signal".
-- **`src/common/SharedFrame.h`**: quy ước dùng chung giữa engine và DLL camera ảo: tên object, seqlock, DACL.
+**Android** (JDK 17, Android SDK 36):
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-android.ps1   # → build\CamStudioPhone.apk
+```
+Trên Mac hoặc Linux: `cd android && ./gradlew assembleRelease`.
 
-## Build
+**iPhone:** xem [ios/README.md](ios/README.md).
 
-Cần:
-- Visual Studio 2022 Build Tools (workload C++, Windows SDK 10.0.22000 trở lên)
-- .NET SDK 10
-- Internet cho lần build đầu, để tải gói NuGet Windows App SDK
+**Đóng gói bản phát hành** (cần [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`):
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1  # → build\dist: Setup.exe + APK
+```
+</details>
+
+<details>
+<summary><b>Kiểm thử</b></summary>
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build.ps1        # C++ (CMake) rồi app WinUI
-powershell -ExecutionPolicy Bypass -File scripts\make-icon.ps1    # chỉ khi muốn vẽ lại icon
+build\Release\camstudio-protocol-test.exe                        # mật mã khớp từng byte với docs/protocol-vectors.json
+build\Release\camstudio-verify.exe --device obsbot               # camera ảo có đúng độ phân giải gốc, hình có thật không
+build\Release\camstudio-verify.exe --expect 1280x720 --mode 1    # đọc ở 30 fps như Discord; in số khung "no signal", nhịp khung
+build\Release\camstudio-verify.exe --hold 60                     # giữ camera như một cuộc gọi
+build\Release\camstudio-fake-phone.exe                           # điện thoại giả để thử PC không cần máy thật
+build\Release\camstudio-dshow-consumer.exe                       # mở camera qua DirectShow như Discord
 ```
+- **Android:** `gradlew testDebugUnitTest`
+- **iOS:** scheme `CryptoTestsMac`
+</details>
 
-App được build ra `app\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64\CamStudio.exe`.
-
-## Cài đặt (một lần, cần quyền Admin)
+<details>
+<summary><b>Dòng lệnh và gỡ lỗi</b></summary>
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\register.ps1
+CamStudio.exe --device obsbot     # chọn sẵn camera và bật camera ảo
+CamStudio.exe --tray              # chạy ẩn ở khay
 ```
+- **Cài đặt:** lưu ở `HKCU\Software\CamStudio`.
+- **Khóa ghép đôi điện thoại:** lưu ở `%LOCALAPPDATA%\CamStudio`, được bảo vệ bằng DPAPI.
+- **Log của camera ảo:** DLL chạy trong Frame Server, nên muốn xem log thì mở [DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview) bằng quyền Admin, bật *Capture Global Win32*, rồi lọc theo `[CamStudioVCam]`.
+</details>
 
-Script sẽ dừng dịch vụ Frame Server, nên app nào đang dùng camera (Camo, Teams, trình duyệt…) sẽ bị ngắt. Sau đó nó copy DLL camera ảo vào `C:\Program Files\CamStudio` và đăng ký COM vào HKLM. Log được ghi ở `build\register.log`.
+---
 
-Chỉ khi sửa `src/vcam` mới cần chạy lại `register.ps1`. Gỡ cài đặt bằng `scripts\unregister.ps1`.
-
-## Chạy
-
-```powershell
-CamStudio.exe                                         # mở app
-CamStudio.exe --device obsbot                         # chọn sẵn camera và tự bật camera ảo
-CamStudio.exe --tray                                  # chạy ẩn ở khay, bật lại camera lần trước
-build\Release\camstudio-verify.exe --device obsbot    # kiểm tra camera ảo (khi đang ở chế độ gốc, không xoay/cắt)
-```
-
-**Trong app:**
-
-- **Thanh trên:**
-  - Chọn **camera** và **độ phân giải** (mặc định là chế độ gốc). Đổi là áp dụng ngay; app đang dùng camera ảo sẽ mất hình khoảng một giây trong lúc camera ảo được tạo lại.
-  - Bên phải là công tắc **Camera ảo** kèm trạng thái.
-- **Thanh công cụ dưới ảnh:** mỗi chức năng là một icon, di chuột vào để xem tên. Icon nào có chấm nhỏ hoặc được tô màu là đang khác mặc định.
-
-  | Icon | Chức năng |
-  |---|---|
-  | Lật ngang, Lật dọc | Bật/tắt, áp dụng ngay |
-  | Xoay (0°/90°/180°/270°) | Mỗi lần bấm xoay thêm 90°. 90° và 270° đổi sang khung dọc, nên camera ảo tự khởi động lại |
-  | Tỉ lệ khung | Gốc, 16:9, 4:3, 1:1, 9:16. Cắt ở giữa, không méo hình; camera ảo tự khởi động lại |
-  | Thu phóng | Zoom số 1–4×, giữ nguyên độ phân giải đầu ra |
-  | Chỉnh ảnh | Độ sáng, tương phản, độ bão hòa, nhiệt độ màu. Xử lý bằng SIMD, áp dụng cho cả camera ảo |
-  | Thông tin | Chế độ gốc, đầu ra, fps thực tế, khung bị rơi, thời gian xử lý, CPU/RAM, ứng dụng đang dùng camera |
-  | Cài đặt | Giao diện Sáng/Tối, Khởi động cùng Windows, đóng cửa sổ thì chạy ở khay hay thoát hẳn |
-
-- **Trên ảnh xem trước:**
-  - Cuộn chuột để thu phóng.
-  - Khi đang phóng to, kéo để di chuyển khung.
-  - Nhấp đúp để đặt lại.
-- **Đóng cửa sổ (X):** mặc định app thu xuống khay hệ thống và camera ảo vẫn chạy. Chuột phải vào biểu tượng ở khay để Bật/Tắt camera ảo, Lật ngang, **Khởi động cùng Windows** hoặc **Thoát**.
-
-**Tiết kiệm tài nguyên:**
-- **Không ai xem thì không xử lý:** khi không có app nào dùng camera ảo và cửa sổ đang ẩn hoặc thu nhỏ, app chỉ giữ cho camera chạy, không xử lý từng khung (đo được khoảng 1–2% của một nhân CPU).
-- **Xem trước vừa đủ:** ảnh xem trước chỉ được tạo đúng bằng kích thước đang hiển thị, tối đa 30 fps, và được chép thẳng vào bộ nhớ ảnh.
-- **Không chuyển đổi thừa:** với camera xuất sẵn NV12, khung đi thẳng mà không qua bộ chuyển đổi.
-- **Chỉ một bản chạy:** mở app lần nữa thì cửa sổ đang chạy sẽ hiện lên.
-- **Lưu cài đặt:** mọi lựa chọn được lưu ở `HKCU\Software\CamStudio`.
-
-## Gỡ lỗi
-
-DLL camera ảo chạy trong Frame Server (LocalService) nên không ghi được file log. Để xem log, chạy [DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview) bằng quyền Admin, bật **Capture Global Win32** và lọc theo `[CamStudioVCam]`.
+<div align="center">
+<sub>Toàn bộ mã nguồn được viết từ đầu: không dùng mã của Camo hay bất kỳ phần mềm thương mại nào.</sub>
+</div>

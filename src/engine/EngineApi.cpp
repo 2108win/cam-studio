@@ -406,6 +406,7 @@ CS_API void cs_get_status(CsStatus* out)
     out->sharedMemory = s.sharedMemory ? 1 : 0;
     out->consumerActive = s.consumerActive ? 1 : 0;
     out->sourceRotation = s.sourceRotation;
+    out->standby = s.standby ? 1 : 0;
     wcsncpy_s(out->error, s.error.c_str(), _TRUNCATE);
 }
 

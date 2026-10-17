@@ -1,6 +1,7 @@
 ﻿# Builds everything in Release and assembles the files for a GitHub release in build\dist:
-#   CamStudio-<version>-win-x64.zip   (app + virtual camera + Install.cmd)
+#   CamStudio-Setup-<version>.exe     (one-click installer: app + virtual camera, Inno Setup)
 #   CamStudio-<version>-android.apk
+# Needs Inno Setup 6 (winget install JRSoftware.InnoSetup).
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -30,12 +31,13 @@ foreach ($f in "CamStudio.exe", "CamStudio.pri", "MainWindow.xbf", "CamStudioEng
     if (-not (Test-Path (Join-Path $appOut $f))) { throw "$f missing from the app folder" }
 }
 
-# 3. Installer files.
-Copy-Item (Join-Path $root "packaging\windows\*") $stage
-Set-Content (Join-Path $stage "VERSION.txt") $version -Encoding ascii
-
-$zip = Join-Path $out "CamStudio-$version-win-x64.zip"
-Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -CompressionLevel Optimal
+# 3. Installer (packaging\windows\CamStudio.iss).
+$iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { throw "Inno Setup 6 not found: winget install JRSoftware.InnoSetup" }
+& $iscc /Q "/DAppVersion=$version" "/DSourceDir=$appOut" "/DOutputDir=$out" (Join-Path $root "packaging\windows\CamStudio.iss")
+if ($LASTEXITCODE) { throw "ISCC failed" }
+Remove-Item $stage -Recurse -Force
 
 # 4. Android.
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build-android.ps1")

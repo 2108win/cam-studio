@@ -61,6 +61,7 @@ public unsafe struct CsStatus
     public int SharedMemory;
     public int ConsumerActive;
     public int SourceRotation;
+    public int Standby;       // virtual camera up, source closed until an app opens it (or the preview shows)
     public fixed char Error[256];
 
     public readonly string ErrorText

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -195,9 +195,28 @@ public sealed partial class MainWindow : Window
     {
         bool on = visible ?? IsOnScreen;
         Engine.cs_set_preview_enabled(on ? 1 : 0);
-        if (on) _previewTimer.Start();
-        else _previewTimer.Stop();
+        if (on)
+        {
+            _previewTimer.Start();
+        }
+        else
+        {
+            _previewTimer.Stop();
+            TrimMemory();
+        }
     }
+
+    // Hidden or minimized: give the memory the UI no longer needs back to Windows
+    // (it pages back in, cheaply, when the window shows again).
+    private static void TrimMemory()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        EmptyWorkingSet(System.Diagnostics.Process.GetCurrentProcess().Handle);
+    }
+
+    [System.Runtime.InteropServices.DllImport("psapi.dll")]
+    private static extern bool EmptyWorkingSet(IntPtr process);
 
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
@@ -1225,6 +1244,8 @@ public sealed partial class MainWindow : Window
         (string text, string pill, Color dot) = state switch
         {
             EngineState.Starting => ("Đang khởi động…", "Đang khởi động", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
+            // Standby: the camera is there for apps, the source sleeps until one opens it.
+            EngineState.Running when s.Standby != 0 => ($"Sẵn sàng · chờ ứng dụng dùng · {s.Width} × {s.Height}", "Sẵn sàng (nguồn đang nghỉ, tự bật khi có ứng dụng dùng)", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
             EngineState.Running when s.ConsumerActive != 0 => ($"Đang được dùng · {s.Width} × {s.Height}", "Đang được dùng", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
             EngineState.Running => ($"Sẵn sàng · {s.Width} × {s.Height}", "Đang phát", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
             EngineState.Failed => ("Lỗi", "Lỗi", Color.FromArgb(255, 0xE8, 0x11, 0x23)),

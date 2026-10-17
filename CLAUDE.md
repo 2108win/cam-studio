@@ -19,6 +19,7 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 |---|---|---|---|
 | Engine (C++, Media Foundation capture, H.264/HEVC decode, phone link, C API) | `src/engine` | Windows only | `scripts\build.ps1` (CMake + MSVC) |
 | Virtual camera media source (COM DLL loaded by Frame Server) | `src/vcam` | Windows only | same; install with `scripts\register.ps1` (admin) |
+| Windows installer (Inno Setup: one `CamStudio-Setup-<ver>.exe`, Vietnamese/English UI) | `packaging/windows/CamStudio.iss` | Windows only | `scripts\package-release.ps1` (needs `winget install JRSoftware.InnoSetup`) |
 | Shared PC headers (shared memory, NV12 ops, MF devices) | `src/common` | Windows only | — |
 | PC app (WinUI 3, C#, .NET 10, unpackaged) | `app/` | Windows only | `scripts\build.ps1` |
 | Verify tool, protocol test, fake phone | `src/verify`, `tools/` | Windows only | `scripts\build.ps1` |
@@ -174,6 +175,22 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
 - **The PC writes ~1 frame/s to the virtual camera even with no consumer.** An app that opens it then
   gets a picture at once, even from a slow source like a still phone screen (~4 frames/s), instead of
   the no-signal picture.
+- **Standby (the user wants the app as light as possible):**
+  - **When it applies:** the virtual camera is on, no app streams from it (`readerActive` in shared
+    memory), and the window is hidden or minimized (`m_previewEnabled` false).
+  - **What happens:** `CaptureEngine::Run` keeps the virtual camera registered but closes the source.
+    The webcam light goes off, and the phone gets `stop`, so it stops encoding.
+  - **Waking:** it starts again when an app opens the camera, or when the window shows. It closes
+    again after 5 s idle (`kIdleCloseMs`).
+  - **Standby size:** a phone source's camera is published at its last known orientation
+    (`m_rotationMemory`; first guess 90 for cameras, 270 for an Android screen). This avoids rebuilding
+    the camera, which would drop the app that just opened it.
+  - **Measured 2026-10-17:**
+    - OBSBOT: 0.1% CPU, 43 MB working set. The source woke in ~2.2 s, and was closed again 7 s after
+      the app left.
+    - Redmi screen: 0.3% CPU, and 0 encoders running on the phone. It woke in ~0.5 s.
+  - **Memory:** the app calls `EmptyWorkingSet` when hidden.
+  - **Status:** shown through `CsStatus.standby`.
 - **The phone serves one PC at a time:** a new connection replaces the old one. A test from the
   fake PC on the Mac kicks the user's real Windows PC off (and the PC's reconnect kicks the fake
   PC). Ask before testing while the user's PC may be streaming.

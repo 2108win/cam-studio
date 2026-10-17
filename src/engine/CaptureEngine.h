@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -49,6 +50,7 @@ public:
         bool sharedMemory = false;   // Frame Server has loaded our media source
         bool consumerActive = false; // some app is streaming from the camera
         int sourceRotation = 0;      // phones: rotation the phone asked for
+        bool standby = false;        // virtual camera up, source closed until something needs it
         std::wstring error;
     };
 
@@ -89,7 +91,16 @@ private:
         Quit,  // Stop() was called
         Lost,  // the source went away: retry while the virtual camera stays up
         Fatal, // retrying cannot help (missing decoder, virtual camera refused…)
+        Idle,  // nobody needed a picture for a while: source closed, back to standby
     };
+
+    // A picture is needed: an app streams from the virtual camera, or the
+    // preview is on screen. Otherwise the source stays closed (standby).
+    bool SourceWanted(Pipeline& pipeline);
+    // In a source loop: false once nothing has wanted a picture for kIdleCloseMs.
+    bool StillWanted(Pipeline& pipeline, ULONGLONG& idleSince);
+    void SetStandby(bool standby);
+    int ExpectedRotationLocked(const CameraDevice& cam, const NativeFormat& format) const;
 
     void Run(CameraDevice cam, NativeFormat format);
     Outcome RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
@@ -122,6 +133,11 @@ private:
     // Kept to restart the same session when the output size changes.
     CameraDevice m_camera;
     NativeFormat m_format;
+
+    // Last orientation each phone source reported (camera name + lens), so the
+    // virtual camera published in standby already has the right shape and is
+    // not rebuilt (dropping the app that just opened it) when the phone starts.
+    std::map<std::wstring, int> m_rotationMemory;
 
     HWND m_notifyWindow = nullptr;
     UINT m_notifyMsg = 0;

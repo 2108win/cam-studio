@@ -54,6 +54,8 @@ struct CsStatus
     int32_t sharedMemory;
     int32_t consumerActive;
     int32_t sourceRotation;   // phones: rotation applied from the phone's orientation
+    int32_t standby;          // running, but the source is closed until an app opens the camera
+                              // (or the preview is on screen): nothing captured, decoded or sent
     wchar_t error[256];
 };
 
