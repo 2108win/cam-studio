@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same mark as the Windows app: white camera on a blue tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="100" android:viewportHeight="100">
+    <path android:fillColor="#FF0A6ED1"
+        android:pathData="M22,0h56a22,22 0 0 1 22,22v56a22,22 0 0 1 -22,22h-56a22,22 0 0 1 -22,-22v-56a22,22 0 0 1 22,-22z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M23,30h32a9,9 0 0 1 9,9v22a9,9 0 0 1 -9,9h-32a9,9 0 0 1 -9,-9v-22a9,9 0 0 1 9,-9z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,44L86,33L86,67L66,56z" />
+    <path android:fillColor="#FF0A6ED1"
+        android:pathData="M39,50m-11.5,0a11.5,11.5 0 1 1 23,0a11.5,11.5 0 1 1 -23,0" />
+</vector>

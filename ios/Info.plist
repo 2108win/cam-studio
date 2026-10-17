@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- App keys shared by both builds: xtool (xtool.yml infoPath) and Xcode (project.yml INFOPLIST_FILE).
+     Bundle id, version and executable keys are added by the build tool. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Cam Studio</string>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+    <key>UIRequiresFullScreen</key>
+    <true/>
+    <key>UIStatusBarHidden</key>
+    <true/>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>NSCameraUsageDescription</key>
+    <string>Cam Studio gửi hình camera sang máy tính để dùng làm webcam.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Cam Studio có thể gửi âm thanh sang máy tính.</string>
+    <!-- Without these two, Bonjour advertising fails silently (docs/protocol.md 1). -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Cam Studio cần mạng cục bộ để máy tính trong nhà tìm và kết nối tới điện thoại.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_camstudio._tcp</string>
+    </array>
+    <key>UIRequiresPersistentWiFi</key>
+    <true/>
+</dict>
+</plist>

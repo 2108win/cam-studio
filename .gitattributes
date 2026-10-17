@@ -1,0 +1,14 @@
+* text=auto
+
+# Unix scripts must keep LF to run on macOS / Linux / WSL.
+*.sh      text eol=lf
+gradlew   text eol=lf
+
+# Windows scripts keep CRLF.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+*.jar     binary
+*.png     binary
+*.ico     binary

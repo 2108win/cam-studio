@@ -1,0 +1,31 @@
+# Build outputs (PC: CMake, WinUI)
+build/
+app/bin/
+app/obj/
+
+# Android
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.keystore
+*.jks
+
+# iOS (Xcode via XcodeGen, SwiftPM/xtool)
+ios/CamStudio.xcodeproj/
+ios/.build/
+ios/.bsp/
+ios/.swiftpm/
+ios/xtool/
+xcuserdata/
+DerivedData/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+.idea/
+*.user
