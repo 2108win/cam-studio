@@ -33,6 +33,8 @@ open CamStudio.xcodeproj
   xcodebuild test -project CamStudio.xcodeproj -scheme CryptoTestsMac -destination platform=macOS
   ```
 
+**Icon app:** giống logo bản PC và Android (máy quay trắng trên nền xanh), nằm ở [Resources/Assets.xcassets](Resources/Assets.xcassets). Muốn vẽ lại thì chạy `swift scripts/make-icon-ios.swift` từ thư mục gốc. Script vẽ theo đúng tỉ lệ của `scripts/make-icon.ps1`. Bản build bằng xtool chưa có icon này.
+
 ## Thử trên Mac, không cần PC Windows
 
 [tools/fake_pc.swift](../tools/fake_pc.swift) là một "PC giả" chạy trên Mac. Nó làm đúng việc của app PC:

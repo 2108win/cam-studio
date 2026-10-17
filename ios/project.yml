@@ -24,6 +24,9 @@ targets:
     platform: iOS
     sources:
       - path: CamStudio
+      # App icon (scripts/make-icon-ios.swift). Outside CamStudio/ so the SwiftPM/xtool build
+      # does not pick it up as a resource.
+      - path: Resources/Assets.xcassets
     dependencies:
       - target: CamStudioScreen      # embedded in PlugIns
     settings:
@@ -34,6 +37,7 @@ targets:
         INFOPLIST_FILE: Info.plist
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: CamStudio.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   # Screen sharing: a ReplayKit broadcast upload extension that serves the screen to the PC as a
   # second source (port 47322). Shares the protocol code with the app, not the camera code.
   CamStudioScreen:
