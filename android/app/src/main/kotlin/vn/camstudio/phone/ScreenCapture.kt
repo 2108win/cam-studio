@@ -30,8 +30,9 @@ import java.util.concurrent.TimeUnit
  * is attached only while a stream's encoder surface exists, so nothing needs an off-screen EGL
  * surface (some drivers have none that fits a recordable config). An OpenGL pass copies the
  * latest picture into the encoder:
- *  - always at the stream's portrait size: a landscape screen is turned a quarter turn
- *    clockwise into it and the PC turns it back ("orientation" 270), like the iPhone;
+ *  - at the stream's size and shape: when the screen and the stream differ (a portrait screen
+ *    in a landscape stream: many encoders only take sizes up to 1920x1088, i.e. landscape), the
+ *    picture is turned a quarter turn clockwise into it and the PC turns it back ("orientation" 270);
  *  - again every 250 ms while the screen is still (the PC drops a source that is silent for 6 s,
  *    and one that joins needs a picture now);
  *  - never faster than the stream's frame rate.
@@ -52,9 +53,10 @@ class ScreenCapture(
     /** The screen's native size in its natural (portrait) orientation. */
     val portraitSize: Pair<Int, Int>
 
-    /** Clockwise degrees the PC applies to the stream (0 portrait, 270 landscape). */
+    /** Clockwise degrees the PC applies to the stream: 270 when the picture is turned into it. */
     @Volatile var orientation = 0
         private set
+    @Volatile private var targetLandscape = true // shape of the stream (caps offer landscape first)
 
     // ---- GL thread state ----
     private var eglDisplay = EGL14.EGL_NO_DISPLAY
@@ -106,7 +108,7 @@ class ScreenCapture(
         portraitSize = minOf(w, h) to maxOf(w, h)
         contentW = w
         contentH = h
-        orientation = if (w > h) 270 else 0
+        orientation = orientationFor(w, h)
         surfaceTexture.setDefaultBufferSize(w, h)
         surfaceTexture.setOnFrameAvailableListener({ guarded("nhận hình màn hình") { onFrameAvailable() } }, handler)
         // Android 14 requires the callback before the virtual display exists.
@@ -134,6 +136,8 @@ class ScreenCapture(
         hasFrame = false
         targetW = width
         targetH = height
+        targetLandscape = width > height
+        orientation = orientationFor(contentW, contentH)
         minIntervalNs = 1_000_000_000L / fps.coerceIn(1, 60)
         lastDrawNs = 0
         this.onOrientation = onOrientation
@@ -209,7 +213,7 @@ class ScreenCapture(
         contentH = h
         surfaceTexture.setDefaultBufferSize(w, h)
         virtualDisplay?.resize(w, h, dpi)
-        val o = if (w > h) 270 else 0
+        val o = orientationFor(w, h)
         if (o != orientation) {
             orientation = o
             onOrientation?.invoke(o)
@@ -254,8 +258,8 @@ class ScreenCapture(
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture)
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uTex"), 1, false, texMatrix, 0)
-        // A landscape screen into the portrait stream: a quarter turn clockwise.
-        val turn = contentW > contentH && targetW < targetH
+        // Screen and stream of different shapes: a quarter turn clockwise.
+        val turn = (contentW > contentH) != (targetW > targetH)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uTurn"), if (turn) 1f else 0f)
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
         val aSt = GLES20.glGetAttribLocation(program, "aSt")
@@ -316,6 +320,9 @@ class ScreenCapture(
         check(ok[0] != 0) { "program: " + GLES20.glGetProgramInfoLog(p) }
         return p
     }
+
+    /** 270 when a `w`×`h` screen has to be turned into the stream (see draw()). */
+    private fun orientationFor(w: Int, h: Int) = if ((w > h) != targetLandscape) 270 else 0
 
     @Suppress("DEPRECATION") // getRealMetrics: the whole screen, in its current orientation
     private fun realSize(): Pair<Int, Int> {

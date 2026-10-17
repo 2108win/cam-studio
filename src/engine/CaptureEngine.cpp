@@ -234,8 +234,12 @@ private:
             return; // size change pending: the session is being rebuilt
 
         // Nobody is watching (no app on the virtual camera, preview hidden):
-        // skip all per-frame work, just keep the source flowing.
-        const bool toCamera = m_writer.ConsumerActive();
+        // skip the per-frame work, just keep the source flowing. One frame a
+        // second still goes to the camera, so an app that opens it gets a
+        // picture at once rather than "no signal" until the next frame of a
+        // slow source (a still phone screen sends ~4 a second).
+        const ULONGLONG tick = GetTickCount64();
+        const bool toCamera = m_writer.ConsumerActive() || (m_writer.IsOpen() && tick - m_lastWriteTick >= 1000);
         const bool toPreview = m_engine.PreviewDue();
         if (!toCamera && !toPreview) return;
 
@@ -270,7 +274,11 @@ private:
             framePitch = static_cast<long>(l.outWidth);
         }
 
-        if (toCamera) m_writer.Write(frame, framePitch, l.outWidth, l.outHeight);
+        if (toCamera)
+        {
+            m_writer.Write(frame, framePitch, l.outWidth, l.outHeight);
+            m_lastWriteTick = tick;
+        }
         if (toPreview) m_engine.UpdatePreview(frame, framePitch, l.outWidth, l.outHeight);
         m_workMs += QpcMs() - t0;
         ++m_workFrames;
@@ -290,6 +298,7 @@ private:
     int64_t m_firstTs = -1;
     uint64_t m_received = 0, m_dropped = 0;
     unsigned m_frames = 0;
+    ULONGLONG m_lastWriteTick = 0;
     ULONGLONG m_statStart = GetTickCount64();
     double m_lastFps = 0;
 };

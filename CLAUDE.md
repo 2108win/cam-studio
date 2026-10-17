@@ -154,12 +154,26 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
     once per sharing session.
   - `ScreenCapture`: one VirtualDisplay for the whole session (Android 14 allows only one per consent).
     It draws through a SurfaceTexture into OpenGL, then into the encoder surface of each stream.
-  - Output is always portrait. A landscape screen is turned 90° clockwise, with `orientation` 270.
+  - The SurfaceTexture is created detached and is attached only while a stream exists, so no idle
+    EGL surface is needed.
+  - **Stream shape:** caps offer landscape sizes first, because many Android encoders cap at
+    1920×1088 (the Redmi 9T's do, which left `modes` empty with portrait sizes). When the screen
+    and the stream differ in shape, GL turns the picture 90° clockwise and reports `orientation` 270.
+    The Redmi sends 1920×880 and 1280×592, multiples of 16.
   - The last picture is re-drawn every 250 ms while the screen is still.
-  - Sizes are multiples of 16.
   - `Session` streams any `MediaSource` (`CameraSource`, `ScreenSource`), like iOS. `CameraStreamer` is
     unchanged.
-  - Written on 2026-10-17. It compiles but **has not run on a device yet**.
+  - **Verified 2026-10-17** on the Redmi 9T (Android 12) with the real PC:
+    - portrait 880×1920 and both landscape directions upright;
+    - the home screen in front;
+    - stop, then start again: the PC goes to Waiting, then reconnects to the screen port by itself;
+    - camera regression: opening, front/back switch, Home.
+  - Side effect: while sharing, the foreground service keeps the camera stream alive with the app hidden.
+  - `CrashLog` shows the last crash on the next launch. With USB debugging, `adb` works:
+    `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
+- **The PC writes ~1 frame/s to the virtual camera even with no consumer.** An app that opens it then
+  gets a picture at once, even from a slow source like a still phone screen (~4 frames/s), instead of
+  the no-signal picture.
 - **The phone serves one PC at a time:** a new connection replaces the old one. A test from the
   fake PC on the Mac kicks the user's real Windows PC off (and the PC's reconnect kicks the fake
   PC). Ask before testing while the user's PC may be streaming.

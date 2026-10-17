@@ -26,7 +26,12 @@ class ScreenSource(private val capture: ScreenCapture) : MediaSource {
         val avc = VideoEncoder.capabilities(MediaFormat.MIMETYPE_VIDEO_AVC)
         val hevc = VideoEncoder.capabilities(MediaFormat.MIMETYPE_VIDEO_HEVC)
         val modes = JSONArray()
-        for ((w, h) in sizes()) {
+        for ((long, short) in sizes()) {
+            // Landscape first: many encoders only take up to 1920x1088 (this Redmi's do).
+            // The screen is turned into the stream either way ("orientation").
+            val (w, h) = listOf(long to short, short to long).firstOrNull { (w, h) ->
+                (avc + hevc).any { it.isSizeSupported(w, h) }
+            } ?: continue
             val fpsList = intArrayOf(15, 30, 60).filter { fps ->
                 (avc + hevc).any { it.isSizeSupported(w, h) && it.areSizeAndRateSupported(w, h, fps.toDouble()) }
             }
@@ -62,18 +67,19 @@ class ScreenSource(private val capture: ScreenCapture) : MediaSource {
     }
 
     /**
-     * Native portrait size, and scaled to 1920 and 1280 on the long side: what a call or a
-     * recording needs. All multiples of 16: some surface encoders garble other sizes, and the
-     * GL pass scales the screen to whatever size the stream has anyway.
+     * (long side, short side): the native screen, and scaled to 1920 and 1280 on the long side,
+     * what a call or a recording needs. All multiples of 16: some surface encoders garble other
+     * sizes, and the GL pass scales the screen to whatever size the stream has anyway.
      */
     private fun sizes(): List<Pair<Int, Int>> {
         val (w, h) = capture.portraitSize
-        val out = mutableListOf(align16(w.toDouble()) to align16(h.toDouble()))
         val long = max(w, h)
+        val short = minOf(w, h)
+        val out = mutableListOf(align16(long.toDouble()) to align16(short.toDouble()))
         for (target in intArrayOf(1920, 1280)) {
             if (long <= target) continue
             val scale = target.toDouble() / long
-            out += align16(w * scale) to align16(h * scale)
+            out += align16(long * scale) to align16(short * scale)
         }
         return out.distinct()
     }

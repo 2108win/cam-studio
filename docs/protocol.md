@@ -54,7 +54,9 @@ Trên iPhone, màn hình được chia sẻ bằng một tiện ích ReplayKit (
 - **Bật:** người dùng bấm "Chia sẻ màn hình sang máy tính" trong app rồi đồng ý trong hộp thoại của hệ thống. Mỗi lần chia sẻ phải đồng ý lại (Android 14 trở lên).
 - **Tắt:** bấm "Dừng" trong thông báo, bấm lại nút trong app, hoặc dùng nút dừng của hệ thống.
 - **Chạy nền:** vẫn chạy khi đang mở ứng dụng khác.
-- **Hướng xoay:** khung luôn dọc. Khi máy nằm ngang, app xoay màn hình ngang một phần tư vòng theo chiều kim đồng hồ để vừa khung dọc, và báo `orientation = 270` để PC xoay lại.
+- **Hướng xoay:** `modes` ưu tiên khung ngang, vì nhiều bộ mã hóa Android chỉ nhận tới 1920×1088. Ví dụ Redmi 9T: 1920×880 và 1280×592.
+  - Khi hình màn hình và khung khác chiều (màn hình dọc trong khung ngang, hoặc ngược lại), app xoay hình một phần tư vòng theo chiều kim đồng hồ và báo `orientation = 270` để PC xoay lại.
+  - Khi cùng chiều, `orientation = 0`.
 - **Kích thước:** mọi kích thước đều là bội số của 16.
 
 **Tường lửa:** PC chỉ kết nối ra ngoài (ra điện thoại), nên Windows không hiện hộp thoại tường lửa.
