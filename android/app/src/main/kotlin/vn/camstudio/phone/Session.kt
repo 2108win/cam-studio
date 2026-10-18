@@ -26,11 +26,17 @@ class Session(
     private val source: MediaSource,
     /** False for the shared screen: it never pairs (no one to compare codes), it reuses the camera's keys. */
     private val canPair: Boolean = true,
-    /** Runs once the PC's hello is valid: only then does this connection replace the session in progress. False ends it. */
-    private val claim: (Session) -> Boolean = { true },
+    /**
+     * Runs once the PC's hello is valid: only then may this connection replace the session in
+     * progress. `auto` is the hello's "auto" (the PC connected by itself).
+     */
+    private val claim: (session: Session, auto: Boolean) -> Claim = { _, _ -> Claim.Granted },
 ) {
     interface Ui {
+        /** Android lets the app use the camera now (on screen, or from a camera foreground service). */
         val inForeground: Boolean
+        /** Someone can answer a pairing request: the app is on screen. */
+        val canAskPairing: Boolean get() = inForeground
         /** Device rotation, degrees clockwise from natural (0/90/180/270). */
         val deviceRotation: Int
         /** Shows the pairing code; blocks until the user answers (false on timeout). */
@@ -38,10 +44,25 @@ class Session(
         fun status(streaming: Boolean, text: String)
     }
 
+    /** The server's answer to a valid hello (docs/protocol.md 3.1). */
+    sealed class Claim {
+        /** This connection is now the session. */
+        object Granted : Claim()
+        /** The PC connected by itself while another PC has the phone: answer "busy" and end. */
+        class Busy(val pcName: String) : Claim()
+        /** The server stopped: end quietly. */
+        object Stopped : Claim()
+    }
+
     private var channel: SecureChannel? = null
     @Volatile private var streaming = false
-    private var pcName = "máy tính"
+    @Volatile var clientId: String? = null
+        private set
+    @Volatile var pcName = "máy tính"
+        private set
     @Volatile private var closed = false
+    /** Set by the first "ping": from then on, silence means the PC is gone. */
+    private var pinged = false
 
     // ---- adaptive sending (section 6) ----------------------------------------------
     private class Out(val kind: Int, val data: ByteArray, val ptsUs: Long, val flags: Int, val queuedAt: Long)
@@ -84,8 +105,17 @@ class Session(
         if (hello.optString("type") != "hello" || hello.optInt("v") != 1) throw ProtocolException("bad hello")
         val clientId = hello.getString("clientId")
         val commit = Base64.decode(hello.getString("commit"), Base64.DEFAULT)
-        if (!claim(this)) throw ProtocolException("server stopped")
-        pcName = hello.optString("clientName", pcName)
+        this.clientId = clientId
+        pcName = hello.optString("clientName", pcName) // before claim: a "busy" answer to another PC names this one
+        when (val c = claim(this, hello.optBoolean("auto", false))) {
+            Claim.Granted -> {}
+            Claim.Stopped -> throw ProtocolException("server stopped")
+            is Claim.Busy -> {
+                io.write(JSONObject().put("type", "error").put("code", "busy")
+                    .put("message", "Điện thoại đang kết nối với ${c.pcName}"))
+                throw ProtocolException("busy")
+            }
+        }
         socket.soTimeout = 120_000 // the user may take a while to compare the code
 
         val keyPair = Crypto.newKeyPair()
@@ -115,7 +145,7 @@ class Session(
                     .put("message", "Hãy ghép đôi với camera của điện thoại trước (chọn điện thoại trong danh sách camera trên PC)"))
                 throw ProtocolException("screen cannot pair")
             }
-            if (!ui.inForeground) {
+            if (!ui.canAskPairing) {
                 io.write(JSONObject().put("type", "error").put("code", "background")
                     .put("message", "Hãy mở app Cam Studio trên điện thoại để ghép đôi"))
                 throw ProtocolException("pairing while in background")
@@ -162,6 +192,11 @@ class Session(
                 "keyframe" -> if (streaming) source.requestKeyframe()
                 "stats" -> onStats(json)
                 "showSystemEffects" -> sendError("unsupported", "Android không có bảng hiệu ứng video hệ thống")
+                // A PC that pings checks the link every 15 s; 45 s without any message: it is gone.
+                "ping" -> if (!pinged) {
+                    pinged = true
+                    socket.soTimeout = PING_TIMEOUT_MS // a read that waits longer throws, and run() ends the session
+                }
             }
         }
     }
@@ -211,7 +246,7 @@ class Session(
         queue.clear()
     }
 
-    /** Called by the activity when the phone is turned. */
+    /** Called by CameraService when the phone is turned. */
     fun onRotationChanged() {
         if (streaming) source.onRotationChanged()
     }
@@ -280,6 +315,10 @@ class Session(
         currentBitrate = bps
         if (streaming) source.setBitrate(bps)
         sendControl(JSONObject().put("type", "bitrate").put("kbps", bps / 1000))
+    }
+
+    private companion object {
+        const val PING_TIMEOUT_MS = 45_000 // docs/protocol.md: three missed pings
     }
 
     // ---- device state ------------------------------------------------------------------

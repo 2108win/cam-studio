@@ -7,41 +7,53 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.view.OrientationEventListener
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
- * The phone side of Cam Studio. The PC picks lens, size and controls; this
- * screen shows status, the address for manual pairing and the pairing code.
- * It must stay open while streaming (Android denies the camera to
- * background apps), so the screen dims itself.
+ * The phone side of Cam Studio, in two parts. Camera: status, the address for
+ * manual pairing, the pairing code, and "Chạy nền" (CameraService keeps serving
+ * the PC while the app is hidden; off, the camera stops when the app leaves).
+ * Màn hình: screen sharing (ScreenService). The PC picks lens, size and
+ * controls. While the camera streams, the screen dims itself.
  */
-class MainActivity : Activity(), Session.Ui {
-    private lateinit var status: TextView
+class MainActivity : Activity() {
+    private lateinit var store: Store
+    private lateinit var cameraStatus: TextView
     private lateinit var address: TextView
+    private lateinit var cameraButton: Button
+    private lateinit var backgroundHint: TextView
     private lateinit var screenButton: Button
     private lateinit var screenStatus: TextView
-    private lateinit var server: PhoneServer
-    private lateinit var orientation: OrientationEventListener
-    @Volatile private var resumed = false
-    @Volatile private var rotation = 0
-
-    override val inForeground: Boolean get() = resumed
-    override val deviceRotation: Int get() = rotation
+    private val pairingDialogs = mutableListOf<AlertDialog>()
+    private var visible = false
+    /** CameraService was asked to start and has not reported yet. */
+    private var cameraStarting = false
+    private val cameraListener: (Boolean, String) -> Unit = { streaming, text ->
+        runOnUiThread {
+            cameraStarting = false
+            showCameraState(streaming, text)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        store = Store(this)
 
         val title = TextView(this).apply {
             text = "Cam Studio"
@@ -49,30 +61,55 @@ class MainActivity : Activity(), Session.Ui {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(8))
         }
-        status = TextView(this).apply {
+
+        // ---- Camera ----
+        cameraStatus = TextView(this).apply {
             textSize = 16f
             setTextColor(Color.rgb(0xDD, 0xDD, 0xDD))
             gravity = Gravity.CENTER
-            setPadding(48, 24, 48, 0)
         }
         address = TextView(this).apply {
             textSize = 14f
             setTextColor(Color.rgb(0x9A, 0xC8, 0xFF))
             gravity = Gravity.CENTER
-            setPadding(48, 32, 48, 0)
+            setPadding(0, dp(12), 0, 0)
             setTextIsSelectable(true)
         }
-        val hint = TextView(this).apply {
-            text = "Trên PC: mở Cam Studio, chọn điện thoại này trong danh sách camera.\n" +
-                "Nếu không thấy, chọn \"Thêm theo địa chỉ IP\" và nhập địa chỉ ở trên.\n" +
-                "Giữ ứng dụng này mở trong lúc dùng camera.\n" +
-                "Chia sẻ màn hình thì vẫn chạy khi bạn mở ứng dụng khác."
+        cameraButton = Button(this).apply {
+            text = "Bật camera"
+            visibility = View.GONE
+            // Also the way to stop when Android hides the notification (no permission for it).
+            setOnClickListener { if (CameraService.running) CameraService.stop(this@MainActivity) else startCamera(askPermission = true) }
+        }
+        val backgroundSwitch = Switch(this).apply {
+            text = "Chạy nền"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            isChecked = store.cameraInBackground
+            setOnCheckedChangeListener { _, checked ->
+                store.cameraInBackground = checked
+                showBackgroundHint()
+            }
+        }
+        backgroundHint = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.rgb(0x88, 0x88, 0x88))
-            gravity = Gravity.CENTER
-            setPadding(48, 40, 48, 0)
         }
+        val cameraHint = hint(
+            "Trên PC: mở Cam Studio, chọn điện thoại này trong danh sách camera.\n" +
+            "Nếu không thấy, chọn \"Thêm theo địa chỉ IP\" và nhập địa chỉ ở trên.")
+        val camera = section("Camera").apply {
+            addView(cameraStatus)
+            addView(address)
+            addView(cameraButton, centered().apply { topMargin = dp(12) })
+            addView(backgroundSwitch, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(20) })
+            addView(backgroundHint)
+            addView(cameraHint)
+        }
+
+        // ---- Màn hình ----
         screenButton = Button(this).apply {
             setOnClickListener { toggleScreenSharing() }
         }
@@ -80,67 +117,86 @@ class MainActivity : Activity(), Session.Ui {
             textSize = 13f
             setTextColor(Color.rgb(0x9A, 0xC8, 0xFF))
             gravity = Gravity.CENTER
-            setPadding(48, 16, 48, 0)
+            setPadding(0, dp(8), 0, 0)
         }
-        setContentView(LinearLayout(this).apply {
+        val screen = section("Màn hình").apply {
+            addView(screenButton, centered())
+            addView(screenStatus)
+            addView(hint("Máy tính thấy màn hình như một nguồn riêng. Vẫn chia sẻ khi bạn mở ứng dụng khác."))
+        }
+
+        val crash = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.rgb(0xFF, 0x9A, 0x9A))
+            setTextIsSelectable(true)
+            setPadding(0, dp(16), 0, 0)
+            visibility = View.GONE
+        }
+        CrashLog.takeLast(this)?.let {
+            crash.text = "Lần trước app bị lỗi (chụp màn hình này gửi cho người hỗ trợ):\n$it"
+            crash.visibility = View.VISIBLE
+        }
+
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
+            setPadding(dp(16), dp(24), dp(16), dp(24))
             addView(title)
-            addView(status)
-            addView(address)
-            addView(hint)
-            addView(screenButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = 48
-            })
-            addView(screenStatus)
+            addView(camera, card())
+            addView(screen, card())
+            addView(crash)
             setOnClickListener { setDimmed(false) } // tap to light the screen up
+        }
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(Color.BLACK)
+            addView(content)
         })
+        showBackgroundHint()
 
-        orientation = object : OrientationEventListener(this) {
-            override fun onOrientationChanged(degrees: Int) {
-                if (degrees == ORIENTATION_UNKNOWN) return
-                val snapped = ((degrees + 45) / 90 * 90) % 360
-                if (snapped != rotation) {
-                    rotation = snapped
-                    server.session?.onRotationChanged()
-                }
-            }
-        }
-
-        server = PhoneServer(this, this, CameraSource(this, this))
-        server.start()
-        status("Đang chờ máy tính kết nối…")
-        CrashLog.takeLast(this)?.let { crash ->
-            screenStatus.setTextIsSelectable(true)
-            screenStatus.setTextColor(Color.rgb(0xFF, 0x9A, 0x9A))
-            screenStatus.text = "Lần trước app bị lỗi (chụp màn hình này gửi cho người hỗ trợ):\n$crash"
-        }
-
+        CameraService.listener = cameraListener
+        val wanted = mutableListOf<String>()
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
+            wanted += Manifest.permission.CAMERA
+        }
+        // The notifications ("Cam Studio sẵn sàng làm camera", with Dừng) need this on Android 13+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            wanted += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), REQUEST_PERMISSIONS)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        visible = true
+        CameraService.pairing = ::confirmPairing // only while someone can see the code
+        if (CameraService.running) {
+            showCameraState(CameraService.lastStreaming, CameraService.lastStatus)
+        } else {
+            startCamera(askPermission = false)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        resumed = true
-        orientation.enable()
-        address.text = server.addresses().joinToString("\n") { "$it:${server.port}" }
+        showAddress() // the network may have changed
         ScreenService.listener = { text -> runOnUiThread { showScreenState(text) } }
         if (ScreenService.running) showScreenState(screenStatus.text.toString()) else screenButton.text = "Chia sẻ màn hình sang máy tính"
     }
 
-    override fun onPause() {
-        super.onPause()
-        resumed = false
-        orientation.disable()
+    override fun onStop() {
+        visible = false
+        CameraService.pairing = null
+        pairingDialogs.toList().forEach { it.dismiss() } // the PC hears "declined"
+        // "Chạy nền" off: the camera stops with the app, as it always did. A rotation or theme change is not leaving.
+        if (!store.cameraInBackground && !isChangingConfigurations) CameraService.stop(this)
+        super.onStop()
     }
 
     override fun onDestroy() {
+        if (CameraService.listener === cameraListener) CameraService.listener = null
         ScreenService.listener = null
-        server.stop()
         super.onDestroy()
     }
 
@@ -149,9 +205,78 @@ class MainActivity : Activity(), Session.Ui {
             askScreenCapture() // the notification is optional: share either way
             return
         }
-        if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
-            status("Cần quyền Camera để gửi hình sang máy tính")
+        if (requestCode != REQUEST_PERMISSIONS) return
+        val camera = permissions.indexOf(Manifest.permission.CAMERA)
+        if (camera < 0) return // only the notifications were asked
+        if (grantResults.getOrNull(camera) == PackageManager.PERMISSION_GRANTED) {
+            startCamera(askPermission = false)
+        } else {
+            showCameraState(false, "Cần quyền Camera để gửi hình sang máy tính (Cài đặt → Ứng dụng → Cam Studio → Quyền)")
         }
+    }
+
+    // ---- camera ------------------------------------------------------------------------
+
+    private fun startCamera(askPermission: Boolean) {
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            if (askPermission) {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_PERMISSIONS)
+            } else {
+                showCameraState(false, "Cần quyền Camera để gửi hình sang máy tính")
+            }
+            return
+        }
+        if (CameraService.running) return
+        // The camera service may only start while the app is on screen: now.
+        cameraStarting = CameraService.start(this)
+        showCameraState(false, if (cameraStarting) "Đang bật camera…" else "Android không cho bật camera. Hãy mở lại app.")
+    }
+
+    private fun showCameraState(streaming: Boolean, text: String) {
+        cameraStatus.text = text
+        cameraButton.visibility = if (cameraStarting) View.GONE else View.VISIBLE
+        cameraButton.text = if (CameraService.running) "Tắt camera" else "Bật camera"
+        showAddress()
+        setDimmed(streaming)
+    }
+
+    private fun showAddress() {
+        val port = CameraService.port
+        address.text = if (port == 0) "" else PhoneServer.addresses(this).joinToString("\n") { "$it:$port" }
+    }
+
+    private fun showBackgroundHint() {
+        backgroundHint.text = if (store.cameraInBackground) {
+            "Camera vẫn phát khi bạn rời app hoặc tắt màn hình. Tắt bằng nút \"Dừng\" trong thông báo, hoặc \"Tắt camera\" ở trên."
+        } else {
+            "Camera chỉ chạy khi app đang mở: rời app thì máy tính mất hình."
+        }
+    }
+
+    /** Runs on a session thread (CameraService.pairing); blocks until the person answers. */
+    private fun confirmPairing(pcName: String, code: String): Boolean {
+        val latch = CountDownLatch(1)
+        var accepted = false
+        var dialog: AlertDialog? = null
+        runOnUiThread {
+            if (!visible || isFinishing || isDestroyed) {
+                latch.countDown()
+                return@runOnUiThread
+            }
+            setDimmed(false)
+            dialog = AlertDialog.Builder(this)
+                .setTitle("Ghép đôi với $pcName?")
+                .setMessage("Kiểm tra mã trên máy tính có giống mã này không:\n\n${code.substring(0, 3)} ${code.substring(3)}\n\nChỉ đồng ý nếu hai mã giống nhau.")
+                .setPositiveButton("Đồng ý") { _, _ -> accepted = true; latch.countDown() }
+                .setNegativeButton("Từ chối") { _, _ -> latch.countDown() }
+                .setOnDismissListener { d -> pairingDialogs.removeAll { it === d }; latch.countDown() }
+                .show()
+                .also { pairingDialogs += it }
+        }
+        if (!latch.await(2, TimeUnit.MINUTES)) {
+            runOnUiThread { dialog?.dismiss() } // the PC gave up waiting
+        }
+        return accepted
     }
 
     // ---- screen sharing ----------------------------------------------------------------
@@ -194,33 +319,44 @@ class MainActivity : Activity(), Session.Ui {
         screenStatus.text = text
     }
 
-    // ---- Session.Ui ------------------------------------------------------------------
+    // ---- layout ------------------------------------------------------------------------
 
-    override fun status(streaming: Boolean, text: String) = runOnUiThread {
-        status.text = text
-        setDimmed(streaming)
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
+
+    /** A titled part of the screen, on a dark card. */
+    private fun section(name: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(20), dp(16), dp(20), dp(20))
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(0x1A, 0x1A, 0x1A))
+            cornerRadius = dp(16).toFloat()
+        }
+        addView(TextView(this@MainActivity).apply {
+            text = name
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(0, 0, 0, dp(10))
+        })
     }
 
-    private fun status(text: String) = status(false, text)
+    private fun card() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(16)
+    }
 
-    override fun confirmPairing(pcName: String, code: String): Boolean {
-        val latch = CountDownLatch(1)
-        var accepted = false
-        runOnUiThread {
-            setDimmed(false)
-            AlertDialog.Builder(this)
-                .setTitle("Ghép đôi với $pcName?")
-                .setMessage("Kiểm tra mã trên máy tính có giống mã này không:\n\n${code.substring(0, 3)} ${code.substring(3)}\n\nChỉ đồng ý nếu hai mã giống nhau.")
-                .setPositiveButton("Đồng ý") { _, _ -> accepted = true; latch.countDown() }
-                .setNegativeButton("Từ chối") { _, _ -> latch.countDown() }
-                .setOnCancelListener { latch.countDown() }
-                .show()
-        }
-        latch.await(2, TimeUnit.MINUTES)
-        return accepted
+    private fun centered() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+    }
+
+    private fun hint(text: String) = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(Color.rgb(0x88, 0x88, 0x88))
+        setPadding(0, dp(12), 0, 0)
     }
 
     private companion object {
+        const val REQUEST_PERMISSIONS = 1
         const val REQUEST_SCREEN = 10
         const val REQUEST_NOTIFICATIONS = 11
     }

@@ -6,10 +6,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- Screen sharing: a foreground service of type mediaProjection (docs/protocol.md 1.1). -->
+    <!-- The camera in the background: a foreground service of type camera (CameraService).
+         Screen sharing: one of type mediaProjection (docs/protocol.md 1.1). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- While the camera streams with the screen off: CPU awake, Wi‑Fi out of power saving. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
     <application
@@ -18,7 +22,7 @@
         android:allowBackup="false"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
-        <!-- The PC starts this with "am start"; it streams while visible. -->
+        <!-- Showing it starts CameraService, which serves the PC (in the background too). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -30,6 +34,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".CameraService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
         <service
             android:name=".ScreenService"

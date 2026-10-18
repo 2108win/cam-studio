@@ -9,14 +9,23 @@ import org.json.JSONObject
 /** The phone's cameras as a Session source: CameraCaps for "caps", CameraStreamer per stream. */
 class CameraSource(private val context: Context, private val ui: Session.Ui) : MediaSource {
     private val caps by lazy { CameraCaps(context) }
-    private var streamer: CameraStreamer? = null
+    @Volatile private var streamer: CameraStreamer? = null
     private var lens: CameraCaps.Lens? = null
     private var callbacks: StreamCallbacks? = null
     private var lastOrientation = -1
 
     override val needsForeground = true
 
-    override fun caps(store: Store): JSONObject = caps.toJson(store.deviceName)
+    // Hidden lenses that would not open last time are probed again, but never during a stream.
+    override fun caps(store: Store): JSONObject = caps.toJson(store.deviceName, retry = streamer == null)
+
+    /**
+     * Lists the lenses ahead of the first "caps", while the app is on screen: opening cameras
+     * to find hidden lenses is surest then. Blocks; call it off the main thread.
+     */
+    fun prepare() {
+        caps.lenses()
+    }
 
     override fun start(json: JSONObject, bitrate: Int, callbacks: StreamCallbacks): MediaSource.Started {
         stop()
