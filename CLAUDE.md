@@ -170,7 +170,8 @@ Gotchas:
   `ContentDialog`. The accent is our own blue (`SystemAccentColor*` in App.xaml).
 - A brush looked up in code (`Application.Current.Resources[...]`) follows the Windows theme, not
   the app's light/dark choice: give code-built controls a style whose setters use `ThemeResource`.
-- With the window source, "Lật ngang" (a global setting) mirrors the window's text too.
+- "Lật ngang" is one setting for every source, so it mirrors a window's text too: the user's choice
+  (2026-10-18), keep it.
 
 ## Things learned the hard way
 

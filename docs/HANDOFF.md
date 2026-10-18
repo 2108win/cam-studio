@@ -43,6 +43,7 @@ it once everything is tested.
 - Both: the phone screen in its own PC window, and a PC app window as the camera source.
 - The virtual camera exists for as long as the app runs ("no signal" without a source).
 - iPhone screen sharing stays on ReplayKit broadcast. No AirPlay receiver (clean-room rule).
+- "Lật ngang" applies to every source, a PC window included (it mirrors its text): keep it so.
 - Git: only `main` (see CLAUDE.md, Ground rules).
 
 ## 3. Next steps (need someone at the phone or PC)
@@ -58,7 +59,6 @@ it once everything is tested.
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
 5. **iPhone:** Apple Devices on Windows; `scripts/ios-run.sh` on the Mac for PiP (ask first: it
    replaces the TestFlight install).
-6. Ask the user: should "Lật ngang" apply to a window source (it mirrors the text)?
 
 ## 4. Pitfalls
 
