@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.System;
 
 namespace CamStudio;
@@ -51,7 +52,7 @@ public sealed partial class MainWindow
     {
         if (Engine.cs_sources_generation() == _sourcesGeneration) return;
         ReadCameraList();
-        UpdateSourceRow();
+        BuildSourceList();
     }
 
     private static string? StateText(int kind, LinkState state) => kind == 0 ? null : state switch
@@ -65,71 +66,167 @@ public sealed partial class MainWindow
         _ => null,
     };
 
-    private void BuildCameraMenu()
+    // ---- The source list (left pane) ------------------------------------------------------------
+    //
+    // Phones, webcams, phone screens and a window on this PC, each with its connection state. The
+    // selected row's second line follows the camera live (streaming, waiting, phone battery).
+
+    private TextBlock? _selectedSubtitle;
+    private string _selectedBase = "";
+    private static readonly Regex TransportSuffix = new(@"\s*\(([^()]*)\)$");
+
+    private void BuildSourceList()
     {
-        CameraMenu.Items.Clear();
-        for (int i = 0; i < _cameras.Count; i++)
-        {
-            if (_kinds[i] == 2) continue; // shared screens: their own section below
-            int cam = i;
-            var state = Engine.CameraState(i, out string error);
-            string? note = StateText(_kinds[i], state);
-            var item = new RadioMenuFlyoutItem
-            {
-                Text = note is null ? _cameras[i] : $"{_cameras[i]}  ·  {note}",
-                GroupName = "camera",
-                IsChecked = i == _camera,
-                Icon = new FontIcon { Glyph = _kinds[i] != 0 ? "" : "" },
-            };
-            if (error.Length > 0) ToolTipService.SetToolTip(item, error);
-            item.Click += (_, _) => OnCameraPicked(cam);
-            CameraMenu.Items.Add(item);
-        }
-        if (_cameras.Count > 0) CameraMenu.Items.Add(new MenuFlyoutSeparator());
-        AddScreenItems();
-        AddWindowItems();
-        var refresh = new MenuFlyoutItem { Text = "Tìm lại camera và điện thoại", Icon = new FontIcon { Glyph = "" } };
-        refresh.Click += async (_, _) => await RefreshCamerasAsync(null);
-        CameraMenu.Items.Add(refresh);
-        var addPhone = new MenuFlyoutItem { Text = "Thêm điện thoại theo địa chỉ IP…", Icon = new FontIcon { Glyph = "" } };
-        addPhone.Click += async (_, _) => await AddPhoneByIpAsync();
-        CameraMenu.Items.Add(addPhone);
+        SourceList.Children.Clear();
+        _selectedSubtitle = null;
+        var quick = QuickSources();
+        AddSourceGroup("Điện thoại", 1, quick);
+        AddSourceGroup("Webcam", 0, quick);
+        AddScreenRows();
+        AddPaneLabel("Máy tính");
+        bool windowSelected = _windowSource is not null;
+        var windowRow = SourceRow("", windowSelected ? _windowSource!.Value.Title : "Cửa sổ trên máy tính",
+            windowSelected ? "Cửa sổ trên máy tính" : "Trình duyệt, bài trình chiếu…", windowSelected, null,
+            "Một cửa sổ trên máy tính làm nguồn của camera ảo");
+        windowRow.Click += (_, _) => ShowWindowPicker(windowRow);
+        SourceList.Children.Add(windowRow);
+        UpdateSelectedSubtitle(Engine.GetStatus());
     }
 
-    // ---- Phone screens: a window of their own --------------------------------------------------
+    private void AddPaneLabel(string text) =>
+        SourceList.Children.Add(new TextBlock { Text = text, Style = Res<Style>("PaneLabelStyle") });
 
-    // A shared screen opens in its own window (to share in a meeting app); it can still be the
+    private static string TransportOf(string name) =>
+        TransportSuffix.Match(name) is { Success: true } m ? (m.Groups[1].Value == "USB" ? "Cáp USB" : m.Groups[1].Value) : "";
+
+    private static string JoinParts(params string?[] parts) => string.Join(" · ", parts.Where(p => !string.IsNullOrEmpty(p)));
+
+    private void AddSourceGroup(string label, int kind, List<int> quick)
+    {
+        bool any = false;
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            if (_kinds[i] != kind) continue;
+            if (!any) AddPaneLabel(label);
+            any = true;
+            int cam = i;
+            var state = Engine.CameraState(i, out string error);
+            string sub = kind == 0 ? (IsBuiltIn(i) ? "Camera tích hợp" : "Webcam USB") : JoinParts(TransportOf(_cameras[i]), StateText(kind, state));
+            int n = quick.IndexOf(i);
+            string tip = (error.Length > 0 ? error : _cameras[i]) + (n >= 0 ? $"   Ctrl+{n + 1}" : "");
+            var row = SourceRow(kind == 0 ? "" : "", ScreenTitle(_cameras[i]), sub,
+                i == _camera && _windowSource is null, DotColor(kind, state), tip);
+            row.Click += (_, _) => OnCameraPicked(cam);
+            SourceList.Children.Add(row);
+        }
+    }
+
+    // A shared screen opens in its own window (to share in a meeting app); "Làm camera" makes it the
     // virtual camera's source instead.
-    private void AddScreenItems()
+    private void AddScreenRows()
     {
         bool any = false;
         for (int i = 0; i < _cameras.Count; i++)
         {
             if (_kinds[i] != 2) continue;
-            if (!any) CameraMenu.Items.Add(new MenuFlyoutItem { Text = "Màn hình điện thoại", IsEnabled = false });
+            if (!any) AddPaneLabel("Màn hình điện thoại");
             any = true;
             int cam = i;
             var state = Engine.CameraState(i, out string error);
-            string? note = StateText(_kinds[i], state);
             bool open = _screenWindows.ContainsKey(_ids[i]);
-            var window = new MenuFlyoutItem
-            {
-                Text = (note is null ? _cameras[i] : $"{_cameras[i]}  ·  {note}") + (open ? "  ·  đang mở" : ""),
-                Icon = new FontIcon { Glyph = "\uE737" },
-            };
-            ToolTipService.SetToolTip(window, error.Length > 0 ? error : "Mở trong cửa sổ riêng, để chia sẻ cửa sổ này trong Discord, Zoom, Meet…");
-            window.Click += (_, _) => OpenScreenWindow(cam);
-            CameraMenu.Items.Add(window);
-            var asCamera = new RadioMenuFlyoutItem
-            {
-                Text = "      Dùng làm camera ảo",
-                GroupName = "camera",
-                IsChecked = i == _camera,
-            };
+            bool notShared = state == LinkState.Unreachable;
+            string sub = JoinParts(TransportOf(_cameras[i]), notShared ? "Chưa chia sẻ màn hình" : StateText(2, state), open ? "đang mở cửa sổ" : null);
+            var asCamera = new Button { Content = "Làm camera", Padding = new Thickness(8, 2, 8, 3), VerticalAlignment = VerticalAlignment.Center };
+            ToolTipService.SetToolTip(asCamera, "Dùng màn hình này làm nguồn của camera ảo");
             asCamera.Click += (_, _) => UseScreenAsCamera(cam);
-            CameraMenu.Items.Add(asCamera);
+            var row = SourceRow("", ScreenTitle(_cameras[i]).Replace(" · Màn hình", ""), sub, i == _camera && _windowSource is null,
+                notShared ? DotColor(2, LinkState.Idle) : DotColor(2, state),
+                error.Length > 0 ? error : "Mở trong cửa sổ riêng, để chia sẻ cửa sổ này trong Discord, Zoom, Meet…", asCamera);
+            row.Click += (_, _) => OpenScreenWindow(cam);
+            SourceList.Children.Add(row);
         }
-        if (any) CameraMenu.Items.Add(new MenuFlyoutSeparator());
+    }
+
+    private static Windows.UI.Color? DotColor(int kind, LinkState state) => kind == 0 ? null : state switch
+    {
+        LinkState.Connected => Windows.UI.Color.FromArgb(255, 0x0F, 0xA9, 0x58),
+        LinkState.Connecting or LinkState.NeedsPairing => Windows.UI.Color.FromArgb(255, 0xF7, 0xB5, 0x00),
+        LinkState.Busy or LinkState.Unreachable => Windows.UI.Color.FromArgb(255, 0xE5, 0x48, 0x4D),
+        _ => Windows.UI.Color.FromArgb(255, 0x8A, 0x8A, 0x8A),
+    };
+
+    // One row: selection pill, icon, name and second line, an optional button, a state dot.
+    private Button SourceRow(string glyph, string title, string subtitle, bool selected, Windows.UI.Color? dot, string tooltip,
+                             FrameworkElement? trailing = null)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // Theme colours come from styles (App.xaml), so they follow the app's own light/dark choice.
+        var pill = new Border
+        {
+            Style = Res<Style>("SelectionPillStyle"), Margin = new Thickness(-10, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+            Visibility = selected ? Visibility.Visible : Visibility.Collapsed,
+        };
+        grid.Children.Add(pill);
+        var icon = new FontIcon { Glyph = glyph, FontSize = 18, VerticalAlignment = VerticalAlignment.Center };
+        if (selected) icon.Style = Res<Style>("SourceIconSelectedStyle");
+        grid.Children.Add(icon);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock
+        {
+            Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
+            FontWeight = selected ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+        });
+        var second = new TextBlock
+        {
+            Text = subtitle, Style = Res<Style>("SourceSubtitleStyle"),
+            Visibility = subtitle.Length > 0 ? Visibility.Visible : Visibility.Collapsed,
+        };
+        text.Children.Add(second);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        if (trailing is not null)
+        {
+            Grid.SetColumn(trailing, 2);
+            grid.Children.Add(trailing);
+        }
+        if (dot is { } c)
+        {
+            var e = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(c), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(e, 3);
+            grid.Children.Add(e);
+        }
+        var button = new Button { Style = Res<Style>(selected ? "SourceItemSelectedStyle" : "SourceItemStyle"), Content = grid };
+        if (selected)
+        {
+            _selectedSubtitle = second;
+            _selectedBase = subtitle;
+        }
+        ToolTipService.SetToolTip(button, tooltip);
+        return button;
+    }
+
+    // The selected row's second line: what the camera does with it right now.
+    private void UpdateSelectedSubtitle(CsStatus s)
+    {
+        if (_selectedSubtitle is null) return;
+        var state = (EngineState)s.State;
+        string? live = state switch
+        {
+            EngineState.Running when s.NoSource == 0 && s.Standby != 0 => "Đang nghỉ",
+            EngineState.Running when s.NoSource == 0 => s.ConsumerActive != 0 ? "Đang phát cho ứng dụng" : "Đang phát",
+            EngineState.Waiting => "Đang chờ",
+            EngineState.Starting => "Đang mở",
+            _ => null,
+        };
+        string transport = _isPhone && _camera >= 0 && _camera < _cameras.Count ? TransportOf(_cameras[_camera]).Replace("Cáp ", "") : "";
+        string text = live is null ? _selectedBase : JoinParts(live, transport, _isPhone ? PhoneBattery() : null);
+        _selectedSubtitle.Text = text;
+        _selectedSubtitle.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // "iPhone · Màn hình (Wi‑Fi)" -> "iPhone · Màn hình": the title a meeting app lists.
@@ -171,27 +268,27 @@ public sealed partial class MainWindow
 
     // ---- A window on this PC as the camera's source ----------------------------------------------
 
-    private void AddWindowItems()
+    // The windows on this PC, listed when the row is clicked (cheap).
+    private void ShowWindowPicker(FrameworkElement anchor)
     {
-        var sub = new MenuFlyoutSubItem { Text = "Cửa sổ trên máy tính", Icon = new FontIcon { Glyph = "\uE7C4" } };
-        var windows = Engine.ListWindows(); // cheap: listed each time the menu opens
+        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.RightEdgeAlignedTop };
+        var windows = Engine.ListWindows();
         foreach (var (handle, title) in windows)
         {
             var item = new RadioMenuFlyoutItem
             {
                 Text = title.Length > 60 ? title[..57] + "…" : title,
-                GroupName = "camera",
+                GroupName = "window",
                 IsChecked = _windowSource?.Handle == handle,
             };
             ToolTipService.SetToolTip(item, title);
             long h = handle;
             string t = title;
             item.Click += (_, _) => OnWindowPicked(h, t);
-            sub.Items.Add(item);
+            menu.Items.Add(item);
         }
-        if (windows.Count == 0) sub.Items.Add(new MenuFlyoutItem { Text = "Không có cửa sổ nào", IsEnabled = false });
-        CameraMenu.Items.Add(sub);
-        CameraMenu.Items.Add(new MenuFlyoutSeparator());
+        if (windows.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "Không có cửa sổ nào", IsEnabled = false });
+        menu.ShowAt(anchor);
     }
 
     // The window becomes the camera's source at once (the camera is turned on if it was off).
@@ -216,14 +313,15 @@ public sealed partial class MainWindow
         _formats.Clear();
         SelectFormat(-1);
         FormatButtonText.Text = "Theo cỡ cửa sổ";
-        CameraButtonText.Text = "Cửa sổ: " + title;
+        CameraButtonText.Text = title;
+        SourceSubtitle.Text = "Cửa sổ trên máy tính";
         ErrorBar.IsOpen = false;
         SetToggleQuietly(true);
-        UpdateSourceRow();
+        BuildSourceList();
         UpdateStatus();
     }
 
-    // ---- Quick switching: the source row, Ctrl+1…9, the tray menu ----------------------------
+    // ---- Quick switching: Ctrl+1…9, the tray menu ----------------------------
 
     // Sources that can take over right now (webcams, connected phones), plus the current one.
     private List<int> QuickSources()
@@ -235,35 +333,6 @@ public sealed partial class MainWindow
             if (i == _camera || Engine.CameraState(i, out _) == LinkState.Connected) list.Add(i);
         }
         return list;
-    }
-
-    private void UpdateSourceRow()
-    {
-        SourceRow.Children.Clear();
-        var list = QuickSources();
-        if (list.Count < 2)
-        {
-            SourceRow.Visibility = Visibility.Collapsed;
-            return;
-        }
-        SourceRow.Visibility = Visibility.Visible;
-        for (int n = 0; n < list.Count; n++)
-        {
-            int cam = list[n];
-            var button = new ToggleButton
-            {
-                Content = new TextBlock { Text = _cameras[cam], MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis },
-                IsChecked = cam == _camera,
-                Padding = new Thickness(10, 4, 10, 5),
-            };
-            ToolTipService.SetToolTip(button, $"{_cameras[cam]} (Ctrl+{n + 1})");
-            button.Click += (_, _) =>
-            {
-                button.IsChecked = cam == _camera; // the pick decides, not the toggle
-                OnCameraPicked(cam);
-            };
-            SourceRow.Children.Add(button);
-        }
     }
 
     private void SetupSourceShortcuts()
@@ -290,7 +359,7 @@ public sealed partial class MainWindow
     private IEnumerable<TrayIcon.MenuItem> TraySourceItems()
     {
         ReadCameraList(); // the window may have been hidden a long time
-        UpdateSourceRow();
+        BuildSourceList();
         foreach (int cam in QuickSources())
         {
             int pick = cam;
@@ -391,7 +460,7 @@ public sealed partial class MainWindow
         if (changed || woke || relist)
         {
             ReadCameraList();
-            UpdateSourceRow();
+            BuildSourceList();
         }
         bool none = s.NoSource != 0;
         if (changed || woke || none || lost) AutoPickAsync(none, lost, consumer);

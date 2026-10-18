@@ -31,7 +31,6 @@ public sealed partial class MainWindow : Window
         private string FpsText => Format.Fps.ToString(Format.Fps % 1 == 0 ? "0" : "0.##");
     }
 
-    private static readonly string[] AspectNames = { "Gốc", "16:9", "4:3", "1:1", "9:16" };
 
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherQueueTimer _previewTimer;
@@ -116,7 +115,6 @@ public sealed partial class MainWindow : Window
     {
         Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight); // the last size: no rebuild later
         SetToggleQuietly(true); // the picture is on: the first source feeds it
-        CameraMenu.Opening += (_, _) => RefreshCameraList();
         if (options.Device is { } want)
         {
             // --device: that camera. A phone on Wi‑Fi takes a few seconds to be found.
@@ -135,21 +133,18 @@ public sealed partial class MainWindow : Window
         // The source picked last, else the best there is now; a better one may follow.
         _autoPick = true;
         ReadCameraList();
-        BuildCameraMenu();
-        UpdateSourceRow();
+        BuildSourceList();
         if (BestSource() < 0) CameraButtonText.Text = "Đang tìm nguồn hình…";
         var s = Engine.GetStatus();
         AutoPickAsync(none: true, lost: false, consumer: s.ConsumerActive != 0);
     }
 
-    // Cheap refresh when the camera menu opens: new phones show up without
-    // reloading the selected camera's formats (the engine keeps them). Safe while
-    // streaming: sources are found again by id.
+    // Cheap refresh of the source list: new phones show up without reloading the selected
+    // camera's formats (the engine keeps them). Safe while streaming: sources are found again by id.
     private void RefreshCameraList()
     {
         ReadCameraList();
-        BuildCameraMenu();
-        UpdateSourceRow();
+        BuildSourceList();
     }
 
     // ---- Window chrome ----------------------------------------------------------
@@ -162,13 +157,13 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "CamStudio.ico"));
 
         double scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
-        AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(760 * scale)));
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        AppWindow.Resize(new SizeInt32(Math.Min((int)(1320 * scale), area.Width), Math.Min((int)(820 * scale), area.Height)));
         if (AppWindow.Presenter is OverlappedPresenter p)
         {
-            p.PreferredMinimumWidth = (int)(720 * scale);
-            p.PreferredMinimumHeight = (int)(520 * scale);
+            p.PreferredMinimumWidth = (int)(760 * scale);
+            p.PreferredMinimumHeight = (int)(540 * scale);
         }
-        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         AppWindow.Move(new PointInt32(area.X + (area.Width - AppWindow.Size.Width) / 2,
                                       area.Y + (area.Height - AppWindow.Size.Height) / 2));
 
@@ -328,7 +323,7 @@ public sealed partial class MainWindow : Window
     {
         MirrorButton.IsChecked = _settings.Mirror;
         FlipButton.IsChecked = _settings.Flip;
-        AspectRadios.SelectedIndex = _settings.Aspect;
+        ShowAspect(_settings.Aspect);
         ZoomSlider.Value = _settings.Zoom;
         BrightnessSlider.Value = _settings.Brightness;
         ContrastSlider.Value = _settings.Contrast;
@@ -363,15 +358,11 @@ public sealed partial class MainWindow : Window
         if (IsCapturing) Engine.SetImage(CurrentImage()); // restarts by itself if the size changes
     }
 
-    // Labels and dots on the toolbar reflect non-default settings.
+    // The rotate button shows the angle; the zoom value its factor.
     private void UpdateToolIndicators()
     {
         RotateText.Text = $"{_settings.Rotation}°";
         UpdateZoomText();
-        AspectDot.Visibility = _settings.Aspect != 0 ? Visibility.Visible : Visibility.Collapsed;
-        AdjustDot.Visibility = _settings.Brightness != 0 || _settings.Contrast != 0 || _settings.Saturation != 0 || _settings.Temperature != 0
-            ? Visibility.Visible : Visibility.Collapsed;
-        ToolTipService.SetToolTip(AspectButton, $"Tỉ lệ khung: {AspectNames[_settings.Aspect]}");
     }
 
     // ---- Cameras and formats -----------------------------------------------------
@@ -403,8 +394,7 @@ public sealed partial class MainWindow : Window
             // Streaming: only a match moves it (e.g. a phone just added by IP). Picking by
             // itself: the best source is found on the next status tick.
             if (IsCapturing && found && pick != _camera) OnCameraPicked(pick);
-            BuildCameraMenu();
-            UpdateSourceRow();
+            BuildSourceList();
             return;
         }
         if (found) _autoPick = false; // the user's (or --device's) choice
@@ -419,9 +409,9 @@ public sealed partial class MainWindow : Window
         _camera = index;
         _selectedId = index >= 0 ? _ids[index] : null;
         _isPhone = index >= 0 && Engine.IsPhone(index);
-        CameraButtonText.Text = index >= 0 ? _cameras[index] : "Không tìm thấy camera";
-        BuildCameraMenu();
-        UpdateSourceRow();
+        CameraButtonText.Text = index >= 0 ? ScreenTitle(_cameras[index]) : "Không tìm thấy camera";
+        SourceSubtitle.Text = index < 0 ? "" : _isPhone ? TransportOf(_cameras[index]) : IsBuiltIn(index) ? "Camera tích hợp" : "Webcam USB";
+        BuildSourceList();
         await LoadFormatsAsync();
     }
 
@@ -683,6 +673,7 @@ public sealed partial class MainWindow : Window
         bool phone = _isPhone && _phoneCaps is not null && lens is not null;
         if (phone)
         {
+            SourceSubtitle.Text = JoinParts(lens!.Label, _camera >= 0 && _camera < _cameras.Count ? TransportOf(_cameras[_camera]) : null);
             // One chip per lens on the same side, in zoom order (0.6× 1× 2× Macro).
             var sameSide = _phoneCaps!.Lenses
                 .Where(l => l.Facing == lens!.Facing && _formats.Any(f => f.Format.LensText == l.Label))
@@ -726,10 +717,16 @@ public sealed partial class MainWindow : Window
         {
             FacingButton.Visibility = Visibility.Collapsed;
         }
+        ZoomHint.Text = PhoneZoom
+            ? "Thu phóng trên điện thoại: giữ độ nét, tự đổi ống kính khi cần."
+            : "Thu phóng trên máy tính. Kéo trên hình để chọn khung, nhấp đúp để đặt lại.";
         ConfigureZoomSlider();
         UpdateOverlayVisibility();
+        if (_phoneOpen) BuildPhoneControls(); // another lens: other controls
     }
 
+    // The Camera tab shows what this source has: lenses and light for a phone, zoom for any
+    // running source, the manual controls once the phone's caps are known.
     private void UpdateOverlayVisibility()
     {
         var status = Engine.GetStatus();
@@ -737,10 +734,13 @@ public sealed partial class MainWindow : Window
         // A phone keeps its lens chips while stopped, so a lens can be picked
         // (or a failed one left) before starting.
         bool lensPicker = _isPhone && (LensChips.Children.Count > 0 || FacingButton.Visibility == Visibility.Visible);
-        CameraBar.Visibility = running || lensPicker ? Visibility.Visible : Visibility.Collapsed;
+        LensSection.Visibility = lensPicker ? Visibility.Visible : Visibility.Collapsed;
         ZoomGroup.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        CameraBarDivider.Visibility = running && lensPicker ? Visibility.Visible : Visibility.Collapsed;
-        CameraSide.Visibility = running && _isPhone ? Visibility.Visible : Visibility.Collapsed;
+        CameraSide.Visibility = running && _isPhone && (FlashButton.Visibility == Visibility.Visible || ExposureButton.Visibility == Visibility.Visible)
+            ? Visibility.Visible : Visibility.Collapsed;
+        ManualSection.Visibility = _isPhone && _phoneCaps is not null ? Visibility.Visible : Visibility.Collapsed;
+        bool any = lensPicker || running || ManualSection.Visibility == Visibility.Visible;
+        CameraEmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
     }
 
     // Native stays native (else 1× → Macro → 1× ends at the macro's 4:3 size); otherwise the
@@ -836,10 +836,10 @@ public sealed partial class MainWindow : Window
             {
                 _windowSource = window;
                 _camera = -1;
-                CameraButtonText.Text = "Cửa sổ: " + window.Title;
+                CameraButtonText.Text = window.Title;
+                SourceSubtitle.Text = "Cửa sổ trên máy tính";
                 FormatButtonText.Text = "Theo cỡ cửa sổ";
-                BuildCameraMenu();
-                UpdateSourceRow();
+                BuildSourceList();
             }
             return;
         }
@@ -1041,11 +1041,19 @@ public sealed partial class MainWindow : Window
         PushImage();
     }
 
-    private void AspectRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void AspectChip_Click(object sender, RoutedEventArgs e)
     {
-        if (_loading || AspectRadios.SelectedIndex < 0) return;
-        _settings.Aspect = AspectRadios.SelectedIndex;
+        int aspect = int.Parse((string)((FrameworkElement)sender).Tag);
+        ShowAspect(aspect); // a chip clicked again stays on
+        if (aspect == _settings.Aspect) return;
+        _settings.Aspect = aspect;
         PushImage();
+    }
+
+    private void ShowAspect(int aspect)
+    {
+        foreach (var chip in AspectChips.Children.OfType<ToggleButton>())
+            chip.IsChecked = (string)chip.Tag == aspect.ToString();
     }
 
     private void ZoomSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -1279,13 +1287,69 @@ public sealed partial class MainWindow : Window
         _settings.Save();
     }
 
-    private void InfoFlyout_Opening(object sender, object e)
+    // ---- Panes: inspector tabs, showing/hiding it, settings ----------------------------------
+
+    private void InspectorTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        _infoOpen = true;
+        var item = sender.SelectedItem;
+        ImagePanel.Visibility = item == ImageTab ? Visibility.Visible : Visibility.Collapsed;
+        CameraPanel.Visibility = item == CameraTab ? Visibility.Visible : Visibility.Collapsed;
+        DetailsPanel.Visibility = item == DetailsTab ? Visibility.Visible : Visibility.Collapsed;
+        UpdatePaneActivity();
+    }
+
+    // Live values are only refreshed while their tab can be seen.
+    private void UpdatePaneActivity()
+    {
+        bool open = InspectorPane.Visibility == Visibility.Visible;
+        bool phoneWasOpen = _phoneOpen;
+        _infoOpen = open && DetailsPanel.Visibility == Visibility.Visible;
+        _phoneOpen = open && CameraPanel.Visibility == Visibility.Visible;
+        if (_phoneOpen && !phoneWasOpen) BuildPhoneControls();
+        if (!_phoneOpen) _phoneReadout = null;
         UpdateStatus();
     }
 
-    private void InfoFlyout_Closed(object sender, object e) => _infoOpen = false;
+    private bool _inspectorByUser; // the user showed or hid it: the window width no longer decides
+
+    private void InspectorToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _inspectorByUser = true;
+        ShowInspector(InspectorToggle.IsChecked == true);
+    }
+
+    private void ShowInspector(bool show)
+    {
+        InspectorToggle.IsChecked = show;
+        InspectorPane.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        UpdatePaneActivity();
+    }
+
+    // Narrow windows give the picture the room: the inspector folds away, then the source list
+    // narrows.
+    private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double w = e.NewSize.Width;
+        SourcesColumn.Width = new GridLength(w < 980 ? 228 : 284);
+        if (!_inspectorByUser) ShowInspector(w >= 1180);
+    }
+
+    private async void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsDialog.XamlRoot = RootGrid.XamlRoot;
+        try
+        {
+            await SettingsDialog.ShowAsync();
+        }
+        catch (Exception)
+        {
+            // Another dialog (pairing) is open: it comes first.
+        }
+    }
+
+    private async void AddPhone_Click(object sender, RoutedEventArgs e) => await AddPhoneByIpAsync();
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshCamerasAsync(null);
 
     // ---- Preview -------------------------------------------------------------------
 
@@ -1422,6 +1486,11 @@ public sealed partial class MainWindow : Window
             _ => "Camera ảo chưa chạy",
         };
         PlaceholderStart.Visibility = _paused || state is EngineState.Stopped or EngineState.Failed ? Visibility.Visible : Visibility.Collapsed;
+        // No source yet: how to get one.
+        var howTo = state == EngineState.Running && s.NoSource != 0 && !_paused ? Visibility.Visible : Visibility.Collapsed;
+        PlaceholderHint.Visibility = howTo;
+        PlaceholderAdd.Visibility = howTo;
+        UpdateSelectedSubtitle(s);
 
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.
@@ -1429,8 +1498,15 @@ public sealed partial class MainWindow : Window
         else if (_infoOpen || _statusTicks % 3 == 0) _consumers = CameraUsage.RunningAppsInUse(); // not entries left by apps that were killed
         ConsumerBadge.Visibility = _consumers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ConsumerBadgeText.Text = string.Join(", ", _consumers);
+        if (running && s.ConsumerActive != 0 && _consumers.Count > 0)
+            StatusText.Text = $"{string.Join(", ", _consumers)} đang dùng · {s.Width} × {s.Height}";
 
-        if (_infoOpen) UpdateInfo(s, running);
+        if (_infoOpen)
+        {
+            UpdateInfo(s, running);
+            PhoneInfoSection.Visibility = _isPhone && running ? Visibility.Visible : Visibility.Collapsed;
+            if (_isPhone) PhoneInfoText.Text = PhoneReadoutText();
+        }
         if (_phoneOpen) UpdatePhoneReadout();
     }
 

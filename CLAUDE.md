@@ -162,6 +162,13 @@ Gotchas:
   sends no frames for a minimized window: test the window source with a window you may control.
 - Windows keeps camera "in use" entries of apps killed while using it (and of old Discord
   version folders): `CameraUsage.RunningAppsInUse()` skips those.
+- **PC UI (redone 2026-10-18):** three panes like Windows Settings. Left: the source list built in
+  code (`BuildSourceList`, `MainWindow.Sources.cs`). Middle: the header (name, mode, virtual camera
+  state) and the preview. Right: the inspector, tabs Hình ảnh / Camera (focal length: lens chips,
+  front/back, zoom; light; manual controls) / Chi tiết. It folds away under 1180 px. Settings is a
+  `ContentDialog`. The accent is our own blue (`SystemAccentColor*` in App.xaml).
+- A brush looked up in code (`Application.Current.Resources[...]`) follows the Windows theme, not
+  the app's light/dark choice: give code-built controls a style whose setters use `ThemeResource`.
 - With the window source, "Lật ngang" (a global setting) mirrors the window's text too.
 
 ## Things learned the hard way

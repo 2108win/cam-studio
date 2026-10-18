@@ -8,258 +8,270 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="RootGrid">
+    <!-- Three panes, like Windows Settings: sources on Mica (left), then a content layer with the
+         picture and the inspector (right: picture, camera incl. focal length, details). -->
+    <Grid x:Name="RootGrid" SizeChanged="RootGrid_SizeChanged">
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />   <!-- title bar -->
-            <RowDefinition Height="Auto" /> <!-- source + on/off -->
-            <RowDefinition Height="*" />    <!-- preview -->
-            <RowDefinition Height="Auto" /> <!-- tools -->
+            <RowDefinition Height="48" />  <!-- title bar -->
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="SourcesColumn" Width="284" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <!-- ============ Title bar ============ -->
-        <Grid x:Name="AppTitleBar" Padding="16,0,0,0">
+        <Grid x:Name="AppTitleBar" Grid.ColumnSpan="2" Padding="18,0,0,0">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
                 <Image Source="Assets/CamStudio.png" Width="18" Height="18" />
                 <TextBlock Text="Cam Studio" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
 
-        <!-- ============ Source bar ============ -->
-        <Grid Grid.Row="1" Margin="16,0,16,12" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <DropDownButton x:Name="CameraButton" ToolTipService.ToolTip="Chọn camera">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <FontIcon Glyph="&#xE722;" FontSize="16" />
-                    <TextBlock x:Name="CameraButtonText" Text="Không có camera" MaxWidth="260" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-                <DropDownButton.Flyout>
-                    <MenuFlyout x:Name="CameraMenu" Placement="BottomEdgeAlignedLeft" />
-                </DropDownButton.Flyout>
-            </DropDownButton>
-
-            <DropDownButton x:Name="FormatButton" Grid.Column="1" ToolTipService.ToolTip="Độ phân giải và tốc độ khung hình">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <FontIcon Glyph="&#xE7F4;" FontSize="16" />
-                    <TextBlock x:Name="FormatButtonText" Text="—" />
-                </StackPanel>
-                <DropDownButton.Flyout>
-                    <MenuFlyout x:Name="FormatMenu" Placement="BottomEdgeAlignedLeft" />
-                </DropDownButton.Flyout>
-            </DropDownButton>
-
-            <!-- Quick switching: the sources ready right now (Ctrl+1…9) -->
-            <StackPanel x:Name="SourceRow" Grid.Column="2" Orientation="Horizontal" Spacing="4"
-                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
-
-            <!-- Virtual camera on/off with live status -->
-            <Border Grid.Column="3" Style="{StaticResource CardStyle}" MinHeight="0" Padding="14,4,6,4" CornerRadius="8">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Ellipse x:Name="StatusDot" Width="8" Height="8" VerticalAlignment="Center"
-                             Fill="{ThemeResource TextFillColorDisabledBrush}" />
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock x:Name="StatusText" Text="Đang tắt" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <!-- ============ Sources (left) ============ -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <!-- Built by BuildSourceList: phones, webcams, phone screens, a window on this PC. -->
+                <StackPanel x:Name="SourceList" Padding="8,0,8,8" Spacing="2" />
+            </ScrollViewer>
+            <StackPanel Grid.Row="1" Padding="8,6,8,12" Spacing="2">
+                <Button Style="{StaticResource SourceItemStyle}" MinHeight="40" Click="AddPhone_Click"
+                        ToolTipService.ToolTip="Khi điện thoại không tự hiện: nhập địa chỉ hiện trên app Cam Studio của điện thoại">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon Glyph="&#xE710;" FontSize="16" />
+                        <TextBlock Text="Thêm điện thoại theo IP" />
                     </StackPanel>
-                    <ToggleSwitch x:Name="VcamToggle" OnContent="" OffContent="" MinWidth="0" Margin="8,0,0,0"
-                                  VerticalAlignment="Center" Toggled="VcamToggle_Toggled"
-                                  ToolTipService.ToolTip="Phát / tạm dừng hình. Camera ảo &quot;Cam Studio&quot; luôn có trong các ứng dụng khi Cam Studio chạy; khi tạm dừng, ứng dụng thấy &quot;không có tín hiệu&quot;" />
-                </StackPanel>
-            </Border>
+                </Button>
+                <Button Style="{StaticResource SourceItemStyle}" MinHeight="40" Click="Refresh_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                        <TextBlock Text="Tìm lại thiết bị" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SourceItemStyle}" MinHeight="40" Click="Settings_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon Glyph="&#xE713;" FontSize="16" />
+                        <TextBlock Text="Cài đặt" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
-        <!-- ============ Preview ============ -->
-        <Border x:Name="PreviewHost" Grid.Row="2" Margin="16,0" CornerRadius="8" Background="#FF0E0E10"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                SizeChanged="PreviewHost_SizeChanged">
+        <!-- ============ Content layer ============ -->
+        <Border Grid.Row="1" Grid.Column="1" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0" CornerRadius="8,0,0,0">
             <Grid>
-                <Image x:Name="PreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved"
-                       PointerReleased="Preview_PointerReleased" PointerCanceled="Preview_PointerReleased"
-                       PointerWheelChanged="Preview_PointerWheelChanged" DoubleTapped="Preview_DoubleTapped"
-                       ToolTipService.ToolTip="Cuộn chuột: thu phóng · Kéo: di chuyển khung · Nhấp đúp: đặt lại" />
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-                <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
-                    <FontIcon Glyph="&#xE714;" FontSize="44" Foreground="#80FFFFFF" />
-                    <TextBlock x:Name="PlaceholderTitle" Text="Camera ảo đang tắt" HorizontalAlignment="Center"
-                               Style="{StaticResource SubtitleTextBlockStyle}" Foreground="#E6FFFFFF" />
-                    <Button x:Name="PlaceholderStart" HorizontalAlignment="Center" Style="{StaticResource AccentButtonStyle}"
-                            Click="PlaceholderStart_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE768;" FontSize="14" />
-                            <TextBlock Text="Phát hình" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                <Grid Padding="20,14,20,20" RowSpacing="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                <Border x:Name="LiveBadge" Style="{StaticResource OverlayPillStyle}" Margin="12"
-                        HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Ellipse Width="8" Height="8" Fill="#FFE81123" VerticalAlignment="Center" />
-                        <TextBlock x:Name="LiveBadgeText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
-                    </StackPanel>
-                </Border>
-
-                <Border x:Name="ConsumerBadge" Style="{StaticResource OverlayPillStyle}" Margin="12"
-                        HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"
-                        ToolTipService.ToolTip="Ứng dụng đang dùng camera">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE7B3;" FontSize="12" Foreground="White" />
-                        <TextBlock x:Name="ConsumerBadgeText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Tap-to-focus marker -->
-                <Canvas IsHitTestVisible="False">
-                    <Border x:Name="FocusRing" Width="70" Height="70" BorderBrush="#FFFFD60A" BorderThickness="1.5"
-                            CornerRadius="4" Opacity="0" />
-                </Canvas>
-
-                <!-- Phone camera quick controls (right edge) -->
-                <StackPanel x:Name="CameraSide" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0"
-                            Spacing="10" Visibility="Collapsed" RequestedTheme="Dark">
-                    <ToggleButton x:Name="FlashButton" Style="{StaticResource OverlayRoundToggleStyle}" Click="FlashButton_Click"
-                                  ToolTipService.ToolTip="Đèn flash">
-                        <FontIcon Glyph="&#xE945;" FontSize="16" />
-                    </ToggleButton>
-                    <Button x:Name="ExposureButton" Style="{StaticResource OverlayRoundButtonStyle}" ToolTipService.ToolTip="Bù sáng">
-                        <FontIcon Glyph="&#xE706;" FontSize="16" />
-                        <Button.Flyout>
-                            <Flyout Placement="Left">
-                                <StackPanel Width="240">
-                                    <TextBlock Text="Bù sáng" Style="{StaticResource FlyoutTitleStyle}" />
-                                    <Grid ColumnSpacing="10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Slider x:Name="BiasSlider" Minimum="-2" Maximum="2" StepFrequency="0.1"
-                                                ValueChanged="BiasSlider_ValueChanged" IsThumbToolTipEnabled="False" />
-                                        <TextBlock x:Name="BiasText" Grid.Column="1" Text="0 EV" Width="48" VerticalAlignment="Center" />
-                                    </Grid>
-                                    <TextBlock Margin="0,6,0,0" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               Text="Bấm vào một điểm trên hình để lấy nét và đo sáng ở đó." />
-                                </StackPanel>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
-                    <Button x:Name="TuneButton" Style="{StaticResource OverlayRoundButtonStyle}"
-                            ToolTipService.ToolTip="Chỉnh tay: lấy nét, ISO, tốc độ màn trập, cân bằng trắng, chống rung…">
-                        <FontIcon Glyph="&#xE9E9;" FontSize="16" />
-                        <Button.Flyout>
-                            <Flyout x:Name="PhoneFlyout" Placement="Left" Opening="PhoneFlyout_Opening" Closed="PhoneFlyout_Closed">
-                                <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
-                                    <StackPanel x:Name="PhoneControls" Width="320" Spacing="6" />
-                                </ScrollViewer>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
-                </StackPanel>
-
-                <!-- Camera bar: lens chips, front/back, zoom -->
-                <Border x:Name="CameraBar" Style="{StaticResource OverlayPillStyle}" CornerRadius="24" Padding="8,6"
-                        HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="12,12,12,16"
-                        Visibility="Collapsed" RequestedTheme="Dark">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="FacingButton" Style="{StaticResource OverlayRoundButtonStyle}" Width="36" Height="36"
-                                Background="#33FFFFFF" Click="FacingButton_Click" ToolTipService.ToolTip="Đổi camera trước / sau">
-                            <FontIcon Glyph="&#xE89E;" FontSize="15" />
-                        </Button>
-                        <StackPanel x:Name="LensChips" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" />
-                        <Rectangle x:Name="CameraBarDivider" Width="1" Height="22" Fill="#40FFFFFF" VerticalAlignment="Center" />
-                        <StackPanel x:Name="ZoomGroup" Orientation="Horizontal" Spacing="8">
-                            <Button Click="ZoomOut_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Thu nhỏ">
-                                <FontIcon Glyph="&#xE71F;" FontSize="14" />
-                            </Button>
-                            <Slider x:Name="ZoomSlider" Width="150" Minimum="1" Maximum="4" StepFrequency="0.05" VerticalAlignment="Center"
-                                    ValueChanged="ZoomSlider_ValueChanged" IsThumbToolTipEnabled="False" />
-                            <Button Click="ZoomIn_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Phóng to">
-                                <FontIcon Glyph="&#xE8A3;" FontSize="14" />
-                            </Button>
-                            <TextBlock x:Name="ZoomValueText" Text="1.0×" Width="40" VerticalAlignment="Center" TextAlignment="Center"
-                                       Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" Title="Không bật được camera"
-                         VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12,56,12,12" />
-                <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True"
-                         VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="12,12,12,64">
-                    <InfoBar.ActionButton>
-                        <Button Content="Cập nhật ngay" Click="UpdateNow_Click" />
-                    </InfoBar.ActionButton>
-                </InfoBar>
-            </Grid>
-        </Border>
-
-        <!-- ============ Tools ============ -->
-        <Border Grid.Row="3" Style="{StaticResource CardStyle}" MinHeight="0" Padding="6" CornerRadius="10"
-                HorizontalAlignment="Center" Margin="16,12,16,16">
-            <StackPanel Orientation="Horizontal" Spacing="2">
-
-                <!-- Orientation -->
-                <ToggleButton x:Name="MirrorButton" Style="{StaticResource ToolToggleStyle}" Click="Mirror_Click"
-                              ToolTipService.ToolTip="Lật ngang (gương)">
-                    <FontIcon Glyph="&#xE8AB;" Style="{StaticResource ToolIconStyle}" />
-                </ToggleButton>
-                <ToggleButton x:Name="FlipButton" Style="{StaticResource ToolToggleStyle}" Click="Flip_Click"
-                              ToolTipService.ToolTip="Lật dọc">
-                    <FontIcon Glyph="&#xE8CB;" Style="{StaticResource ToolIconStyle}" />
-                </ToggleButton>
-                <Button x:Name="RotateButton" Style="{StaticResource ToolButtonStyle}" Width="64" Click="Rotate_Click"
-                        ToolTipService.ToolTip="Xoay 90° theo chiều kim đồng hồ">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <FontIcon Glyph="&#xE7AD;" Style="{StaticResource ToolIconStyle}" />
-                        <TextBlock x:Name="RotateText" Text="0°" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <AppBarSeparator />
-
-                <!-- Framing -->
-                <Button x:Name="AspectButton" Style="{StaticResource ToolButtonStyle}" ToolTipService.ToolTip="Tỉ lệ khung">
-                    <Grid Width="44" Height="40">
-                        <FontIcon Glyph="&#xE7A8;" Style="{StaticResource ToolIconStyle}" />
-                        <Ellipse x:Name="AspectDot" Style="{StaticResource ToolDotStyle}" Visibility="Collapsed" />
-                    </Grid>
-                    <Button.Flyout>
-                        <Flyout Placement="Top">
-                            <StackPanel Width="220">
-                                <TextBlock Text="Tỉ lệ khung" Style="{StaticResource FlyoutTitleStyle}" />
-                                <RadioButtons x:Name="AspectRadios" SelectionChanged="AspectRadios_SelectionChanged">
-                                    <x:String>Gốc (không cắt)</x:String>
-                                    <x:String>16:9</x:String>
-                                    <x:String>4:3</x:String>
-                                    <x:String>1:1</x:String>
-                                    <x:String>9:16 (dọc)</x:String>
-                                </RadioButtons>
-                                <TextBlock Margin="0,8,0,0" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="Cắt ở giữa khung, không làm méo hình." />
+                    <!-- Header: the source, its mode, the virtual camera's state, the inspector. -->
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <!-- The source's name; under it its mode (resolution, fps) and lens / connection. -->
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="CameraButtonText" Text="Đang tìm nguồn hình…" Style="{StaticResource SubtitleTextBlockStyle}"
+                                       TextTrimming="CharacterEllipsis" MaxLines="1" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <DropDownButton x:Name="FormatButton" Padding="6,2,6,3" Margin="-6,0,0,0" Background="Transparent" BorderThickness="0"
+                                                ToolTipService.ToolTip="Độ phân giải và tốc độ khung hình của nguồn">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE7F4;" FontSize="12" />
+                                        <TextBlock x:Name="FormatButtonText" Text="—" Style="{StaticResource CaptionTextBlockStyle}" />
+                                    </StackPanel>
+                                    <DropDownButton.Flyout>
+                                        <MenuFlyout x:Name="FormatMenu" Placement="BottomEdgeAlignedLeft" />
+                                    </DropDownButton.Flyout>
+                                </DropDownButton>
+                                <TextBlock x:Name="SourceSubtitle" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap" MaxLines="1" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
-                <AppBarSeparator />
+                        </StackPanel>
 
-                <!-- Picture adjustments -->
-                <Button x:Name="AdjustButton" Style="{StaticResource ToolButtonStyle}" ToolTipService.ToolTip="Chỉnh ảnh: sáng, tương phản, màu">
-                    <Grid Width="44" Height="40">
-                        <FontIcon Glyph="&#xE706;" Style="{StaticResource ToolIconStyle}" />
-                        <Ellipse x:Name="AdjustDot" Style="{StaticResource ToolDotStyle}" Visibility="Collapsed" />
+                        <!-- Virtual camera: live state and the picture on/off -->
+                        <Border Grid.Column="1" Style="{StaticResource CardStyle}" MinHeight="0" Padding="14,5,6,5" CornerRadius="8"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Ellipse x:Name="StatusDot" Width="10" Height="10" VerticalAlignment="Center"
+                                         Fill="{ThemeResource TextFillColorDisabledBrush}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock x:Name="StatusText" Text="Đang tắt" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxWidth="240" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="VcamToggle" OnContent="" OffContent="" MinWidth="0" Margin="6,0,0,0"
+                                              VerticalAlignment="Center" Toggled="VcamToggle_Toggled"
+                                              ToolTipService.ToolTip="Phát / tạm dừng hình. Camera ảo &quot;Cam Studio&quot; luôn có trong các ứng dụng khi Cam Studio chạy; khi tạm dừng, ứng dụng thấy &quot;không có tín hiệu&quot;" />
+                            </StackPanel>
+                        </Border>
+
+                        <ToggleButton x:Name="InspectorToggle" Grid.Column="2" IsChecked="True" VerticalAlignment="Center"
+                                      Width="40" Height="40" Padding="0" Click="InspectorToggle_Click"
+                                      ToolTipService.ToolTip="Hiện / ẩn bảng chỉnh hình">
+                            <FontIcon Glyph="&#xE90D;" FontSize="16" />
+                        </ToggleButton>
                     </Grid>
-                    <Button.Flyout>
-                        <Flyout Placement="Top">
-                            <StackPanel Width="300" Spacing="4">
-                                <TextBlock Text="Chỉnh ảnh" Style="{StaticResource FlyoutTitleStyle}" />
+
+                    <!-- ============ Preview ============ -->
+                    <Border x:Name="PreviewHost" Grid.Row="1" CornerRadius="8" Background="#FF0E0E10"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                            SizeChanged="PreviewHost_SizeChanged">
+                        <Grid>
+                            <Image x:Name="PreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   PointerPressed="Preview_PointerPressed" PointerMoved="Preview_PointerMoved"
+                                   PointerReleased="Preview_PointerReleased" PointerCanceled="Preview_PointerReleased"
+                                   PointerWheelChanged="Preview_PointerWheelChanged" DoubleTapped="Preview_DoubleTapped"
+                                   ToolTipService.ToolTip="Cuộn chuột: thu phóng · Kéo: di chuyển khung · Nhấp đúp: đặt lại" />
+
+                            <!-- No picture: paused, waiting, or no source yet (then how to get one). -->
+                            <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Spacing="14" MaxWidth="460" Padding="24">
+                                <FontIcon Glyph="&#xE714;" FontSize="44" Foreground="#80FFFFFF" />
+                                <TextBlock x:Name="PlaceholderTitle" Text="Camera ảo đang tắt" HorizontalAlignment="Center" TextAlignment="Center"
+                                           TextWrapping="Wrap" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="#E6FFFFFF" />
+                                <TextBlock x:Name="PlaceholderHint" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                                           Foreground="#B3FFFFFF" Visibility="Collapsed"
+                                           Text="Mở app Cam Studio trên điện thoại (cùng mạng Wi‑Fi, hoặc cắm cáp USB), hoặc cắm webcam. Nguồn sẽ tự hiện ở bên trái và lên hình." />
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <Button x:Name="PlaceholderStart" Style="{StaticResource AccentButtonStyle}" Click="PlaceholderStart_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                            <TextBlock Text="Phát hình" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="PlaceholderAdd" Content="Thêm điện thoại theo IP" Click="AddPhone_Click" Visibility="Collapsed" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border x:Name="LiveBadge" Style="{StaticResource OverlayPillStyle}" Margin="12"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="8" Height="8" Fill="{StaticResource LiveBrush}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="LiveBadgeText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="ConsumerBadge" Style="{StaticResource OverlayPillStyle}" Margin="12"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"
+                                    ToolTipService.ToolTip="Ứng dụng đang dùng camera">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE7B3;" FontSize="12" Foreground="White" />
+                                    <TextBlock x:Name="ConsumerBadgeText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Tap-to-focus marker -->
+                            <Canvas IsHitTestVisible="False">
+                                <Border x:Name="FocusRing" Width="70" Height="70" BorderBrush="#FFFFD60A" BorderThickness="1.5"
+                                        CornerRadius="4" Opacity="0" />
+                            </Canvas>
+
+                            <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" Title="Không bật được camera"
+                                     VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12,52,12,12" />
+                            <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True"
+                                     VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="12">
+                                <InfoBar.ActionButton>
+                                    <Button Content="Cập nhật ngay" Click="UpdateNow_Click" />
+                                </InfoBar.ActionButton>
+                            </InfoBar>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- ============ Inspector (right) ============ -->
+                <Grid x:Name="InspectorPane" Grid.Column="1" Width="324"
+                      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <SelectorBar x:Name="InspectorTabs" Margin="10,8,10,0" SelectionChanged="InspectorTabs_SelectionChanged">
+                        <SelectorBarItem x:Name="ImageTab" Text="Hình ảnh" IsSelected="True">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE790;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="CameraTab" Text="Camera">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE722;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="DetailsTab" Text="Chi tiết">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE946;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                    </SelectorBar>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,0,20,20">
+                        <Grid>
+                            <!-- Tab: Hình ảnh -->
+                            <StackPanel x:Name="ImagePanel">
+                                <TextBlock Text="Xoay và lật" Style="{StaticResource InspectorHeaderStyle}" />
+                                <Grid ColumnSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="MirrorButton" Style="{StaticResource SegmentToggleStyle}" Click="Mirror_Click"
+                                                  ToolTipService.ToolTip="Lật ngang như gương">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE8AB;" FontSize="14" />
+                                            <TextBlock Text="Gương" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="FlipButton" Grid.Column="1" Style="{StaticResource SegmentToggleStyle}" Click="Flip_Click"
+                                                  ToolTipService.ToolTip="Lật dọc">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE8CB;" FontSize="14" />
+                                            <TextBlock Text="Lật dọc" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <Button x:Name="RotateButton" Grid.Column="2" Style="{StaticResource SegmentButtonStyle}" Click="Rotate_Click"
+                                            ToolTipService.ToolTip="Xoay 90° theo chiều kim đồng hồ">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE7AD;" FontSize="14" />
+                                            <TextBlock x:Name="RotateText" Text="0°" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <TextBlock Text="Tỉ lệ khung" Style="{StaticResource InspectorHeaderStyle}" />
+                                <!-- One choice of five, as a segmented row (Tag = AppSettings.Aspect). -->
+                                <Grid x:Name="AspectChips" ColumnSpacing="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton Tag="0" Content="Gốc" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click"
+                                                  ToolTipService.ToolTip="Giữ nguyên khung của nguồn" />
+                                    <ToggleButton Tag="1" Grid.Column="1" Content="16:9" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click" />
+                                    <ToggleButton Tag="2" Grid.Column="2" Content="4:3" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click" />
+                                    <ToggleButton Tag="3" Grid.Column="3" Content="1:1" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click" />
+                                    <ToggleButton Tag="4" Grid.Column="4" Content="9:16" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click"
+                                                  ToolTipService.ToolTip="Dọc, như điện thoại" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource InspectorHintStyle}"
+                                           Text="Cắt ở giữa khung, không làm méo hình." />
+
+                                <Grid Margin="0,18,0,4">
+                                    <TextBlock Text="Màu sắc" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                    <HyperlinkButton Content="Đặt lại" HorizontalAlignment="Right" Padding="6,2" Click="AdjustReset_Click" />
+                                </Grid>
                                 <Slider x:Name="BrightnessSlider" Header="Độ sáng" Minimum="-100" Maximum="100" StepFrequency="1"
                                         ValueChanged="AdjustSlider_ValueChanged" />
                                 <Slider x:Name="ContrastSlider" Header="Tương phản" Minimum="-100" Maximum="100" StepFrequency="1"
@@ -268,93 +280,177 @@
                                         ValueChanged="AdjustSlider_ValueChanged" />
                                 <Slider x:Name="TemperatureSlider" Header="Nhiệt độ màu (lạnh ↔ ấm)" Minimum="-100" Maximum="100" StepFrequency="1"
                                         ValueChanged="AdjustSlider_ValueChanged" />
-                                <Button Content="Đặt lại" Click="AdjustReset_Click" Margin="0,4,0,0" />
                             </StackPanel>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
 
-                <AppBarSeparator />
+                            <!-- Tab: Camera. Focal length (lenses, zoom), light, manual controls -->
+                            <StackPanel x:Name="CameraPanel" Visibility="Collapsed">
+                                <StackPanel x:Name="LensSection">
+                                    <Grid Margin="0,18,0,8">
+                                        <TextBlock Text="Tiêu cự" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        <Button x:Name="FacingButton" HorizontalAlignment="Right" Padding="10,4" Click="FacingButton_Click"
+                                                ToolTipService.ToolTip="Đổi camera trước / sau">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE89E;" FontSize="13" />
+                                                <TextBlock Text="Trước / sau" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <!-- One chip per lens on this side (0.6× 1× 2× Macro), built in UpdateCameraOverlay. -->
+                                    <StackPanel x:Name="LensChips" Orientation="Horizontal" Spacing="6" />
+                                </StackPanel>
 
-                <!-- Details -->
-                <Button x:Name="InfoButton" Style="{StaticResource ToolButtonStyle}" ToolTipService.ToolTip="Thông tin chi tiết">
-                    <FontIcon Glyph="&#xE946;" Style="{StaticResource ToolIconStyle}" />
-                    <Button.Flyout>
-                        <Flyout x:Name="InfoFlyout" Placement="Top" Opening="InfoFlyout_Opening" Closed="InfoFlyout_Closed">
-                            <Grid Width="340">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.ColumnSpan="2" Text="Thông tin" Style="{StaticResource FlyoutTitleStyle}" />
-                                <TextBlock Grid.Row="1" Text="Camera gốc" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoCamera" Grid.Row="1" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="2" Text="Camera ảo xuất ra" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoOutput" Grid.Row="2" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="3" Text="Tốc độ thực tế" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoFps" Grid.Row="3" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="4" Text="Khung bị rơi" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoDropped" Grid.Row="4" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="5" Text="Xử lý mỗi khung" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoProcess" Grid.Row="5" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="6" Text="Cam Studio dùng" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoCpu" Grid.Row="6" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                <TextBlock Grid.Row="7" Text="Đang dùng camera" Style="{StaticResource InfoLabelStyle}" />
-                                <TextBlock x:Name="InfoConsumers" Grid.Row="7" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                            </Grid>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
+                                <StackPanel x:Name="ZoomGroup">
+                                    <TextBlock Text="Thu phóng" Style="{StaticResource InspectorHeaderStyle}" />
+                                    <Grid ColumnSpacing="6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Click="ZoomOut_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Thu nhỏ">
+                                            <FontIcon Glyph="&#xE71F;" FontSize="14" />
+                                        </Button>
+                                        <Slider x:Name="ZoomSlider" Grid.Column="1" Minimum="1" Maximum="4" StepFrequency="0.05" VerticalAlignment="Center"
+                                                ValueChanged="ZoomSlider_ValueChanged" IsThumbToolTipEnabled="False" />
+                                        <Button Grid.Column="2" Click="ZoomIn_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Phóng to">
+                                            <FontIcon Glyph="&#xE8A3;" FontSize="14" />
+                                        </Button>
+                                        <TextBlock x:Name="ZoomValueText" Grid.Column="3" Text="1.0×" Width="40" VerticalAlignment="Center"
+                                                   TextAlignment="Right" FontWeight="SemiBold" />
+                                    </Grid>
+                                    <TextBlock x:Name="ZoomHint" Style="{StaticResource InspectorHintStyle}" />
+                                </StackPanel>
 
-                <!-- App settings -->
-                <Button x:Name="SettingsButton" Style="{StaticResource ToolButtonStyle}" ToolTipService.ToolTip="Cài đặt">
-                    <FontIcon Glyph="&#xE713;" Style="{StaticResource ToolIconStyle}" />
-                    <Button.Flyout>
-                        <Flyout Placement="Top">
-                            <StackPanel Width="300" Spacing="8">
-                                <TextBlock Text="Cài đặt" Style="{StaticResource FlyoutTitleStyle}" Margin="0,0,0,4" />
-                                <ComboBox x:Name="ThemeCombo" Header="Giao diện" HorizontalAlignment="Stretch"
-                                          SelectionChanged="ThemeCombo_SelectionChanged">
-                                    <x:String>Theo Windows</x:String>
-                                    <x:String>Sáng</x:String>
-                                    <x:String>Tối</x:String>
-                                </ComboBox>
-                                <ToggleSwitch x:Name="AutostartToggle" Header="Khởi động cùng Windows"
-                                              OnContent="Bật (chạy ẩn ở khay)" OffContent="Tắt" Toggled="AutostartToggle_Toggled" />
-                                <ToggleSwitch x:Name="CloseToTrayToggle" Header="Khi đóng cửa sổ"
-                                              OnContent="Chạy tiếp ở khay" OffContent="Thoát hẳn" Toggled="CloseToTrayToggle_Toggled" />
-                                <ComboBox x:Name="OutputSizeCombo" Header="Kích thước camera ảo" HorizontalAlignment="Stretch"
-                                          SelectionChanged="OutputSizeCombo_SelectionChanged">
-                                    <x:String>Tự động (nét nhất)</x:String>
-                                    <x:String>4K · 3840 × 2160</x:String>
-                                    <x:String>1080p · 1920 × 1080</x:String>
-                                    <x:String>720p · 1280 × 720</x:String>
-                                </ComboBox>
-                                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen, gọi xong tự về cỡ gốc." />
-                                <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật" Margin="0,4,0,0"
-                                              OnContent="Bật (tải sẵn, cài khi không dùng camera)" OffContent="Tắt (chỉ báo có bản mới)"
-                                              Toggled="AutoUpdateToggle_Toggled" />
-                                <Button x:Name="UpdateButton" Content="Kiểm tra cập nhật" Click="UpdateButton_Click" />
-                                <TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <StackPanel x:Name="CameraSide">
+                                    <TextBlock Text="Ánh sáng" Style="{StaticResource InspectorHeaderStyle}" />
+                                    <ToggleButton x:Name="FlashButton" Style="{StaticResource SegmentToggleStyle}" Click="FlashButton_Click"
+                                                  Margin="0,0,0,10" ToolTipService.ToolTip="Bật / tắt đèn flash của điện thoại">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE945;" FontSize="14" />
+                                            <TextBlock Text="Đèn flash" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <StackPanel x:Name="ExposureButton">
+                                        <TextBlock Text="Bù sáng" />
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="BiasSlider" Minimum="-2" Maximum="2" StepFrequency="0.1"
+                                                    ValueChanged="BiasSlider_ValueChanged" IsThumbToolTipEnabled="False" />
+                                            <TextBlock x:Name="BiasText" Grid.Column="1" Text="0 EV" Width="48" TextAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <TextBlock Style="{StaticResource InspectorHintStyle}"
+                                                   Text="Bấm vào một điểm trên hình để lấy nét và đo sáng ở đó." />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel x:Name="ManualSection">
+                                    <TextBlock Text="Chỉnh tay" Style="{StaticResource InspectorHeaderStyle}" />
+                                    <!-- Built by BuildPhoneControls from what this lens supports. -->
+                                    <StackPanel x:Name="PhoneControls" Spacing="6" />
+                                </StackPanel>
+
+                                <TextBlock x:Name="CameraEmptyText" Style="{StaticResource InspectorHintStyle}" Margin="0,18,0,0"
+                                           Text="Chọn một nguồn hình ở bên trái để chỉnh camera." Visibility="Collapsed" />
                             </StackPanel>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
-            </StackPanel>
+
+                            <!-- Tab: Chi tiết -->
+                            <StackPanel x:Name="DetailsPanel" Visibility="Collapsed">
+                                <TextBlock Text="Hình ảnh" Style="{StaticResource InspectorHeaderStyle}" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Nguồn" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoCamera" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                    <TextBlock Grid.Row="1" Text="Camera ảo" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoOutput" Grid.Row="1" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                    <TextBlock Grid.Row="2" Text="Tốc độ thực tế" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoFps" Grid.Row="2" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                    <TextBlock Grid.Row="3" Text="Khung bị rơi" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoDropped" Grid.Row="3" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                    <TextBlock Grid.Row="4" Text="Xử lý mỗi khung" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoProcess" Grid.Row="4" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                </Grid>
+
+                                <TextBlock Text="Ứng dụng" Style="{StaticResource InspectorHeaderStyle}" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Đang dùng camera" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoConsumers" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                    <TextBlock Grid.Row="1" Text="Cam Studio dùng" Style="{StaticResource InfoLabelStyle}" />
+                                    <TextBlock x:Name="InfoCpu" Grid.Row="1" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                </Grid>
+
+                                <StackPanel x:Name="PhoneInfoSection" Visibility="Collapsed">
+                                    <TextBlock Text="Điện thoại" Style="{StaticResource InspectorHeaderStyle}" />
+                                    <TextBlock x:Name="PhoneInfoText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
         </Border>
+
+        <!-- ============ Settings ============ -->
+        <ContentDialog x:Name="SettingsDialog" Title="Cài đặt" CloseButtonText="Đóng" DefaultButton="Close">
+            <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                <StackPanel Width="420" Spacing="10">
+                    <TextBlock Text="Chung" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <ComboBox x:Name="ThemeCombo" Header="Giao diện" HorizontalAlignment="Stretch"
+                              SelectionChanged="ThemeCombo_SelectionChanged">
+                        <x:String>Theo Windows</x:String>
+                        <x:String>Sáng</x:String>
+                        <x:String>Tối</x:String>
+                    </ComboBox>
+                    <ToggleSwitch x:Name="AutostartToggle" Header="Khởi động cùng Windows"
+                                  OnContent="Bật (chạy ẩn ở khay)" OffContent="Tắt" Toggled="AutostartToggle_Toggled" />
+                    <ToggleSwitch x:Name="CloseToTrayToggle" Header="Khi đóng cửa sổ"
+                                  OnContent="Chạy tiếp ở khay" OffContent="Thoát hẳn" Toggled="CloseToTrayToggle_Toggled" />
+
+                    <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,0" />
+                    <ComboBox x:Name="OutputSizeCombo" Header="Kích thước" HorizontalAlignment="Stretch"
+                              SelectionChanged="OutputSizeCombo_SelectionChanged">
+                        <x:String>Tự động (nét nhất)</x:String>
+                        <x:String>4K · 3840 × 2160</x:String>
+                        <x:String>1080p · 1920 × 1080</x:String>
+                        <x:String>720p · 1280 × 720</x:String>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource InspectorHintStyle}" Margin="0"
+                               Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen, gọi xong tự về cỡ gốc." />
+
+                    <TextBlock Text="Cập nhật" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,0" />
+                    <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật"
+                                  OnContent="Bật (tải sẵn, cài khi không dùng camera)" OffContent="Tắt (chỉ báo có bản mới)"
+                                  Toggled="AutoUpdateToggle_Toggled" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="UpdateButton" Content="Kiểm tra cập nhật" Click="UpdateButton_Click" />
+                        <TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                   VerticalAlignment="Center" MaxWidth="260" />
+                    </StackPanel>
+                    <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </ScrollViewer>
+        </ContentDialog>
     </Grid>
 </Window>

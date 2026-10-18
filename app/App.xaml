@@ -8,6 +8,69 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Cam Studio's own accent (the README's blue), whatever the Windows accent is: a red
+                 Windows accent made selected chips look like errors. Red stays for "live". -->
+            <Color x:Key="SystemAccentColor">#FF0A6ED1</Color>
+            <Color x:Key="SystemAccentColorLight1">#FF2F86DC</Color>
+            <Color x:Key="SystemAccentColorLight2">#FF5FA3E6</Color>
+            <Color x:Key="SystemAccentColorLight3">#FF96C3F0</Color>
+            <Color x:Key="SystemAccentColorDark1">#FF085CB0</Color>
+            <Color x:Key="SystemAccentColorDark2">#FF064A8F</Color>
+            <Color x:Key="SystemAccentColorDark3">#FF04386D</Color>
+            <SolidColorBrush x:Key="LiveBrush" Color="#FFE5484D" />
+
+            <!-- One row of the source list (left pane), Windows Settings navigation style. -->
+            <Style x:Key="SourceItemStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="10,7,10,7" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="MinHeight" Value="48" />
+            </Style>
+            <!-- Theme colours for rows built in code: a brush looked up in code follows the Windows
+                 theme, not the app's own (Settings › Giao diện); a style's ThemeResource follows it. -->
+            <Style x:Key="SourceItemSelectedStyle" TargetType="Button" BasedOn="{StaticResource SourceItemStyle}">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="SourceSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                <Setter Property="MaxLines" Value="1" />
+            </Style>
+            <Style x:Key="SourceIconSelectedStyle" TargetType="FontIcon">
+                <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+            </Style>
+            <Style x:Key="SelectionPillStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                <Setter Property="Width" Value="3" />
+                <Setter Property="Height" Value="18" />
+                <Setter Property="CornerRadius" Value="1.5" />
+            </Style>
+            <Style x:Key="PaneLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Margin" Value="12,14,0,4" />
+            </Style>
+            <!-- Inspector (right pane) sections. -->
+            <Style x:Key="InspectorHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="0,18,0,8" />
+            </Style>
+            <Style x:Key="InspectorHintStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,6,0,0" />
+            </Style>
+            <Style x:Key="SegmentToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="8,0" />
+            </Style>
+            <Style x:Key="SegmentButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="8,0" />
+            </Style>
+
             <!-- Windows 11 Settings-style card. -->
             <Style x:Key="CardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
@@ -77,16 +140,16 @@
                 <Setter Property="Margin" Value="0,0,0,12" />
             </Style>
 
-            <!-- Controls drawn over the video (camera-app style). -->
+            <!-- A phone lens (0.6×, 1×, Macro…) in the inspector's focal-length row. -->
             <Style x:Key="LensChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-                <Setter Property="MinWidth" Value="44" />
+                <Setter Property="MinWidth" Value="52" />
                 <Setter Property="Height" Value="34" />
-                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="Padding" Value="12,0" />
                 <Setter Property="CornerRadius" Value="17" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Background" Value="#33FFFFFF" />
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
+
+            <!-- Controls drawn over the video (camera-app style). -->
             <Style x:Key="OverlayRoundButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Width" Value="42" />
                 <Setter Property="Height" Value="42" />

@@ -12,8 +12,8 @@ using Microsoft.UI.Xaml.Media;
 
 namespace CamStudio;
 
-// The phone camera panel: built each time it opens from what this phone
-// and lens actually support (caps), showing live values from "state".
+// The phone's manual controls (inspector, Camera tab): built when the tab shows or the lens
+// changes, from what this phone and lens actually support (caps), with live values from "state".
 public sealed partial class MainWindow
 {
     private bool _phoneOpen;
@@ -36,18 +36,6 @@ public sealed partial class MainWindow
 
     private static string Name(string key) => Names.TryGetValue(key, out var n) ? n : key;
 
-    private void PhoneFlyout_Opening(object sender, object e)
-    {
-        _phoneOpen = true;
-        BuildPhoneControls();
-    }
-
-    private void PhoneFlyout_Closed(object sender, object e)
-    {
-        _phoneOpen = false;
-        _phoneReadout = null;
-    }
-
     private PhoneCaps.Lens? CurrentLens() =>
         _phoneCaps is null || _format < 0 ? null : _phoneCaps.FindByLabel(_formats[_format].Format.LensText);
 
@@ -69,13 +57,10 @@ public sealed partial class MainWindow
             PhoneControls.Children.Add(new TextBlock { Text = "Chưa có thông tin camera điện thoại.", TextWrapping = TextWrapping.Wrap });
             return;
         }
-        bool live = IsCapturing;
-        PhoneControls.Children.Add(new TextBlock { Text = lens.Label, Style = Res<Style>("FlyoutTitleStyle"), Margin = new Thickness(0, 0, 0, 2) });
-        if (!live)
+        if (!IsCapturing)
             PhoneControls.Children.Add(Hint("Bật Camera ảo để chỉnh trực tiếp. Thay đổi được áp dụng ngay trên điện thoại."));
 
-        // Zoom, flash and exposure bias live on the picture itself; this panel
-        // holds the advanced, manual controls.
+        // Lenses, zoom, flash and exposure bias are the sections above; these are the manual controls.
 
         // Focus
         if (lens.FocusModes.Count > 0)
@@ -139,13 +124,7 @@ public sealed partial class MainWindow
             PhoneControls.Children.Add(Hint(string.Join(", ", names) + " do hệ điều hành điều khiển: bật trong bảng vừa mở trên điện thoại."));
         }
 
-        _phoneReadout = new TextBlock
-        {
-            Margin = new Thickness(0, 10, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Res<Brush>("TextFillColorSecondaryBrush"),
-            Style = Res<Style>("CaptionTextBlockStyle"),
-        };
+        _phoneReadout = new TextBlock { Style = Res<Style>("InspectorHintStyle"), Margin = new Thickness(0, 10, 0, 0) };
         PhoneControls.Children.Add(_phoneReadout);
         UpdatePhoneReadout();
     }
@@ -153,13 +132,32 @@ public sealed partial class MainWindow
     // Live values from the phone's latest "state" (ISO, shutter, battery, heat).
     private void UpdatePhoneReadout()
     {
-        if (_phoneReadout is null) return;
+        if (_phoneReadout is not null) _phoneReadout.Text = PhoneReadoutText();
+    }
+
+    // "Pin 57%" (charging marked), for the source list; null when the phone did not say.
+    private string? PhoneBattery()
+    {
         string json = Engine.PhoneStateJson();
-        if (string.IsNullOrEmpty(json))
+        if (string.IsNullOrEmpty(json)) return null;
+        try
         {
-            _phoneReadout.Text = "";
-            return;
+            using var doc = JsonDocument.Parse(json);
+            var s = doc.RootElement;
+            if (!s.TryGetProperty("battery", out var bat) || bat.ValueKind != JsonValueKind.Number) return null;
+            bool charging = s.TryGetProperty("charging", out var ch) && ch.ValueKind == JsonValueKind.True;
+            return $"{(charging ? "Sạc" : "Pin")} {bat.GetDouble():0}%";
         }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private string PhoneReadoutText()
+    {
+        string json = Engine.PhoneStateJson();
+        if (string.IsNullOrEmpty(json)) return "";
         try
         {
             using var doc = JsonDocument.Parse(json);
@@ -184,10 +182,11 @@ public sealed partial class MainWindow
                     _ => "Nhiệt độ bình thường",
                 });
             }
-            _phoneReadout.Text = string.Join("  ·  ", parts);
+            return string.Join("  ·  ", parts);
         }
         catch (JsonException)
         {
+            return "";
         }
     }
 
@@ -234,13 +233,8 @@ public sealed partial class MainWindow
         PhoneControls.Children.Add(toggle);
     }
 
-    private TextBlock Hint(string text) => new()
-    {
-        Text = text,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = Res<Brush>("TextFillColorSecondaryBrush"),
-        Style = Res<Style>("CaptionTextBlockStyle"),
-    };
+    // A style, not a brush looked up here: it follows the app's light/dark choice.
+    private TextBlock Hint(string text) => new() { Text = text, Style = Res<Style>("InspectorHintStyle") };
 
     private static T Res<T>(string key) => (T)Application.Current.Resources[key];
 }
