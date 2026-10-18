@@ -6,7 +6,7 @@
     <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
     <RootNamespace>CamStudio</RootNamespace>
     <AssemblyName>CamStudio</AssemblyName>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <Product>Cam Studio</Product>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

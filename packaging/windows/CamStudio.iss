@@ -78,11 +78,26 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\App\CamStudio.exe"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; An update started by the app (/SILENT /RELAUNCH=show|tray, app\Services\Updater.cs): open it again.
+Filename: "{app}\App\CamStudio.exe"; Parameters: "{code:RelaunchArgs}"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\App"
 
 [Code]
+function RelaunchAfterUpdate(): Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|}') <> '');
+end;
+
+function RelaunchArgs(Param: String): String;
+begin
+  if CompareText(ExpandConstant('{param:RELAUNCH|}'), 'tray') = 0 then
+    Result := '--tray'
+  else
+    Result := '';
+end;
+
 // Frame Server keeps the virtual camera DLL loaded and the app keeps its files open:
 // close both before files are replaced or removed.
 procedure StopCameraUsers();

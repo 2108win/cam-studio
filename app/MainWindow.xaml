@@ -191,6 +191,12 @@
 
                 <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" Title="Không bật được camera"
                          VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12,56,12,12" />
+                <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True"
+                         VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="12,12,12,64">
+                    <InfoBar.ActionButton>
+                        <Button Content="Cập nhật ngay" Click="UpdateNow_Click" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
             </Grid>
         </Border>
 
@@ -337,6 +343,13 @@
                                 <TextBlock Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen, gọi xong tự về cỡ gốc." />
+                                <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật" Margin="0,4,0,0"
+                                              OnContent="Bật (tải sẵn, cài khi không dùng camera)" OffContent="Tắt (chỉ báo có bản mới)"
+                                              Toggled="AutoUpdateToggle_Toggled" />
+                                <Button x:Name="UpdateButton" Content="Kiểm tra cập nhật" Click="UpdateButton_Click" />
+                                <TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>

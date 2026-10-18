@@ -101,6 +101,7 @@ public sealed partial class MainWindow : Window
 
         LoadSettingsIntoUi();
         _loading = false;
+        SetupUpdater(options.Tray);
 
         _statusTimer.Start();
         UpdatePreviewActivity(visible: !options.Tray);
@@ -310,8 +311,14 @@ public sealed partial class MainWindow : Window
             null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
             null,
-            new("Thoát", () => DispatcherQueue.TryEnqueue(ExitApp)),
         });
+        var update = TrayUpdateItems().ToList();
+        if (update.Count > 0)
+        {
+            items.AddRange(update);
+            items.Add(null);
+        }
+        items.Add(new("Thoát", () => DispatcherQueue.TryEnqueue(ExitApp)));
         return items;
     }
 
@@ -1419,7 +1426,7 @@ public sealed partial class MainWindow : Window
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.
         if (!running) _consumers.Clear();
-        else if (_infoOpen || _statusTicks % 3 == 0) _consumers = CameraUsage.AppsInUse();
+        else if (_infoOpen || _statusTicks % 3 == 0) _consumers = CameraUsage.RunningAppsInUse(); // not entries left by apps that were killed
         ConsumerBadge.Visibility = _consumers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ConsumerBadgeText.Text = string.Join(", ", _consumers);
 

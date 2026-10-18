@@ -14,7 +14,30 @@ public static class CameraUsage
 {
     private const string Root = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam";
 
-    public static List<string> AppsInUse()
+    /// Only apps whose process still runs: an app killed while using a camera (or an older
+    /// version of it, e.g. Discord's app-1.0.9260 folder) leaves its entry "in use" for good.
+    public static List<string> RunningAppsInUse() => Find(runningOnly: true);
+
+    private static bool IsRunning(string exePath)
+    {
+        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(exePath)))
+        {
+            using (p)
+            {
+                try
+                {
+                    if (string.Equals(p.MainModule?.FileName, exePath, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                catch (Exception)
+                {
+                    return true; // cannot tell (another user's or an elevated process): assume it runs
+                }
+            }
+        }
+        return false;
+    }
+
+    private static List<string> Find(bool runningOnly)
     {
         var result = new List<string>();
         using var root = Registry.CurrentUser.OpenSubKey(Root);
@@ -32,6 +55,7 @@ public static class CameraUsage
                     if (k is null || !InUse(k)) continue;
                     string path = exeKey.Replace('#', '\\');
                     if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (runningOnly && !IsRunning(path)) continue;
                     result.Add(DescribeExe(path));
                 }
             }
