@@ -9,8 +9,10 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -38,6 +40,12 @@ class MainActivity : Activity() {
     private lateinit var backgroundHint: TextView
     private lateinit var screenButton: Button
     private lateinit var screenStatus: TextView
+    private lateinit var updateCard: LinearLayout
+    private lateinit var updateText: TextView
+    private lateinit var updateButton: Button
+    /** A newer version found on GitHub (AppUpdater), not installed yet. */
+    private var newer: AppUpdater.Release? = null
+    private var updating = false
     private val pairingDialogs = mutableListOf<AlertDialog>()
     private var visible = false
     /** CameraService was asked to start and has not reported yet. */
@@ -125,6 +133,29 @@ class MainActivity : Activity() {
             addView(hint("Máy tính thấy màn hình như một nguồn riêng. Vẫn chia sẻ khi bạn mở ứng dụng khác."))
         }
 
+        // ---- Cập nhật (hidden until a newer version is found) ----
+        updateText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.rgb(0xDD, 0xDD, 0xDD))
+            gravity = Gravity.CENTER
+        }
+        updateButton = Button(this).apply {
+            text = "Cập nhật"
+            setOnClickListener { startUpdate() }
+        }
+        updateCard = section("Có bản mới").apply {
+            addView(updateText)
+            addView(updateButton, centered().apply { topMargin = dp(8) })
+            visibility = View.GONE
+        }
+        val version = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.rgb(0x66, 0x66, 0x66))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(16), 0, 0)
+            text = "Phiên bản ${AppUpdater.currentVersion(this@MainActivity)}"
+        }
+
         val crash = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.rgb(0xFF, 0x9A, 0x9A))
@@ -142,9 +173,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(24), dp(16), dp(24))
             addView(title)
+            addView(updateCard, card())
             addView(camera, card())
             addView(screen, card())
             addView(crash)
+            addView(version)
             setOnClickListener { setDimmed(false) } // tap to light the screen up
         }
         setContentView(ScrollView(this).apply {
@@ -171,6 +204,8 @@ class MainActivity : Activity() {
         super.onStart()
         visible = true
         CameraService.pairing = ::confirmPairing // only while someone can see the code
+        AppUpdater.onStatus = { text -> runOnUiThread { updating = false; showUpdate(text) } }
+        checkForUpdate()
         if (CameraService.running) {
             showCameraState(CameraService.lastStreaming, CameraService.lastStatus)
         } else {
@@ -197,6 +232,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (CameraService.listener === cameraListener) CameraService.listener = null
         ScreenService.listener = null
+        AppUpdater.onStatus = null
         super.onDestroy()
     }
 
@@ -277,6 +313,68 @@ class MainActivity : Activity() {
             runOnUiThread { dialog?.dismiss() } // the PC gave up waiting
         }
         return accepted
+    }
+
+    // ---- updates (AppUpdater, docs/updates.md) ------------------------------------------
+
+    /** Looks on GitHub at most once an hour, when the app is opened. */
+    private fun checkForUpdate() {
+        val now = System.currentTimeMillis()
+        if (newer != null || now - store.lastUpdateCheck < 60 * 60 * 1000L) return
+        store.lastUpdateCheck = now
+        val current = AppUpdater.currentVersion(this)
+        Thread {
+            val found = try { AppUpdater.fetchNewer(current) } catch (e: Exception) { null }
+            if (found != null) runOnUiThread {
+                newer = found
+                showUpdate("Bản ${found.version} đã có (đang dùng $current).")
+            }
+        }.start()
+    }
+
+    private fun showUpdate(text: String) {
+        updateCard.visibility = if (newer != null) View.VISIBLE else View.GONE
+        updateText.text = text
+        updateButton.isEnabled = !updating
+    }
+
+    private fun startUpdate() {
+        val release = newer ?: return
+        if (updating) return
+        // Installing restarts the app: the PC loses the picture for a moment.
+        if (CameraService.lastStreaming || ScreenService.running) {
+            AlertDialog.Builder(this)
+                .setTitle("Đang phát sang máy tính")
+                .setMessage("Cập nhật sẽ ngắt hình trên máy tính khoảng nửa phút. Cập nhật ngay?")
+                .setPositiveButton("Cập nhật") { _, _ -> downloadAndInstall(release) }
+                .setNegativeButton("Để sau", null)
+                .show()
+            return
+        }
+        downloadAndInstall(release)
+    }
+
+    private fun downloadAndInstall(release: AppUpdater.Release) {
+        // The first time Android asks to allow installing apps from Cam Studio.
+        if (!packageManager.canRequestPackageInstalls()) {
+            showUpdate("Cho phép \"Cài ứng dụng không rõ nguồn\" cho Cam Studio, rồi quay lại bấm Cập nhật.")
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        updating = true
+        showUpdate("Đang tải bản ${release.version}…")
+        Thread {
+            try {
+                val apk = AppUpdater.download(this, release) { p -> runOnUiThread { showUpdate("Đang tải bản ${release.version}… $p%") } }
+                runOnUiThread { showUpdate("Đang cài bản ${release.version}…") }
+                AppUpdater.install(this, apk)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    updating = false
+                    showUpdate(e.message ?: "Không tải được bản mới")
+                }
+            }
+        }.start()
     }
 
     // ---- screen sharing ----------------------------------------------------------------

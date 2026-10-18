@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- While the camera streams with the screen off: CPU awake, Wi‑Fi out of power saving. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Updates from the GitHub releases (AppUpdater, docs/updates.md). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
     <application
@@ -44,5 +46,9 @@
             android:name=".ScreenService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <receiver
+            android:name=".AppUpdater$StatusReceiver"
+            android:exported="false" />
     </application>
 </manifest>

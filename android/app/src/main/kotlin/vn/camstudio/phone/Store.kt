@@ -36,6 +36,11 @@ class Store(context: Context) {
         get() = prefs.getBoolean("cameraInBackground", true)
         set(value) = prefs.edit().putBoolean("cameraInBackground", value).apply()
 
+    /** When AppUpdater last looked for a new version (ms since 1970). */
+    var lastUpdateCheck: Long
+        get() = prefs.getLong("lastUpdateCheck", 0)
+        set(value) = prefs.edit().putLong("lastUpdateCheck", value).apply()
+
     fun pairKey(clientId: String): ByteArray? {
         val stored = prefs.getString("pair.$clientId", null) ?: return null
         return runCatching {
