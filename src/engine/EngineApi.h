@@ -147,3 +147,18 @@ CS_API int32_t cs_phone_caps(char* buffer, int32_t capacity);
 CS_API int32_t cs_phone_state(char* buffer, int32_t capacity);
 // Sends a control message ("set", "showSystemEffects"…) to the streaming phone.
 CS_API int32_t cs_phone_send(const char* json);
+
+// A phone's shared screen (cs_camera_kind 2) in a window of its own, so a meeting app can share
+// that window. Not the virtual camera: it runs alongside it, with its own connection and decoder.
+// Returns a viewer id (> 0), or an HRESULT < 0.
+CS_API int32_t cs_viewer_open(int32_t camera);
+// The window's picture area in pixels; 0 x 0 while minimized (decoded, not drawn).
+CS_API void cs_viewer_set_size(int32_t viewer, int32_t maxWidth, int32_t maxHeight);
+// Latest picture, BGRA top-down, at most the size above with the screen's aspect. Like
+// cs_copy_preview: always reports size and id, copies when capacity (pixels) is enough.
+CS_API int32_t cs_viewer_copy(int32_t viewer, uint32_t* pixels, int32_t capacity, uint32_t* width, uint32_t* height, uint64_t* frameId);
+// 1 connecting, 2 showing, 3 waiting (lost or unreachable: error says why, retried every 2 s);
+// -1 for an unknown id. screenWidth/Height: the screen upright at its own size (for the aspect).
+CS_API int32_t cs_viewer_state(int32_t viewer, uint32_t* screenWidth, uint32_t* screenHeight, wchar_t* error, int32_t capacity);
+// Stops the screen's stream; the phone stays connected in the background.
+CS_API void cs_viewer_close(int32_t viewer);

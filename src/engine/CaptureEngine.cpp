@@ -920,10 +920,16 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
 
     // The link is ours while this source runs: the connector (which keeps idle links alive)
     // and screen windows leave it alone. A connector attempt in progress gives way at once.
-    while (!link.Lease(200))
+    for (int waited = 0; !link.Lease(200); ++waited)
     {
         if (Interrupted()) return interrupted();
-        pipeline.Hold();
+        if (waited < 15) pipeline.Hold();
+        // Someone else keeps it (the phone's screen open in its own window): say so.
+        else if (waited == 15 && pipeline.Live())
+        {
+            pipeline.ReleaseHold();
+            Wait(L"Nguồn này đang mở trong cửa sổ riêng. Đóng cửa sổ đó để dùng làm camera ảo", S_OK);
+        }
     }
     phone::LeaseGuard lease(&link);
 

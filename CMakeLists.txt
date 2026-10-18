@@ -26,6 +26,7 @@ add_library(CamStudioEngine SHARED
     src/engine/VideoDecoder.cpp
     src/engine/PhoneLink.cpp
     src/engine/Connector.cpp
+    src/engine/ScreenViewer.cpp
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)

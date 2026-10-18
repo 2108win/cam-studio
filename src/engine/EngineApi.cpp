@@ -5,7 +5,9 @@
 #include "Discovery.h"
 #include "Json.h"
 #include "PhoneLink.h"
+#include "ScreenViewer.h"
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -30,6 +32,8 @@ std::wstring g_lastError;
 std::wstring g_pairingCode;
 std::atomic<int> g_pairingDecision{ -1 }; // -1 waiting, 0 declined, 1 accepted (PC user)
 std::shared_ptr<phone::PhoneLink> g_streamingLink; // the phone the virtual camera shows, if any
+std::map<int32_t, std::unique_ptr<ScreenViewer>> g_viewers; // screen windows, by cs_viewer_open id
+int32_t g_nextViewer = 1;
 int g_initCount = 0;
 
 std::wstring Widen(const std::string& s)
@@ -182,10 +186,12 @@ CS_API int32_t cs_init()
 CS_API void cs_shutdown()
 {
     std::unique_ptr<CaptureEngine> engine;
+    std::map<int32_t, std::unique_ptr<ScreenViewer>> viewers;
     {
         std::lock_guard lk(g_lock);
         if (g_initCount == 0 || --g_initCount > 0) return;
         engine = std::move(g_engine);
+        viewers.swap(g_viewers);
         g_cameras.clear();
         g_ids.clear();
         g_kinds.clear();
@@ -194,6 +200,7 @@ CS_API void cs_shutdown()
         g_streamingLink.reset();
     }
     engine.reset(); // joins the capture thread
+    viewers.clear(); // and the screen windows' threads
     g_connector->Stop();
     g_connector->Clear(); // closes the idle links
     phone::StopDiscovery();
@@ -556,4 +563,69 @@ CS_API int32_t cs_phone_send(const char* text)
     {
         return E_INVALIDARG;
     }
+}
+
+// ---- a phone's shared screen in its own window -------------------------------------------------
+
+CS_API int32_t cs_viewer_open(int32_t camera)
+{
+    std::lock_guard lk(g_lock);
+    if (!g_engine || !ValidCamera(camera) || g_kinds[camera] != 2) return E_INVALIDARG;
+    const int32_t id = g_nextViewer++;
+    g_viewers[id] = std::make_unique<ScreenViewer>(g_cameras[camera].phone, EndpointOf(camera));
+    return id;
+}
+
+CS_API void cs_viewer_set_size(int32_t viewer, int32_t maxWidth, int32_t maxHeight)
+{
+    std::lock_guard lk(g_lock);
+    const auto it = g_viewers.find(viewer);
+    if (it != g_viewers.end())
+        it->second->SetSize(static_cast<uint32_t>(std::max(0, maxWidth)), static_cast<uint32_t>(std::max(0, maxHeight)));
+}
+
+CS_API int32_t cs_viewer_copy(int32_t viewer, uint32_t* pixels, int32_t capacity, uint32_t* width, uint32_t* height, uint64_t* frameId)
+{
+    uint32_t w = 0, h = 0;
+    uint64_t id = 0;
+    bool copied = false;
+    {
+        std::lock_guard lk(g_lock);
+        const auto it = g_viewers.find(viewer);
+        if (it != g_viewers.end())
+            copied = it->second->Copy(pixels, capacity > 0 ? static_cast<size_t>(capacity) : 0, w, h, id);
+    }
+    if (width) *width = w;
+    if (height) *height = h;
+    if (frameId) *frameId = id;
+    return copied ? 1 : 0;
+}
+
+CS_API int32_t cs_viewer_state(int32_t viewer, uint32_t* screenWidth, uint32_t* screenHeight, wchar_t* error, int32_t capacity)
+{
+    uint32_t w = 0, h = 0;
+    std::wstring why;
+    int32_t state = -1;
+    {
+        std::lock_guard lk(g_lock);
+        const auto it = g_viewers.find(viewer);
+        if (it != g_viewers.end()) state = static_cast<int32_t>(it->second->GetState(w, h, why));
+    }
+    if (screenWidth) *screenWidth = w;
+    if (screenHeight) *screenHeight = h;
+    CopyOut(why, error, capacity);
+    return state;
+}
+
+CS_API void cs_viewer_close(int32_t viewer)
+{
+    std::unique_ptr<ScreenViewer> closing;
+    {
+        std::lock_guard lk(g_lock);
+        const auto it = g_viewers.find(viewer);
+        if (it == g_viewers.end()) return;
+        closing = std::move(it->second);
+        g_viewers.erase(it);
+    }
+    closing.reset(); // joins its thread (a connect in progress is aborted)
 }

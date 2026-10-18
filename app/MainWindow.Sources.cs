@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using CamStudio.Native;
 using CamStudio.Services;
 using Microsoft.UI.Xaml;
@@ -20,6 +21,7 @@ public sealed partial class MainWindow
     private readonly List<int> _kinds = new();    // 0 webcam, 1 phone camera, 2 phone screen
     private uint _sourcesGeneration;
     private int _expectSourceId;                   // the engine source a lens switch waits for
+    private readonly Dictionary<string, ScreenWindow> _screenWindows = new(); // by source id
 
     // Reads the engine's list into _cameras/_ids/_kinds and finds the current source again by id.
     private void ReadCameraList()
@@ -64,6 +66,7 @@ public sealed partial class MainWindow
         CameraMenu.Items.Clear();
         for (int i = 0; i < _cameras.Count; i++)
         {
+            if (_kinds[i] == 2) continue; // shared screens: their own section below
             int cam = i;
             var state = Engine.CameraState(i, out string error);
             string? note = StateText(_kinds[i], state);
@@ -79,12 +82,86 @@ public sealed partial class MainWindow
             CameraMenu.Items.Add(item);
         }
         if (_cameras.Count > 0) CameraMenu.Items.Add(new MenuFlyoutSeparator());
+        AddScreenItems();
         var refresh = new MenuFlyoutItem { Text = "Tìm lại camera và điện thoại", Icon = new FontIcon { Glyph = "" } };
         refresh.Click += async (_, _) => await RefreshCamerasAsync(null);
         CameraMenu.Items.Add(refresh);
         var addPhone = new MenuFlyoutItem { Text = "Thêm điện thoại theo địa chỉ IP…", Icon = new FontIcon { Glyph = "" } };
         addPhone.Click += async (_, _) => await AddPhoneByIpAsync();
         CameraMenu.Items.Add(addPhone);
+    }
+
+    // ---- Phone screens: a window of their own --------------------------------------------------
+
+    // A shared screen opens in its own window (to share in a meeting app); it can still be the
+    // virtual camera's source instead.
+    private void AddScreenItems()
+    {
+        bool any = false;
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            if (_kinds[i] != 2) continue;
+            if (!any) CameraMenu.Items.Add(new MenuFlyoutItem { Text = "Màn hình điện thoại", IsEnabled = false });
+            any = true;
+            int cam = i;
+            var state = Engine.CameraState(i, out string error);
+            string? note = StateText(_kinds[i], state);
+            bool open = _screenWindows.ContainsKey(_ids[i]);
+            var window = new MenuFlyoutItem
+            {
+                Text = (note is null ? _cameras[i] : $"{_cameras[i]}  ·  {note}") + (open ? "  ·  đang mở" : ""),
+                Icon = new FontIcon { Glyph = "\uE737" },
+            };
+            ToolTipService.SetToolTip(window, error.Length > 0 ? error : "Mở trong cửa sổ riêng, để chia sẻ cửa sổ này trong Discord, Zoom, Meet…");
+            window.Click += (_, _) => OpenScreenWindow(cam);
+            CameraMenu.Items.Add(window);
+            var asCamera = new RadioMenuFlyoutItem
+            {
+                Text = "      Dùng làm camera ảo",
+                GroupName = "camera",
+                IsChecked = i == _camera,
+            };
+            asCamera.Click += (_, _) => UseScreenAsCamera(cam);
+            CameraMenu.Items.Add(asCamera);
+        }
+        if (any) CameraMenu.Items.Add(new MenuFlyoutSeparator());
+    }
+
+    // "iPhone · Màn hình (Wi‑Fi)" -> "iPhone · Màn hình": the title a meeting app lists.
+    private static string ScreenTitle(string name) => Regex.Replace(name, @"\s*\([^()]*\)$", "");
+
+    private void OpenScreenWindow(int cam)
+    {
+        if (cam < 0 || cam >= _ids.Count) return;
+        string id = _ids[cam];
+        if (_screenWindows.TryGetValue(id, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+        if (IsCapturing && cam == _camera)
+        {
+            // One connection per screen: it cannot feed the camera and a window at once.
+            ShowError("Màn hình này đang là nguồn của camera ảo. Chọn nguồn khác cho camera ảo rồi mở lại cửa sổ.");
+            return;
+        }
+        var window = new ScreenWindow(cam, id, ScreenTitle(_cameras[cam]));
+        _screenWindows[id] = window;
+        window.Closed += (_, _) => _screenWindows.Remove(id);
+        window.Activate();
+    }
+
+    private void UseScreenAsCamera(int cam)
+    {
+        if (cam < 0 || cam >= _ids.Count) return;
+        if (_screenWindows.TryGetValue(_ids[cam], out var window)) window.Close(); // its connection moves to the camera
+        OnCameraPicked(cam);
+    }
+
+    private void CloseScreenWindows()
+    {
+        foreach (var window in _screenWindows.Values.ToList()) window.Close();
+        _screenWindows.Clear();
     }
 
     // ---- Quick switching: the source row, Ctrl+1…9, the tray menu ----------------------------

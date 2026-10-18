@@ -161,6 +161,11 @@ bool PhoneLink::ConnectAuto(const Endpoint& endpoint, std::string& error)
     return ConnectImpl(endpoint, nullptr, nullptr, false, true, error);
 }
 
+bool PhoneLink::ConnectKnown(const Endpoint& endpoint, std::string& error)
+{
+    return ConnectImpl(endpoint, nullptr, nullptr, false, false, error);
+}
+
 bool PhoneLink::Reconnect(std::string& error)
 {
     // A cable: the same phone (by serial) and port (camera or shared screen) on a cable again. While

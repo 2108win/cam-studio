@@ -61,6 +61,8 @@ public:
     // The background connector: hello says "auto", so a phone in use by another PC answers
     // "busy" and keeps that PC (docs/protocol.md 3.1). Never pairs.
     bool ConnectAuto(const Endpoint& endpoint, std::string& error);
+    // A connection the user asked for, to an already-paired phone: never pairs (a screen window).
+    bool ConnectKnown(const Endpoint& endpoint, std::string& error);
     // Connects again to the last endpoint (re-resolved by device id, the
     // phone's IP may have changed). Only for an already-paired phone: never
     // starts pairing, since nobody is there to compare codes.

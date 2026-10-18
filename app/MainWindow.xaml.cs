@@ -261,6 +261,7 @@ public sealed partial class MainWindow : Window
     {
         _previewTimer.Stop();
         _statusTimer.Stop();
+        CloseScreenWindows();
         _tray.Dispose();
         Engine.cs_shutdown();
     }

@@ -127,6 +127,11 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial int cs_phone_caps(byte* buffer, int capacity);
     [LibraryImport(Dll)] public static partial int cs_phone_state(byte* buffer, int capacity);
     [LibraryImport(Dll)] public static partial int cs_phone_send(byte* json);
+    [LibraryImport(Dll)] public static partial int cs_viewer_open(int camera);
+    [LibraryImport(Dll)] public static partial void cs_viewer_set_size(int viewer, int maxWidth, int maxHeight);
+    [LibraryImport(Dll)] public static partial int cs_viewer_copy(int viewer, uint* pixels, int capacity, uint* width, uint* height, ulong* frameId);
+    [LibraryImport(Dll)] public static partial int cs_viewer_state(int viewer, uint* screenWidth, uint* screenHeight, char* error, int capacity);
+    [LibraryImport(Dll)] public static partial void cs_viewer_close(int viewer);
 
     // Phone camera (1) or a phone's shared screen (2): both connect over the network or a cable.
     public static bool IsPhone(int camera) => cs_camera_kind(camera) is 1 or 2;
