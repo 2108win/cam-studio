@@ -25,6 +25,10 @@ constexpr Socket kNoSocket = -1;
 
 enum class Kind { Adb, Usbmux };
 
+// The phone app's fixed ports (docs/protocol.md 1, 1.1), the only ones reachable over a cable.
+constexpr uint16_t kCameraPort = 47321;
+constexpr uint16_t kScreenPort = 47322; // only while the phone shares its screen
+
 struct Device
 {
     Kind kind = Kind::Adb;

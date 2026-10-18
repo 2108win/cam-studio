@@ -482,6 +482,9 @@ bool LockdownGet(Socket s, const std::string& key, std::string& value)
 }
 
 const char* kAppNotOpen = "Không kết nối được tới app Cam Studio trên điện thoại qua cáp USB. Hãy mở app trên điện thoại.";
+// Nothing listens on the screen port unless the phone is sharing its screen.
+const char* kNotSharing = "Điện thoại chưa chia sẻ màn hình. Trong app Cam Studio trên điện thoại, bấm \"Chia sẻ màn hình sang "
+                          "máy tính\", rồi chọn lại nguồn này.";
 } // namespace
 
 void Close(Socket s)
@@ -564,7 +567,7 @@ Socket OpenAdb(const std::string& serial, uint16_t port, std::string& error)
     if (!AdbSend(s, "tcp:" + std::to_string(port), failure, 8000))
     {
         Close(s);
-        error = kAppNotOpen;
+        error = port == kScreenPort ? kNotSharing : kAppNotOpen;
         return kNoSocket;
     }
     return s;
@@ -624,7 +627,10 @@ Socket OpenUsbmux(const std::string& udid, uint16_t port, std::string& error)
     Socket tunnel = kNoSocket;
     const int result = UsbmuxConnect(phone->muxId, port, tunnel);
     if (result == 0) return tunnel;
-    if (result == 3)
+    if (result == 3 && port == kScreenPort)
+        error = "iPhone chưa chia sẻ màn hình. Trong app Cam Studio trên iPhone, bấm \"Chia sẻ màn hình sang máy tính\" "
+                "rồi Bắt đầu phát, sau đó chọn lại nguồn này.";
+    else if (result == 3)
         error = "Không kết nối được tới app Cam Studio trên iPhone qua cáp USB. Hãy mở app; nếu iPhone hỏi "
                 "\"Tin cậy máy tính này?\", chọn Tin cậy.";
     else if (result < 0)

@@ -6,8 +6,13 @@
 //   usb-check watch [seconds]            the background watcher's list each time it changes
 //   usb-check hello <serial|udid> [port] open a tunnel to the app and exchange "hello"
 //                                        (docs/protocol.md 3.1): device id, name, paired
+//   usb-check probe <serial|udid> [port] [close|silent|junk]
+//                                        open a tunnel and never send "hello": close it at once,
+//                                        stay silent, or send bytes that are not a record. Then
+//                                        report when the phone closes it (silent: after ~10 s)
 //
-// "hello" opens a real connection, so the phone drops the PC it is streaming to (one PC at a time).
+// "hello" is a real connection, so the phone drops the PC it is streaming to (one PC at a time).
+// A probe must not: the session in progress keeps streaming (docs/protocol.md 1).
 #include "../src/engine/Json.h"
 #include "../src/engine/UsbTransport.h"
 
@@ -107,7 +112,18 @@ bool RecvAll(usb::Socket s, char* dst, size_t size)
     return true;
 }
 
-int Hello(const std::string& id, uint16_t port)
+void SetReceiveTimeout(usb::Socket s, int seconds)
+{
+#ifdef _WIN32
+    DWORD timeout = seconds * 1000;
+#else
+    timeval timeout{ seconds, 0 };
+#endif
+    setsockopt(static_cast<decltype(socket(0, 0, 0))>(s), SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+}
+
+// A tunnel to the app's port on the phone with this adb serial or UDID, or kNoSocket.
+usb::Socket OpenTunnel(const std::string& id, uint16_t port)
 {
     std::vector<usb::Device> adb, mux;
     std::string error;
@@ -119,17 +135,43 @@ int Hello(const std::string& id, uint16_t port)
         if (d.serial == id) { found = true; s = usb::OpenAdb(id, port, error); }
     for (const auto& d : mux)
         if (d.serial == id) { found = true; s = usb::OpenUsbmux(id, port, error); }
-    if (!found) { printf("no phone %s on a cable\n", id.c_str()); return 1; }
-    if (s == usb::kNoSocket) { printf("tunnel failed: %s\n", error.c_str()); return 1; }
-    printf("tunnel to port %u open\n", port);
+    if (!found) printf("no phone %s on a cable\n", id.c_str());
+    else if (s == usb::kNoSocket) printf("tunnel failed: %s\n", error.c_str());
+    else printf("tunnel to port %u open\n", port);
     fflush(stdout);
+    return s;
+}
+
+int Probe(const std::string& id, uint16_t port, const std::string& mode)
+{
+    const usb::Socket s = OpenTunnel(id, port);
+    if (s == usb::kNoSocket) return 1;
+    if (mode == "close")
+    {
+        usb::Close(s);
+        printf("closed without a hello\n");
+        return 0;
+    }
+    // "junk": the first 4 bytes read as a record length far above the handshake limit.
+    if (mode == "junk" && !SendAll(s, "GET / HTTP/1.1\r\nHost: phone\r\n\r\n")) printf("send failed\n");
+    const auto start = std::chrono::steady_clock::now();
+    SetReceiveTimeout(s, 30);
+    char byte;
+    const auto n = recv(static_cast<decltype(socket(0, 0, 0))>(s), &byte, 1, 0);
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    usb::Close(s);
+    if (n > 0) printf("the phone sent data: it took this for a PC\n");
+    else if (seconds >= 29) printf("still open after %.0f s\n", seconds);
+    else printf("the phone closed it after %.1f s\n", seconds);
+    return n > 0 ? 1 : 0;
+}
+
+int Hello(const std::string& id, uint16_t port)
+{
+    const usb::Socket s = OpenTunnel(id, port);
+    if (s == usb::kNoSocket) return 1;
     // A suspended app (phone locked, app in the background) may leave the connection unanswered.
-#ifdef _WIN32
-    DWORD timeout = 10000;
-#else
-    timeval timeout{ 10, 0 };
-#endif
-    setsockopt(static_cast<decltype(socket(0, 0, 0))>(s), SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    SetReceiveTimeout(s, 10);
 
     // HANDSHAKE record: u32 length, type 0x01, JSON. The commitment is never checked: no "reveal" follows.
     const std::string body = json::Value::MakeObject()
@@ -163,7 +205,9 @@ int main(int argc, char** argv)
     const std::string cmd = argc > 1 ? argv[1] : "list";
     if (cmd == "list") return List();
     if (cmd == "watch") return Watch(argc > 2 ? atoi(argv[2]) : 30);
-    if (cmd == "hello" && argc > 2) return Hello(argv[2], static_cast<uint16_t>(argc > 3 ? atoi(argv[3]) : 47321));
-    fprintf(stderr, "usage: usb-check list | watch [seconds] | hello <serial|udid> [port]\n");
+    const uint16_t port = static_cast<uint16_t>(argc > 3 ? atoi(argv[3]) : usb::kCameraPort);
+    if (cmd == "hello" && argc > 2) return Hello(argv[2], port);
+    if (cmd == "probe" && argc > 2) return Probe(argv[2], port, argc > 4 ? argv[4] : "close");
+    fprintf(stderr, "usage: usb-check list | watch [seconds] | hello <serial|udid> [port] | probe <serial|udid> [port] [close|silent|junk]\n");
     return 2;
 }

@@ -155,8 +155,9 @@ bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairi
 
 bool PhoneLink::Reconnect(std::string& error)
 {
-    // A cable: the same phone (by serial) on a cable again. While it is unplugged this fails and
-    // the engine keeps waiting; it never moves to Wi‑Fi by itself.
+    // A cable: the same phone (by serial) and port (camera or shared screen) on a cable again. While
+    // it is unplugged, or no longer shares its screen, this fails and the engine keeps waiting; it
+    // never moves to Wi‑Fi by itself.
     if (m_endpoint.Usb()) return ConnectImpl(m_endpoint, nullptr, nullptr, false, error);
 
     Endpoint endpoint = m_endpoint;

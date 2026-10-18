@@ -3,7 +3,8 @@ import Network
 
 /// Listens for the PC on the home network and advertises _camstudio._tcp
 /// with the TXT record of docs/protocol.md section 1. One PC at a time: a
-/// new connection replaces the old one.
+/// new connection replaces the old one, but only once it has sent a valid
+/// hello. A connection that only probes the port changes nothing.
 final class PhoneServer {
     /// The app serves the cameras; the broadcast extension serves the screen as a second,
     /// separate source on its own port.
@@ -14,6 +15,9 @@ final class PhoneServer {
     private let kind: Kind
     private var listener: NWListener?
     private(set) var session: Session?
+    /// Connected, no hello yet (main queue). Not the session until they send one.
+    private var waiting: [Session] = []
+    private var stopped = false
     private weak var ui: Session.UI?
     private(set) var port: UInt16 = 0
 
@@ -82,13 +86,21 @@ final class PhoneServer {
             }
         }
         listener.newConnectionHandler = { [weak self] connection in
-            guard let self, let ui = self.ui else { connection.cancel(); return }
-            self.session?.close()
+            guard let self, let ui = self.ui, !self.stopped else { connection.cancel(); return }
+            // The session in progress keeps streaming until this connection sends a valid hello
+            // (docs/protocol.md 1): a PC that only checks whether the port is open (over USB, say)
+            // must not drop it. One that stays silent is closed after a few seconds.
             let s = Session(connection: connection, store: self.store, ui: ui, source: self.source)
-            self.session = s
+            self.waiting.append(s)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self, weak s] in
+                guard let self, let s, let i = self.waiting.firstIndex(where: { $0 === s }) else { return }
+                self.waiting.remove(at: i)
+                s.close()
+            }
             Thread {
-                s.run()
+                s.run(claim: { DispatchQueue.main.sync { self.claim(s) } })
                 DispatchQueue.main.async {
+                    self.waiting.removeAll { $0 === s }
                     if self.session === s {
                         self.session = nil
                         ui.status(streaming: false, text: "Đang chờ máy tính kết nối…")
@@ -100,8 +112,23 @@ final class PhoneServer {
         self.listener = listener
     }
 
-    func stop() {
+    /// Main queue: `s` sent a valid hello, so it replaces the session in progress. False when it
+    /// was too late (closed for silence) or the server stopped.
+    private func claim(_ s: Session) -> Bool {
+        guard !stopped, let i = waiting.firstIndex(where: { $0 === s }) else { return false }
+        waiting.remove(at: i)
         session?.close()
+        session = s
+        return true
+    }
+
+    func stop() {
+        // The broadcast extension may call this off the main queue, where `waiting` lives.
+        guard Thread.isMainThread else { return DispatchQueue.main.sync { stop() } }
+        stopped = true
+        session?.close()
+        waiting.forEach { $0.close() }
+        waiting.removeAll()
         listener?.cancel()
         listener = nil
     }

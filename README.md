@@ -75,7 +75,7 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
    - cắm cáp vào PC, rồi chọn **Cho phép** khi điện thoại hỏi "Cho phép gỡ lỗi USB?".
 
    **iPhone:** cài app **Apple Devices** (Microsoft Store) hoặc iTunes trên PC. Cắm cáp, mở khóa iPhone, chọn **Tin cậy** nếu iPhone hỏi.
-2. Mở app Cam Studio trên điện thoại. Trên PC, chọn **"<tên máy> (USB)"** trong danh sách camera.
+2. Mở app Cam Studio trên điện thoại. Trên PC, chọn **"<tên máy> (USB)"** trong danh sách camera. Muốn chia sẻ màn hình qua cáp thì bật chia sẻ màn hình trên điện thoại (xem dưới), rồi chọn **"<tên máy> · Màn hình (USB)"**.
 3. Đã ghép đôi qua Wi‑Fi thì không phải ghép lại. Chưa ghép thì làm như bước 3 ở trên.
 4. Rút cáp giữa chừng: camera ảo vẫn giữ, hình tự quay lại khi cắm lại. Cam Studio không tự chuyển sang Wi‑Fi: muốn dùng Wi‑Fi thì chọn nguồn **"(Wi‑Fi)"**.
 
@@ -84,7 +84,7 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 **Chia sẻ màn hình điện thoại**
 1. **Android:** trong app, bấm **Chia sẻ màn hình sang máy tính**, rồi bấm **Bắt đầu ngay**.
    **iPhone:** bấm nút chia sẻ màn hình trong app.
-2. Trên PC, chọn nguồn **"<tên máy> · Màn hình"**.
+2. Trên PC, chọn nguồn **"<tên máy> · Màn hình"** (qua cáp: **"<tên máy> · Màn hình (USB)"**).
 3. Bạn cứ dùng điện thoại bình thường, màn hình vẫn được chia sẻ. Bấm **Dừng** trong thông báo để tắt.
 
 > [!TIP]
@@ -153,7 +153,7 @@ Bấm nút **Lật ngang** ở thanh công cụ. Một số ứng dụng (Discor
   - Một số máy cần driver USB của hãng trên Windows.
 - **iPhone:** cài **Apple Devices** hoặc iTunes, mở khóa iPhone và chọn **Tin cậy**.
 - Rồi bấm **Tìm lại camera và điện thoại**.
-- **Chia sẻ màn hình** hiện chỉ đi qua Wi‑Fi.
+- **Chia sẻ màn hình qua cáp:** nguồn **"· Màn hình (USB)"** luôn có trong danh sách. Chọn nó khi chưa bật chia sẻ màn hình trên điện thoại thì PC báo lỗi: bật chia sẻ rồi chọn lại.
 </details>
 
 <details>

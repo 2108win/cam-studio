@@ -13,7 +13,8 @@ import java.net.ServerSocket
 /**
  * Listens for the PC on the home network and advertises itself as
  * _camstudio._tcp (docs/protocol.md section 1). One PC session at a time:
- * a new connection replaces the old one.
+ * a new connection replaces the old one, but only once it has sent a valid
+ * hello. A connection that only probes the port changes nothing.
  *
  * The cameras and the shared screen are two servers (two sources on the PC):
  * the screen has its own port, TXT id and name (docs/protocol.md 1.1).
@@ -47,7 +48,7 @@ class PhoneServer(
         thread = Thread(::acceptLoop, "accept").apply { start() }
     }
 
-    fun stop() {
+    @Synchronized fun stop() {
         running = false
         registration?.let { runCatching { nsd.unregisterService(it) } }
         registration = null
@@ -69,17 +70,32 @@ class PhoneServer(
             } catch (e: IOException) {
                 break
             }
-            session?.close()
-            val s = Session(context, socket, store, ui, source, canPair = kind == Kind.CAMERA)
-            session = s
+            // The session in progress keeps streaming until this connection sends a valid hello
+            // (docs/protocol.md 1): a PC that only checks whether the port is open (over USB, say)
+            // must not drop it.
+            val s = Session(context, socket, store, ui, source, canPair = kind == Kind.CAMERA, claim = ::claim)
             Thread({
                 s.run()
-                if (session === s) {
-                    session = null
+                if (ended(s)) {
                     ui.status(false, if (kind == Kind.CAMERA) "Đang chờ máy tính kết nối…" else "Đang chờ máy tính chọn \"${txtName()}\"…")
                 }
             }, "session").start()
         }
+    }
+
+    /** `s` sent a valid hello: it replaces the session in progress. False once the server stopped. */
+    @Synchronized private fun claim(s: Session): Boolean {
+        if (!running) return false
+        session?.close()
+        session = s
+        return true
+    }
+
+    /** True when `s` was the session (a probe never was, and leaves the status text alone). */
+    @Synchronized private fun ended(s: Session): Boolean {
+        if (session !== s) return false
+        session = null
+        return true
     }
 
     companion object {

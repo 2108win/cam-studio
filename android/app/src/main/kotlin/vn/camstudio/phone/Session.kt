@@ -26,6 +26,8 @@ class Session(
     private val source: MediaSource,
     /** False for the shared screen: it never pairs (no one to compare codes), it reuses the camera's keys. */
     private val canPair: Boolean = true,
+    /** Runs once the PC's hello is valid: only then does this connection replace the session in progress. False ends it. */
+    private val claim: (Session) -> Boolean = { true },
 ) {
     interface Ui {
         val inForeground: Boolean
@@ -75,14 +77,16 @@ class Session(
     // ---- handshake -------------------------------------------------------------
 
     private fun handshake() {
-        socket.soTimeout = 120_000 // the user may take a while to compare the code
+        socket.soTimeout = 10_000 // a connection that stays silent is not a PC
         val io = HandshakeIo(socket.getInputStream(), socket.getOutputStream())
 
         val hello = io.read()
         if (hello.optString("type") != "hello" || hello.optInt("v") != 1) throw ProtocolException("bad hello")
         val clientId = hello.getString("clientId")
-        pcName = hello.optString("clientName", pcName)
         val commit = Base64.decode(hello.getString("commit"), Base64.DEFAULT)
+        if (!claim(this)) throw ProtocolException("server stopped")
+        pcName = hello.optString("clientName", pcName)
+        socket.soTimeout = 120_000 // the user may take a while to compare the code
 
         val keyPair = Crypto.newKeyPair()
         val phonePub = Crypto.encodePublic(keyPair.public as ECPublicKey)

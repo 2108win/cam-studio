@@ -43,10 +43,12 @@ final class Session {
         self.source = source
     }
 
-    func run() {
+    /// `claim` runs once the PC's hello is valid (on this thread): this connection replaces the
+    /// session in progress only then. False ends it.
+    func run(claim: () -> Bool) {
         connection.start()
         do {
-            try handshake()
+            try handshake(claim: claim)
             Thread { self.sendLoop() }.start()
             ui?.status(streaming: false, text: "Đã kết nối với \(pcName)")
             try controlLoop()
@@ -66,13 +68,14 @@ final class Session {
 
     // MARK: - handshake
 
-    private func handshake() throws {
+    private func handshake(claim: () -> Bool) throws {
         let hello = try connection.readHandshake()
         guard hello["type"] as? String == "hello", hello["v"] as? Int == 1,
               let clientId = hello["clientId"] as? String,
               let commitB64 = hello["commit"] as? String, let commit = Data(base64Encoded: commitB64) else {
             throw WireError.protocolError("bad hello")
         }
+        guard claim() else { throw WireError.closed }
         pcName = hello["clientName"] as? String ?? pcName
 
         let key = P256.KeyAgreement.PrivateKey()

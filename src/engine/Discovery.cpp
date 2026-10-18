@@ -19,8 +19,6 @@ namespace phone
 {
 namespace
 {
-constexpr uint16_t kPhonePort = 47321; // the phone app's fixed port, the only one reachable over USB
-
 std::mutex g_lock;
 std::map<std::wstring, Endpoint> g_found;   // by service instance name
 std::vector<Endpoint> g_manual;
@@ -177,18 +175,20 @@ std::vector<Endpoint> KnownPhones()
     // Phones on a USB cable (docs/protocol.md 1.2). They have no TXT record: the name comes from
     // the phone (Android device_name, the iPhone's name) and the device id from "hello".
     std::vector<Endpoint> cable;
+    std::vector<bool> ready; // the app can be reached (adb: USB debugging allowed)
     for (const usb::Device& d : g_usb ? g_usb->Devices() : std::vector<usb::Device>())
     {
         Endpoint e;
         e.transport = d.kind == usb::Kind::Adb ? Transport::Adb : Transport::Usbmux;
         e.serial = d.serial;
-        e.port = kPhonePort;
+        e.port = usb::kCameraPort;
         e.os = d.kind == usb::Kind::Adb ? "android" : "ios";
         e.model = d.model;
         if (d.state != "device") e.name = "Điện thoại Android – chờ cho phép gỡ lỗi USB";
         else if (!d.name.empty()) e.name = d.name;
         else e.name = d.kind == usb::Kind::Adb ? "Điện thoại Android" : "iPhone";
         cable.push_back(e);
+        ready.push_back(d.state == "device");
     }
     // Two phones with the same name: the app tells cameras apart by name, so add the serial's end.
     std::vector<bool> twin(cable.size());
@@ -196,8 +196,20 @@ std::vector<Endpoint> KnownPhones()
         for (size_t j = 0; j < cable.size(); ++j)
             if (i != j && cable[i].name == cable[j].name) twin[i] = true;
     for (size_t i = 0; i < cable.size(); ++i)
-        if (twin[i]) cable[i].name += " · " + cable[i].serial.substr(cable[i].serial.size() > 4 ? cable[i].serial.size() - 4 : 0);
-    out.insert(out.end(), cable.begin(), cable.end());
+    {
+        Endpoint& camera = cable[i];
+        if (twin[i]) camera.name += " · " + camera.serial.substr(camera.serial.size() > 4 ? camera.serial.size() - 4 : 0);
+        out.push_back(camera);
+        // The shared screen (docs/protocol.md 1.1) through the same cable, named like the Wi‑Fi one.
+        // Listed for every phone ready on the cable: whether it is sharing is not checked, because a
+        // test connection makes older phone apps drop the session in progress. Picking it while
+        // the phone does not share its screen says so.
+        if (!ready[i]) continue;
+        Endpoint screen = camera;
+        screen.port = usb::kScreenPort;
+        screen.name += " · Màn hình";
+        out.push_back(screen);
+    }
     return out;
 }
 

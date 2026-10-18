@@ -80,7 +80,7 @@ Cáp chỉ thay đường ống TCP. Bắt tay, ghép đôi, mã hóa và mọi 
 - **Khung tin của usbmuxd:** đầu 16 byte little‑endian (độ dài kể cả đầu, version `1`, loại `8` = plist, tag) rồi plist XML.
 - **Khung tin của lockdownd:** `u32` big‑endian độ dài rồi plist XML.
 
-**Chỉ dùng cổng cố định:** qua cáp PC chỉ biết cổng 47321. Nếu app phải lùi về cổng ngẫu nhiên (mục 1) thì không kết nối qua cáp được.
+**Chỉ dùng cổng cố định:** qua cáp PC chỉ biết cổng 47321 (camera) và 47322 (màn hình). Nếu app phải lùi về cổng ngẫu nhiên (mục 1) thì không kết nối qua cáp được.
 
 **Danh tính:**
 - PC gọi nguồn là `"<tên máy> (USB)"` và giữ nó theo serial (adb) hoặc UDID (iPhone).
@@ -101,7 +101,13 @@ Cáp chỉ thay đường ống TCP. Bắt tay, ghép đôi, mã hóa và mọi 
 - PC tắt server do chính nó chạy khi không còn điện thoại nào trên adb quá một phút (và Windows không còn thấy giao diện ADB), hoặc khi thoát. Lý do: adb quét USB mỗi giây. Server do công cụ khác chạy thì để nguyên.
 - PC không bao giờ chạy `adb.exe` khi đã có server: adb khác phiên bản sẽ tắt server mà công cụ khác đang dùng.
 
-**Chưa làm:** chia sẻ màn hình qua cáp (cổng 47322). Không thể dò xem cổng có đang mở hay không: một kết nối thử sẽ làm điện thoại bỏ phiên đang phát, vì mỗi lúc điện thoại chỉ phục vụ một PC.
+**Chia sẻ màn hình qua cáp** (mục 1.1): cùng đường ống, tới cổng **47322**.
+- **Trong danh sách:** với mỗi điện thoại sẵn sàng trên cáp, PC liệt kê thêm `"<tên máy> · Màn hình (USB)"`, giữ theo serial/UDID và cổng.
+  - Android còn chờ cho phép gỡ lỗi USB thì không liệt kê.
+  - PC **không** dò cổng 47322 để biết điện thoại có đang chia sẻ hay không: app cũ sẽ bỏ phiên đang phát (mục 3.1). Nguồn luôn có trong danh sách.
+- **Khi chưa chia sẻ:** không có gì nghe trên 47322, nên adb trả `FAIL` cho `tcp:47322`, usbmux trả `3`. PC báo "chưa chia sẻ màn hình" và chỉ cách bật.
+- **Danh tính:** `hello` mang `deviceId` gốc như qua Wi‑Fi, nên khóa ghép đôi của camera dùng luôn. Tiện ích và service không ghép đôi được (`notPaired`).
+- **Khi dừng chia sẻ:** PC chờ (Waiting) và thử lại qua đúng cáp đó. Bật chia sẻ lại thì hình tự quay lại.
 
 **Tường lửa:** PC chỉ kết nối ra ngoài (ra điện thoại), nên Windows không hiện hộp thoại tường lửa.
 
@@ -194,6 +200,11 @@ PC → ĐT  {"type":"reveal","pub":"<base64 pcPub>"}
 - **Vì sao phải cam kết trước:** PC đã chốt khóa của mình trước khi thấy khóa điện thoại, nên kẻ đứng giữa không thể chọn khóa sao cho mã so sánh trùng nhau.
 - **Bản ghi phiên (transcript):** `T = SHA256( LP("camstudio-v1") || LP(clientId) || LP(deviceId) || LP(pcPub) || LP(phonePub) )`.
 - **Bí mật chung:** `Z = ECDH(pcPriv, phonePub)`, là tọa độ X dài 32 byte (xem quy ước byte ở trên).
+- **Mỗi lúc một PC:** điện thoại chỉ phục vụ một PC. Kết nối mới chỉ thay phiên đang chạy **sau khi đã gửi `hello` hợp lệ**:
+  - "hợp lệ" là đúng `type`, `v = 1`, có `clientId` và `commit` base64;
+  - phiên cũ đóng ngay trước khi điện thoại trả `hello`, kể cả khi bắt tay sau đó thất bại (ví dụ `notPaired`).
+- **Kết nối không phải PC:** đóng trước khi gửi `hello`, gửi thứ khác, hoặc im lặng quá **10 giây**. Điện thoại đóng kết nối đó, còn phiên đang phát và dòng trạng thái trên app giữ nguyên. Vì vậy dò xem cổng có mở không (ví dụ qua cáp USB) không làm rớt hình.
+- **App cũ:** Android 0.1.3 và iOS 0.1.0 (build 20261018.0743) trở về trước bỏ phiên ngay khi nhận kết nối. Vì thế PC không dò cổng (mục 1.2).
 
 ### 3.2 Ghép đôi lần đầu (`paired == false`, hoặc PC không còn khóa ghép đôi)
 
