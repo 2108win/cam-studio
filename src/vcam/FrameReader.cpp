@@ -9,24 +9,28 @@ FrameReader::~FrameReader()
     Close();
 }
 
-HRESULT FrameReader::Open(uint32_t nativeWidth, uint32_t nativeHeight)
+HRESULT FrameReader::Open(uint32_t nativeWidth, uint32_t nativeHeight, bool local)
 {
     if (m_header) return S_OK;
 
+    // The global channel is created by Frame Server (LocalService) with a DACL the unelevated
+    // host can open. The local one lives in the user's own session: default security.
     PSECURITY_DESCRIPTOR sd = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+    if (!local && !ConvertStringSecurityDescriptorToSecurityDescriptorW(
             CAMSTUDIO_OBJECT_SDDL, SDDL_REVISION_1, &sd, nullptr))
     {
         return HRESULT_FROM_WIN32(GetLastError());
     }
     SECURITY_ATTRIBUTES sa{ sizeof(sa), sd, FALSE };
+    SECURITY_ATTRIBUTES* psa = local ? nullptr : &sa;
 
-    const uint64_t bytes = CamStudioMappingBytes(nativeWidth, nativeHeight);
-    m_mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE,
-        static_cast<DWORD>(bytes >> 32), static_cast<DWORD>(bytes), CAMSTUDIO_MAPPING_NAME);
+    const uint64_t bytes = local ? CamStudioLocalMappingBytes() : CamStudioMappingBytes(nativeWidth, nativeHeight);
+    m_mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, psa, PAGE_READWRITE,
+        static_cast<DWORD>(bytes >> 32), static_cast<DWORD>(bytes),
+        local ? CAMSTUDIO_LOCAL_MAPPING_NAME : CAMSTUDIO_MAPPING_NAME);
     const DWORD mapErr = GetLastError();
-    m_event = CreateEventW(&sa, FALSE, FALSE, CAMSTUDIO_EVENT_NAME);
-    LocalFree(sd);
+    m_event = CreateEventW(psa, FALSE, FALSE, local ? CAMSTUDIO_LOCAL_EVENT_NAME : CAMSTUDIO_EVENT_NAME);
+    if (sd) LocalFree(sd);
 
     if (!m_mapping || !m_event)
     {
@@ -44,30 +48,40 @@ HRESULT FrameReader::Open(uint32_t nativeWidth, uint32_t nativeHeight)
         return hr;
     }
 
+    if (mapErr == ERROR_ALREADY_EXISTS && m_header->magic != CAMSTUDIO_MAGIC)
+    {
+        // Someone else created it a moment ago and is still filling the header.
+        for (int i = 0; i < 100 && m_header->magic != CAMSTUDIO_MAGIC; ++i) Sleep(1);
+    }
     if (mapErr != ERROR_ALREADY_EXISTS || m_header->magic != CAMSTUDIO_MAGIC)
     {
         // First opener initialises the header. The host waits for magic.
-        m_header->version = CAMSTUDIO_VERSION;
-        m_header->width = nativeWidth;
-        m_header->height = nativeHeight;
-        m_header->stride = nativeWidth;
-        m_header->slots = CAMSTUDIO_SLOTS;
-        m_header->frameBytes = CamStudioNv12Bytes(nativeWidth, nativeHeight);
-        m_header->latest = 0;
-        m_header->writeTime100ns = 0;
-        m_header->readerActive = 0;
-        for (uint32_t s = 0; s < CAMSTUDIO_SLOTS; ++s)
-        {
-            m_header->slotSeq[s] = 0;
-            m_header->slotReaders[s] = 0;
-        }
-        MemoryBarrier();
-        m_header->magic = CAMSTUDIO_MAGIC;
+        uint32_t w = nativeWidth, h = nativeHeight;
+        if (local) CamStudioClampLocalSize(w, h);
+        CamStudioInitHeader(m_header, w, h, local ? CamStudioLocalSlotBytes() : CamStudioNv12Bytes(w, h));
     }
 
     VcamLog(L"Shared memory ready %ux%u (existing=%d)", m_header->width, m_header->height,
         mapErr == ERROR_ALREADY_EXISTS);
     return S_OK;
+}
+
+bool FrameReader::OpenExisting(bool local)
+{
+    if (m_header) return true;
+    HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, local ? CAMSTUDIO_LOCAL_MAPPING_NAME : CAMSTUDIO_MAPPING_NAME);
+    if (!mapping) return false;
+    auto* header = static_cast<SharedFrameHeader*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+    if (!header || header->magic != CAMSTUDIO_MAGIC || header->version != CAMSTUDIO_VERSION || header->slots != CAMSTUDIO_SLOTS)
+    {
+        if (header) UnmapViewOfFile(header);
+        CloseHandle(mapping);
+        return false;
+    }
+    m_mapping = mapping;
+    m_header = header;
+    m_event = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, local ? CAMSTUDIO_LOCAL_EVENT_NAME : CAMSTUDIO_EVENT_NAME);
+    return true;
 }
 
 void FrameReader::Close()
@@ -91,6 +105,11 @@ bool FrameReader::Fill(uint8_t* dst, LONG pitch, uint32_t width, uint32_t height
     {
         const uint32_t sw = m_header->width;
         const uint32_t sh = m_header->height;
+        if (!sw || !sh || CamStudioNv12Bytes(sw, sh) > m_header->frameBytes)
+        {
+            DrawNoSignal(dst, pitch, width, height, now100ns);
+            return false;
+        }
 
         // "No signal" only when the host really stopped (or never wrote):
         // racing the writer just means trying the newer frame.
@@ -107,7 +126,7 @@ bool FrameReader::Fill(uint8_t* dst, LONG pitch, uint32_t width, uint32_t height
             bool ok = false;
             if (!(seq1 & 1))
             {
-                Nv12Scale(CamStudioSlot(m_header, slot), sw, sw, sh, dst, pitch, width, height);
+                Nv12FitInto(CamStudioSlot(m_header, slot), sw, sw, sh, dst, pitch, width, height);
                 MemoryBarrier();
                 ok = m_header->slotSeq[slot] == seq1;
             }
@@ -123,8 +142,8 @@ bool FrameReader::Fill(uint8_t* dst, LONG pitch, uint32_t width, uint32_t height
         const LONG64 latest = m_header->latest;
         if (latest != 0 && now100ns - m_header->writeTime100ns <= CAMSTUDIO_STALE_100NS)
         {
-            Nv12Scale(CamStudioSlot(m_header, static_cast<uint32_t>(latest & 3) % CAMSTUDIO_SLOTS), sw, sw, sh,
-                      dst, pitch, width, height);
+            Nv12FitInto(CamStudioSlot(m_header, static_cast<uint32_t>(latest & 3) % CAMSTUDIO_SLOTS), sw, sw, sh,
+                        dst, pitch, width, height);
             m_delivered = latest >> 2;
             return true;
         }

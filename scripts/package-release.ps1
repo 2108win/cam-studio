@@ -27,6 +27,9 @@ $bin = Join-Path $root "app\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64"
 Copy-Item $bin $appOut -Recurse
 Get-ChildItem $appOut -Recurse -File -Filter *.pdb | Remove-Item -Force
 Copy-Item (Join-Path $root "build\Release\CamStudioVCam.dll") $appOut
+# Windows 10: the DirectShow filter, 64- and 32-bit (docs/windows10.md).
+Copy-Item (Join-Path $root "build\Release\CamStudioDShow.dll") (Join-Path $appOut "CamStudioDShow64.dll")
+Copy-Item (Join-Path $root "build-x86\Release\CamStudioDShow.dll") (Join-Path $appOut "CamStudioDShow32.dll")
 # adb for Android phones on a USB cable (docs/protocol.md 1.2). The engine starts it only while such
 # a phone is plugged in. From the Android SDK's platform-tools, with its NOTICE.txt (licences).
 $platformTools = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools"
@@ -37,7 +40,7 @@ foreach ($f in "adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll", "NOTICE.txt") {
     if (-not (Test-Path $src)) { throw "$src missing: run scripts\setup-android-sdk.ps1" }
     Copy-Item $src $adbOut
 }
-foreach ($f in "CamStudio.exe", "CamStudio.pri", "MainWindow.xbf", "CamStudioEngine.dll", "adb\adb.exe") {
+foreach ($f in "CamStudio.exe", "CamStudio.pri", "MainWindow.xbf", "CamStudioEngine.dll", "adb\adb.exe", "CamStudioVCam.dll", "CamStudioDShow64.dll", "CamStudioDShow32.dll") {
     if (-not (Test-Path (Join-Path $appOut $f))) { throw "$f missing from the app folder" }
 }
 

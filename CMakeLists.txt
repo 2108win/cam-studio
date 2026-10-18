@@ -18,6 +18,16 @@ add_library(CamStudioVCam SHARED
     src/vcam/vcam.def)
 target_link_libraries(CamStudioVCam PRIVATE mfplat mfuuid mf mfsensorgroup propsys advapi32 runtimeobject)
 
+# Windows 10 virtual camera: a DirectShow source filter that reads the same frames from the
+# host's local channel (docs/windows10.md). Built for x64 and (scripts\build.ps1, build-x86) x86,
+# since a 32-bit app loads a 32-bit filter.
+add_library(CamStudioDShow SHARED
+    src/dshow/dllmain.cpp
+    src/dshow/SourceFilter.cpp
+    src/vcam/FrameReader.cpp
+    src/dshow/dshow.def)
+target_link_libraries(CamStudioDShow PRIVATE mfplat strmiids ole32 oleaut32 advapi32 uuid runtimeobject)
+
 # Camera engine used by the WinUI app (app/): capture -> orient/crop/zoom ->
 # shared memory, and the virtual camera registration. Flat C API.
 add_library(CamStudioEngine SHARED
@@ -31,7 +41,8 @@ add_library(CamStudioEngine SHARED
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)
-target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite mfsensorgroup ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32
+# mfsensorgroup (MFCreateVirtualCamera, Windows 11) is loaded at run time: see VirtualCameraApi().
+target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32
     windowsapp d3d11 dxgi dwmapi)
 # C++/WinRT (Windows.Graphics.Capture) is used in WindowSource.cpp only.
 set_source_files_properties(src/engine/WindowSource.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")

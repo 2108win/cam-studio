@@ -14,6 +14,8 @@
 #endif
 
 #define VCamClsid "{72F5B2FD-C48E-449B-95CE-E8F13BF200CB}"
+#define DShowClsid "{7D2B9C41-3A6E-4F58-B0D1-9E4C2F6A8B13}"
+#define DShowCategory "{860BB310-5D01-11d0-BD3B-00A0C911CE86}"
 
 [Setup]
 AppId={{6E3C8C2A-3F0B-4B8E-9C61-5A2D7F1E9B44}
@@ -31,8 +33,9 @@ DisableDirPage=auto
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 11: MFCreateVirtualCamera needs build 22000.
-MinVersion=10.0.22000
+; Windows 10 1809 (build 17763) or newer, 64-bit. Windows 11 gets the Media Foundation virtual
+; camera (every app sees it); Windows 10 gets a DirectShow filter instead (docs/windows10.md).
+MinVersion=10.0.17763
 OutputDir={#OutputDir}
 OutputBaseFilename=CamStudio-Setup-{#AppVersion}
 SetupIconFile=..\..\app\Assets\CamStudio.ico
@@ -63,10 +66,13 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 Name: "autostart"; Description: "{cm:StartWithWindows}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}\App"; Excludes: "CamStudioVCam.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}\App"; Excludes: "CamStudioVCam.dll,CamStudioDShow64.dll,CamStudioDShow32.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; The virtual camera lives next to the app folder and is registered for Frame Server
-; (regserver = regsvr32 on install, unregister on uninstall).
-Source: "{#SourceDir}\CamStudioVCam.dll"; DestDir: "{app}"; Flags: ignoreversion regserver 64bit
+; (regserver = regsvr32 on install, unregister on uninstall). Windows 11 only.
+Source: "{#SourceDir}\CamStudioVCam.dll"; DestDir: "{app}"; Flags: ignoreversion regserver 64bit; Check: IsWindows11
+; Windows 10: the DirectShow source filter, for 64-bit and for 32-bit apps.
+Source: "{#SourceDir}\CamStudioDShow64.dll"; DestDir: "{app}"; Flags: ignoreversion regserver 64bit; Check: not IsWindows11
+Source: "{#SourceDir}\CamStudioDShow32.dll"; DestDir: "{app}"; Flags: ignoreversion regserver 32bit; Check: not IsWindows11
 
 [Icons]
 Name: "{autoprograms}\Cam Studio"; Filename: "{app}\App\CamStudio.exe"; Comment: "{cm:ShortcutComment}"
@@ -85,6 +91,14 @@ Filename: "{app}\App\CamStudio.exe"; Parameters: "{code:RelaunchArgs}"; Flags: n
 Type: filesandordirs; Name: "{app}\App"
 
 [Code]
+function IsWindows11(): Boolean;
+var
+  V: TWindowsVersion;
+begin
+  GetWindowsVersionEx(V);
+  Result := V.Build >= 22000;
+end;
+
 function RelaunchAfterUpdate(): Boolean;
 begin
   Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|}') <> '');
@@ -158,8 +172,12 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    // regserver already unregistered the class; make sure nothing points at the deleted DLL.
+    // regserver already unregistered the classes; make sure nothing points at the deleted DLLs.
     RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\CLSID\{#VCamClsid}');
+    RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\CLSID\{#DShowClsid}');
+    RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\CLSID\{#DShowCategory}\Instance\{#DShowClsid}');
+    RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\WOW6432Node\CLSID\{#DShowClsid}');
+    RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\WOW6432Node\CLSID\{#DShowCategory}\Instance\{#DShowClsid}');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'CamStudio');
   end;
 end;

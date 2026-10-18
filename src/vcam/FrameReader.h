@@ -11,8 +11,16 @@ public:
     FrameReader(const FrameReader&) = delete;
     FrameReader& operator=(const FrameReader&) = delete;
 
-    // Creates (or opens) the global mapping sized for the native format.
-    HRESULT Open(uint32_t nativeWidth, uint32_t nativeHeight);
+    // Creates (or opens) the global mapping sized for the native format. `local`: the Windows 10
+    // channel instead (CAMSTUDIO_LOCAL_MAPPING_NAME, sized once for any picture; the size given
+    // is only what a fresh mapping starts with).
+    HRESULT Open(uint32_t nativeWidth, uint32_t nativeHeight, bool local = false);
+    // Opens the mapping only if it exists (the host runs): nothing is created.
+    bool OpenExisting(bool local);
+
+    // The picture the host writes now (local channel: it changes between streams).
+    uint32_t Width() const { return m_header ? m_header->width : 0; }
+    uint32_t Height() const { return m_header ? m_header->height : 0; }
     void Close();
 
     HANDLE FrameEvent() const { return m_event; }
@@ -23,8 +31,8 @@ public:
     LONG64 DeliveredFrame() const { return m_delivered; }
 
     // Copies the latest host frame into an NV12 destination of any size,
-    // scaling if needed. Draws a "no signal" pattern if the host is not
-    // writing. Returns true when a live frame was delivered.
+    // scaled to fit (black bars when the shape differs). Draws a "no signal"
+    // pattern if the host is not writing. Returns true when a live frame was delivered.
     bool Fill(uint8_t* dst, LONG pitch, uint32_t width, uint32_t height, LONGLONG now100ns);
 
     void SetActive(bool active);

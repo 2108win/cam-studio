@@ -4,6 +4,7 @@
 
 #include <windows.h>
 #include <guiddef.h>
+#include <cmath>
 #include <cstdint>
 
 // COM class of the virtual camera media source.
@@ -36,6 +37,16 @@ inline constexpr GUID CAMSTUDIO_ATTR_NATIVE_FPS =
 // SYSTEM, LocalService and Administrators get full access, while interactive
 // and authenticated users get read/write.
 #define CAMSTUDIO_OBJECT_SDDL L"D:(A;;GA;;;SY)(A;;GA;;;LS)(A;;GA;;;BA)(A;;GRGW;;;IU)(A;;GRGW;;;AU)"
+
+// Windows 10 has no virtual camera API: there the reader is a DirectShow source filter
+// (src/dshow) inside the app that uses the camera, in the user's own session. The objects live
+// in the session-local namespace (creating "Global\" ones needs SeCreateGlobalPrivilege, which
+// neither the app nor the host has). One mapping, sized once for the largest picture: the header's
+// width/height say what the host writes now (changed only while no reader streams), and
+// frameBytes stays the slot stride, so a reader that raced the change sees a torn frame at worst.
+#define CAMSTUDIO_LOCAL_MAPPING_NAME L"Local\\CamStudioVCam_Frames_v2"
+#define CAMSTUDIO_LOCAL_EVENT_NAME   L"Local\\CamStudioVCam_NewFrame_v2"
+constexpr uint32_t CAMSTUDIO_LOCAL_MAX_PIXELS = 4096u * 2304u; // 4K either way up fits
 
 constexpr uint32_t CAMSTUDIO_MAGIC   = 0x31534D43; // "CMS1"
 constexpr uint32_t CAMSTUDIO_VERSION = 2;
@@ -87,4 +98,46 @@ inline uint64_t CamStudioMappingBytes(uint32_t w, uint32_t h)
 inline uint8_t* CamStudioSlot(SharedFrameHeader* h, uint32_t slot)
 {
     return reinterpret_cast<uint8_t*>(h + 1) + slot * h->frameBytes;
+}
+
+inline uint64_t CamStudioLocalSlotBytes()
+{
+    return static_cast<uint64_t>(CAMSTUDIO_LOCAL_MAX_PIXELS) * 3 / 2;
+}
+
+inline uint64_t CamStudioLocalMappingBytes()
+{
+    return sizeof(SharedFrameHeader) + CAMSTUDIO_SLOTS * CamStudioLocalSlotBytes();
+}
+
+// First opener of a mapping: everything but the magic, then the magic (readers and the host
+// wait for it). frameBytes is the slot stride: the frame itself, or the local channel's capacity.
+inline void CamStudioInitHeader(SharedFrameHeader* h, uint32_t width, uint32_t height, uint64_t frameBytes)
+{
+    h->version = CAMSTUDIO_VERSION;
+    h->width = width;
+    h->height = height;
+    h->stride = width;
+    h->slots = CAMSTUDIO_SLOTS;
+    h->frameBytes = frameBytes;
+    h->latest = 0;
+    h->writeTime100ns = 0;
+    h->readerActive = 0;
+    for (uint32_t s = 0; s < CAMSTUDIO_SLOTS; ++s)
+    {
+        h->slotSeq[s] = 0;
+        h->slotReaders[s] = 0;
+    }
+    MemoryBarrier();
+    h->magic = CAMSTUDIO_MAGIC;
+}
+
+// Local channel: a picture larger than the slots are sized for is written smaller, same shape.
+inline void CamStudioClampLocalSize(uint32_t& w, uint32_t& h)
+{
+    const uint64_t pixels = static_cast<uint64_t>(w) * h;
+    if (pixels <= CAMSTUDIO_LOCAL_MAX_PIXELS || !pixels) return;
+    const double k = std::sqrt(static_cast<double>(CAMSTUDIO_LOCAL_MAX_PIXELS) / static_cast<double>(pixels));
+    w = static_cast<uint32_t>(w * k) & ~1u;
+    h = static_cast<uint32_t>(h * k) & ~1u;
 }

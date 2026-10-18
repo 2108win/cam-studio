@@ -18,6 +18,14 @@ if ($Target -ne "app") {
     if ($Target) { $targetArgs = @("--target", $Target) }
     cmake --build "$root\build" --config $Config --parallel @targetArgs
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    # The Windows 10 DirectShow filter again as x86 (build-x86): a 32-bit app loads a 32-bit
+    # filter. The consumer tool too, to test it.
+    if (-not $Target -or $Target -eq "CamStudioDShow") {
+        cmake -S $root -B "$root\build-x86" -G "Visual Studio 17 2022" -A Win32
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        cmake --build "$root\build-x86" --config $Config --parallel --target CamStudioDShow camstudio-dshow-consumer
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    }
 }
 
 # WinUI 3 app (copies build\<Config>\CamStudioEngine.dll next to CamStudio.exe).

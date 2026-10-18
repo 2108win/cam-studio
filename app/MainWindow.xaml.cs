@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -153,7 +153,9 @@ public sealed partial class MainWindow : Window
     {
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        // Windows 10 draws its own caption buttons and ignores the title bar settings below.
+        if (AppWindowTitleBar.IsCustomizationSupported())
+            AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "CamStudio.ico"));
 
         double scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
@@ -187,6 +189,7 @@ public sealed partial class MainWindow : Window
     // Caption buttons sit on our Mica content, so they follow the theme.
     private void UpdateCaptionButtons()
     {
+        if (!AppWindowTitleBar.IsCustomizationSupported()) return; // Windows 10
         bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
         var tb = AppWindow.TitleBar;
         tb.ButtonBackgroundColor = Colors.Transparent;

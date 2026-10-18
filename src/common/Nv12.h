@@ -1,6 +1,7 @@
 // NV12 copy/scale helpers shared by the host and the media source.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -315,13 +316,13 @@ inline void Nv12ToBgra(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch
     }
 }
 
-// Copies or nearest-neighbour scales an NV12 image. Planes are contiguous:
-// the UV plane starts right after `height` luma rows of `pitch` bytes.
-inline void Nv12Scale(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
-                      uint8_t* dst, long dstPitch, uint32_t dw, uint32_t dh)
+// Copies or nearest-neighbour scales an NV12 image into separate Y and UV destinations (a
+// rectangle inside a larger frame, say). The source planes are contiguous: the UV plane starts
+// right after `sh` luma rows of `srcPitch` bytes.
+inline void Nv12ScaleTo(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
+                        uint8_t* dst, uint8_t* dstUv, long dstPitch, uint32_t dw, uint32_t dh)
 {
     const uint8_t* srcUv = src + static_cast<size_t>(srcPitch) * sh;
-    uint8_t* dstUv = dst + static_cast<size_t>(dstPitch) * dh;
 
     if (sw == dw && sh == dh)
     {
@@ -360,4 +361,52 @@ inline void Nv12Scale(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t s
             d[2 * x + 1] = s[cxmap[x] + 1];
         }
     }
+}
+
+// Same, with contiguous destination planes (the UV plane right after `dh` rows of `dstPitch`).
+inline void Nv12Scale(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
+                      uint8_t* dst, long dstPitch, uint32_t dw, uint32_t dh)
+{
+    Nv12ScaleTo(src, srcPitch, sw, sh, dst, dst + static_cast<size_t>(dstPitch) * dh, dstPitch, dw, dh);
+}
+
+// Scales an NV12 picture into a frame of another size keeping its shape: centred, black bars
+// around (even position and size). Same size: a plain copy.
+inline void Nv12FitInto(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
+                        uint8_t* dst, long dstPitch, uint32_t dw, uint32_t dh)
+{
+    if (!sw || !sh || !dw || !dh) return;
+    if (sw == dw && sh == dh)
+    {
+        Nv12Scale(src, srcPitch, sw, sh, dst, dstPitch, dw, dh);
+        return;
+    }
+    uint32_t rw = dw, rh = dh;
+    if (static_cast<uint64_t>(sw) * dh > static_cast<uint64_t>(dw) * sh) rh = static_cast<uint32_t>(static_cast<uint64_t>(dw) * sh / sw);
+    else rw = static_cast<uint32_t>(static_cast<uint64_t>(dh) * sw / sh);
+    rw = std::max(2u, rw & ~1u);
+    rh = std::max(2u, rh & ~1u);
+    const uint32_t rx = ((dw - rw) / 2) & ~1u;
+    const uint32_t ry = ((dh - rh) / 2) & ~1u;
+    uint8_t* dstUv = dst + static_cast<size_t>(dstPitch) * dh;
+    if (rw != dw || rh != dh)
+    {
+        // Bars: every row outside the rectangle, and the margins of the rows inside it.
+        for (uint32_t y = 0; y < dh; ++y)
+        {
+            uint8_t* row = dst + static_cast<size_t>(y) * dstPitch;
+            if (y < ry || y >= ry + rh) { memset(row, kNv12BlackY, dw); continue; }
+            memset(row, kNv12BlackY, rx);
+            memset(row + rx + rw, kNv12BlackY, dw - rx - rw);
+        }
+        for (uint32_t y = 0; y < dh / 2; ++y)
+        {
+            uint8_t* row = dstUv + static_cast<size_t>(y) * dstPitch;
+            if (y < ry / 2 || y >= (ry + rh) / 2) { memset(row, kNv12BlackUv, dw); continue; }
+            memset(row, kNv12BlackUv, rx);
+            memset(row + rx + rw, kNv12BlackUv, dw - rx - rw);
+        }
+    }
+    Nv12ScaleTo(src, srcPitch, sw, sh, dst + static_cast<size_t>(ry) * dstPitch + rx,
+                dstUv + static_cast<size_t>(ry / 2) * dstPitch + rx, dstPitch, rw, rh);
 }

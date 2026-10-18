@@ -16,6 +16,22 @@ namespace
 constexpr ULONGLONG kPreviewIntervalMs = 33; // ~30 fps is plenty for a preview
 // Source closed after this long with no app on the camera and no preview on
 // screen (an app switching cameras or a quick glance should not reopen it).
+// MFCreateVirtualCamera exists on Windows 11 only (mfsensorgroup.dll, build 22000). Looked up at
+// run time so the engine loads on Windows 10, where a DirectShow source filter (src/dshow) reads
+// the frames instead and no camera is registered here (docs/windows10.md).
+using CreateVirtualCameraFn = HRESULT(STDAPICALLTYPE*)(MFVirtualCameraType, MFVirtualCameraLifetime, MFVirtualCameraAccess,
+                                                      LPCWSTR, LPCWSTR, const GUID*, ULONG, IMFVirtualCamera**);
+CreateVirtualCameraFn VirtualCameraApi()
+{
+    static const CreateVirtualCameraFn fn = []() -> CreateVirtualCameraFn {
+        // CAMSTUDIO_FORCE_DSHOW=1: the Windows 10 path on any Windows, for testing.
+        if (GetEnvironmentVariableW(L"CAMSTUDIO_FORCE_DSHOW", nullptr, 0)) return nullptr;
+        const HMODULE m = LoadLibraryExW(L"mfsensorgroup.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        return m ? reinterpret_cast<CreateVirtualCameraFn>(GetProcAddress(m, "MFCreateVirtualCamera")) : nullptr;
+    }();
+    return fn;
+}
+
 constexpr ULONGLONG kIdleCloseMs = 5000;
 // An app that stopped streaming this recently still counts as using the camera: apps restart
 // their stream when they change mode (Discord does), and rebuilding the camera then drops it.
@@ -95,8 +111,14 @@ HRESULT ReadCameraFormats(const CameraDevice& cam, std::vector<FormatOption>& op
 class CaptureEngine::Pipeline
 {
 public:
-    explicit Pipeline(CaptureEngine& engine) : m_engine(engine) {}
+    explicit Pipeline(CaptureEngine& engine) : m_engine(engine), m_dshow(VirtualCameraApi() == nullptr)
+    {
+        m_writer.UseLocal(m_dshow);
+    }
     ~Pipeline() { End(); }
+
+    // Windows 10: frames go to the DirectShow filter's channel, no camera is registered.
+    bool DirectShow() const { return m_dshow; }
 
     // A source (a new one, or the same one again) delivers width x height frames from now on.
     // Publishes the virtual camera for it, or keeps the one already published when an app is
@@ -149,8 +171,8 @@ public:
         OutputDebugStringW(msg);
     }
 
-    // The virtual camera is registered (it outlives a lost source).
-    bool Live() const { return m_vcam != nullptr; }
+    // The virtual camera is registered (it outlives a lost source). Windows 10: the channel is open.
+    bool Live() const { return m_dshow ? m_vcamWidth != 0 : m_vcam != nullptr; }
     // How many times a source started (Begin): tells whether a run got that far.
     uint32_t Begins() const { return m_begins; }
     // The camera had to be rebuilt and could not be: nothing more can be published.
@@ -252,14 +274,14 @@ private:
         if (consumer) m_consumerSeen = now;
         const bool holds = consumer || (m_consumerSeen && now - m_consumerSeen < kConsumerGraceMs);
         OutputPlan plan = PlanOutput(mode, natural.pictureWidth, natural.pictureHeight,
-                                     m_vcam ? m_vcamWidth : 0, m_vcam ? m_vcamHeight : 0, holds);
+                                     Live() ? m_vcamWidth : 0, Live() ? m_vcamHeight : 0, holds);
         // A rebuild that was refused a moment ago (an app still holds the old camera): stay
         // fitted for a while instead of trying again on every frame.
-        if (plan.rebuild && m_vcam && now < m_noRebuildUntil) plan = { m_vcamWidth, m_vcamHeight, false };
+        if (plan.rebuild && Live() && now < m_noRebuildUntil) plan = { m_vcamWidth, m_vcamHeight, false };
         if (plan.rebuild) Register(plan.width, plan.height);
 
         m_image = image;
-        m_layout = m_vcam ? ComputeLayout(m_width, m_height, image, m_vcamWidth, m_vcamHeight) : natural;
+        m_layout = Live() ? ComputeLayout(m_width, m_height, image, m_vcamWidth, m_vcamHeight) : natural;
         std::lock_guard lk(m_engine.m_lock);
         auto& s = m_engine.m_status;
         s.width = m_layout.outWidth;
@@ -286,6 +308,22 @@ private:
 
     HRESULT Create(uint32_t width, uint32_t height)
     {
+        if (m_dshow)
+        {
+            // No camera to register: the channel the DirectShow filter reads is ours. It takes
+            // this size unless an app streams from it right now (then its size stays, and the
+            // picture is fitted into it, like a camera an app holds).
+            uint32_t w = 0, h = 0;
+            const HRESULT lhr = m_writer.OpenLocal(width, height, w, h);
+            if (FAILED(lhr))
+            {
+                m_failure = L"Không mở được bộ nhớ chia sẻ của camera ảo";
+                return lhr;
+            }
+            m_vcamWidth = w;
+            m_vcamHeight = h;
+            return S_OK;
+        }
         End();
         HRESULT hr = E_FAIL;
         // E_ACCESSDENIED: an app still holds a camera instance we removed a
@@ -293,7 +331,7 @@ private:
         for (int attempt = 0; attempt < 4; ++attempt)
         {
             if (attempt) Sleep(500);
-            hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
+            hr = VirtualCameraApi()(MFVirtualCameraType_SoftwareCameraSource,
                 MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
                 CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
             if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (hãy cài lại Cam Studio bằng file CamStudio-Setup)"; return hr; }
@@ -416,6 +454,7 @@ private:
     }
 
     CaptureEngine& m_engine;
+    const bool m_dshow;
     ComPtr<IMFVirtualCamera> m_vcam;
     uint32_t m_vcamWidth = 0, m_vcamHeight = 0; // size the virtual camera was published with
     uint32_t m_fpsNum = 30, m_fpsDen = 1;

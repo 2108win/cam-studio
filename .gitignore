@@ -29,3 +29,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.user
+build-x86/

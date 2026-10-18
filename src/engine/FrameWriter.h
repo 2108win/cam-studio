@@ -18,6 +18,9 @@ public:
     uint32_t Width() const { return m_header ? m_header->width : 0; }
     uint32_t Height() const { return m_header ? m_header->height : 0; }
 
+    // Windows 10: the local channel (OpenLocal) instead of Frame Server's global one.
+    void UseLocal(bool local) { m_useLocal = local; }
+
     void TryOpen()
     {
         if (m_header) return;
@@ -25,11 +28,12 @@ public:
         if (now - m_lastAttempt < 500) return;
         m_lastAttempt = now;
 
-        HANDLE mapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, CAMSTUDIO_MAPPING_NAME);
+        HANDLE mapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE,
+                                          m_useLocal ? CAMSTUDIO_LOCAL_MAPPING_NAME : CAMSTUDIO_MAPPING_NAME);
         if (!mapping) return;
         auto* header = static_cast<SharedFrameHeader*>(MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
         if (!header || header->magic != CAMSTUDIO_MAGIC || header->version != CAMSTUDIO_VERSION ||
-            header->slots != CAMSTUDIO_SLOTS)
+            header->slots != CAMSTUDIO_SLOTS || (m_useLocal && header->frameBytes != CamStudioLocalSlotBytes()))
         {
             if (header) UnmapViewOfFile(header);
             CloseHandle(mapping);
@@ -37,11 +41,67 @@ public:
         }
         m_mapping = mapping;
         m_header = header;
-        m_event = OpenEventW(EVENT_MODIFY_STATE, FALSE, CAMSTUDIO_EVENT_NAME);
+        m_local = m_useLocal;
+        m_event = OpenEventW(EVENT_MODIFY_STATE, FALSE, m_useLocal ? CAMSTUDIO_LOCAL_EVENT_NAME : CAMSTUDIO_EVENT_NAME);
     }
+
+    // Windows 10 (no virtual camera API): the host owns the channel. Opens the local mapping, or
+    // creates it, and makes the host's picture w x h unless a DirectShow reader streams right now
+    // (then its size stays, and the caller fits the picture into it). Returns the size in force.
+    HRESULT OpenLocal(uint32_t w, uint32_t h, uint32_t& outW, uint32_t& outH)
+    {
+        CamStudioClampLocalSize(w, h);
+        if (!m_header)
+        {
+            const uint64_t bytes = CamStudioLocalMappingBytes();
+            HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+                static_cast<DWORD>(bytes >> 32), static_cast<DWORD>(bytes), CAMSTUDIO_LOCAL_MAPPING_NAME);
+            if (!mapping) return HRESULT_FROM_WIN32(GetLastError());
+            const bool existed = GetLastError() == ERROR_ALREADY_EXISTS;
+            auto* header = static_cast<SharedFrameHeader*>(MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
+            if (!header)
+            {
+                const HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+                CloseHandle(mapping);
+                return hr;
+            }
+            if (existed && header->magic != CAMSTUDIO_MAGIC)
+                for (int i = 0; i < 100 && header->magic != CAMSTUDIO_MAGIC; ++i) Sleep(1);
+            if (!existed || header->magic != CAMSTUDIO_MAGIC)
+                CamStudioInitHeader(header, w, h, CamStudioLocalSlotBytes());
+            else if (header->version != CAMSTUDIO_VERSION || header->slots != CAMSTUDIO_SLOTS ||
+                     header->frameBytes != CamStudioLocalSlotBytes())
+            {
+                UnmapViewOfFile(header);
+                CloseHandle(mapping);
+                return E_UNEXPECTED; // the layout of another build: nothing to do but wait for it to go
+            }
+            m_mapping = mapping;
+            m_header = header;
+            m_event = CreateEventW(nullptr, FALSE, FALSE, CAMSTUDIO_LOCAL_EVENT_NAME);
+            m_local = true;
+        }
+        if ((m_header->width != w || m_header->height != h) && m_header->readerActive <= 0)
+        {
+            // Every slot "being written" while the size changes: a reader that raced it sees the
+            // sequence move and takes the next frame instead of a torn one.
+            for (uint32_t s = 0; s < CAMSTUDIO_SLOTS; ++s) InterlockedIncrement64(&m_header->slotSeq[s]);
+            m_header->width = w;
+            m_header->height = h;
+            m_header->stride = w;
+            InterlockedExchange64(&m_header->latest, 0); // the old picture has the wrong size now
+            for (uint32_t s = 0; s < CAMSTUDIO_SLOTS; ++s) InterlockedIncrement64(&m_header->slotSeq[s]);
+        }
+        outW = m_header->width;
+        outH = m_header->height;
+        return S_OK;
+    }
+
+    bool IsLocal() const { return m_local; }
 
     void Close()
     {
+        m_local = false;
         if (m_header) { UnmapViewOfFile(m_header); m_header = nullptr; }
         if (m_mapping) { CloseHandle(m_mapping); m_mapping = nullptr; }
         if (m_event) { CloseHandle(m_event); m_event = nullptr; }
@@ -99,4 +159,6 @@ private:
     SharedFrameHeader* m_header = nullptr;
     ULONGLONG m_lastAttempt = 0;
     bool m_released = false; // ReleaseHold since the last Write: HoldFor does nothing
+    bool m_local = false;    // the Windows 10 channel (OpenLocal), owned by the host
+    bool m_useLocal = false; // which channel TryOpen looks for
 };
