@@ -80,7 +80,8 @@ class MainActivity : Activity() {
         cameraButton = Button(this).apply {
             text = "Bật camera"
             visibility = View.GONE
-            setOnClickListener { startCamera(askPermission = true) }
+            // Also the way to stop when Android hides the notification (no permission for it).
+            setOnClickListener { if (CameraService.running) CameraService.stop(this@MainActivity) else startCamera(askPermission = true) }
         }
         val backgroundSwitch = Switch(this).apply {
             text = "Chạy nền"
@@ -233,7 +234,8 @@ class MainActivity : Activity() {
 
     private fun showCameraState(streaming: Boolean, text: String) {
         cameraStatus.text = text
-        cameraButton.visibility = if (CameraService.running || cameraStarting) View.GONE else View.VISIBLE
+        cameraButton.visibility = if (cameraStarting) View.GONE else View.VISIBLE
+        cameraButton.text = if (CameraService.running) "Tắt camera" else "Bật camera"
         showAddress()
         setDimmed(streaming)
     }
@@ -245,7 +247,7 @@ class MainActivity : Activity() {
 
     private fun showBackgroundHint() {
         backgroundHint.text = if (store.cameraInBackground) {
-            "Camera vẫn phát khi bạn rời app hoặc tắt màn hình. Dừng bằng nút \"Dừng\" trong thông báo."
+            "Camera vẫn phát khi bạn rời app hoặc tắt màn hình. Tắt bằng nút \"Dừng\" trong thông báo, hoặc \"Tắt camera\" ở trên."
         } else {
             "Camera chỉ chạy khi app đang mở: rời app thì máy tính mất hình."
         }
