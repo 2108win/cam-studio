@@ -61,6 +61,18 @@ void CaptureWindowSize(HWND window, uint32_t& width, uint32_t& height)
     height = std::max<uint32_t>(2, static_cast<uint32_t>(std::max<LONG>(0, r.bottom - r.top)) & ~1u);
 }
 
+// What the capture callbacks touch. They run on the thread pool and may still be running when
+// Close() revokes them, so they share this instead of pointing into Impl.
+struct CaptureSignal
+{
+    HANDLE frameEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    std::atomic<bool> closed{ false };
+    ~CaptureSignal()
+    {
+        if (frameEvent) CloseHandle(frameEvent);
+    }
+};
+
 struct WindowCapture::Impl
 {
     winrt::com_ptr<ID3D11Device> d3d;
@@ -71,8 +83,7 @@ struct WindowCapture::Impl
     wgc::GraphicsCaptureSession session{ nullptr };
     winrt::event_token frameToken{};
     winrt::event_token closedToken{};
-    HANDLE frameEvent = nullptr;
-    std::atomic<bool> closed{ false };
+    std::shared_ptr<CaptureSignal> signal = std::make_shared<CaptureSignal>();
     winrt::Windows::Graphics::SizeInt32 poolSize{};
     winrt::com_ptr<ID3D11Texture2D> staging;
     uint32_t stagingW = 0, stagingH = 0;
@@ -115,15 +126,14 @@ bool WindowCapture::Open(HWND window, std::wstring& error)
         winrt::check_hresult(interop->CreateForWindow(window, winrt::guid_of<wgc::GraphicsCaptureItem>(),
                                                       winrt::put_abi(impl->item)));
 
-        impl->frameEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         impl->poolSize = impl->item.Size();
         impl->pool = wgc::Direct3D11CaptureFramePool::CreateFreeThreaded(
             impl->device, wgd::DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, impl->poolSize);
-        Impl* raw = impl.get(); // the object stays put when the unique_ptr moves
-        impl->frameToken = impl->pool.FrameArrived([raw](const auto&, const auto&) { SetEvent(raw->frameEvent); });
-        impl->closedToken = impl->item.Closed([raw](const auto&, const auto&) {
-            raw->closed = true;
-            SetEvent(raw->frameEvent);
+        std::shared_ptr<CaptureSignal> signal = impl->signal;
+        impl->frameToken = impl->pool.FrameArrived([signal](const auto&, const auto&) { SetEvent(signal->frameEvent); });
+        impl->closedToken = impl->item.Closed([signal](const auto&, const auto&) {
+            signal->closed = true;
+            SetEvent(signal->frameEvent);
         });
         impl->session = impl->pool.CreateCaptureSession(impl->item);
         // No yellow border around the window where Windows allows it (Windows 11).
@@ -153,9 +163,9 @@ bool WindowCapture::Open(HWND window, std::wstring& error)
 
 WindowCapture::Result WindowCapture::Next(int timeoutMs, bool read, const FrameCallback& onFrame)
 {
-    if (!m || m->closed) return Result::Closed;
-    const DWORD wait = WaitForSingleObject(m->frameEvent, static_cast<DWORD>(timeoutMs));
-    if (m->closed) return Result::Closed;
+    if (!m || m->signal->closed) return Result::Closed;
+    const DWORD wait = WaitForSingleObject(m->signal->frameEvent, static_cast<DWORD>(timeoutMs));
+    if (m->signal->closed) return Result::Closed;
     if (wait != WAIT_OBJECT_0) return Result::Timeout;
     try
     {
@@ -203,7 +213,7 @@ WindowCapture::Result WindowCapture::Next(int timeoutMs, bool read, const FrameC
             }
         }
         frame.Close();
-        if (size.Width != m->poolSize.Width || size.Height != m->poolSize.Height)
+        if (size.Width >= 2 && size.Height >= 2 && (size.Width != m->poolSize.Width || size.Height != m->poolSize.Height))
         {
             // Resized: frames from now on at the window's new size.
             m->poolSize = size;
@@ -213,7 +223,8 @@ WindowCapture::Result WindowCapture::Next(int timeoutMs, bool read, const FrameC
     }
     catch (const winrt::hresult_error&)
     {
-        return Result::Closed;
+        // Only the item's Closed event means the window is gone.
+        return m->signal->closed ? Result::Closed : Result::Error;
     }
 }
 
@@ -230,6 +241,6 @@ void WindowCapture::Close()
     catch (const winrt::hresult_error&)
     {
     }
-    if (m->frameEvent) CloseHandle(m->frameEvent);
-    m.reset();
+    m.reset(); // the signal lives on while a callback still holds it
+
 }

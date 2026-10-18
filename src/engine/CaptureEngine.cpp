@@ -103,6 +103,7 @@ public:
     // using it (PlanOutput): apps using it (Discord, Zoom…) never lose it.
     HRESULT Begin(uint32_t width, uint32_t height, uint32_t fpsNum, uint32_t fpsDen, const GUID& subtype)
     {
+        ++m_begins;
         m_width = width;
         m_height = height;
         m_fpsNum = fpsNum ? fpsNum : 30;
@@ -150,6 +151,8 @@ public:
 
     // The virtual camera is registered (it outlives a lost source).
     bool Live() const { return m_vcam != nullptr; }
+    // How many times a source started (Begin): tells whether a run got that far.
+    uint32_t Begins() const { return m_begins; }
     // The camera had to be rebuilt and could not be: nothing more can be published.
     bool Broken() const { return m_broken; }
 
@@ -421,6 +424,7 @@ private:
     bool m_broken = false;
     HRESULT m_brokenHr = S_OK;
     uint32_t m_width = 0, m_height = 0;           // the source's frames
+    uint32_t m_begins = 0;
     FrameLayout m_layout;
     ImageSettings m_image;
     uint32_t m_layoutGenSeen = ~0u;
@@ -749,6 +753,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                 Notify();
                 while (!Interrupted())
                 {
+                    pipeline.Tick(); // a new size setting applies with no source too
                     const bool consumer = pipeline.ConsumerActive();
                     bool changed = false;
                     {
@@ -792,6 +797,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             std::wstring why;
             HRESULT hr = S_OK;
             Outcome outcome;
+            const uint32_t begins = pipeline.Begins();
             if (cam.IsPhone())
             {
                 outcome = RunPhone(pipeline, cam, format, why, hr);
@@ -809,7 +815,9 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             {
                 outcome = RunWebcam(pipeline, webcam, format, why, hr);
             }
-            begun = true;
+            // The pipeline knows this source's size only if the run got to Begin (otherwise
+            // standby would mix the previous source's size with this one's rotation).
+            if (pipeline.Begins() != begins) begun = true;
             if (outcome == Outcome::Switch) continue;
             lost = outcome == Outcome::Lost;
             if (outcome == Outcome::Quit || m_quit) break;
@@ -972,15 +980,17 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
 
     // The link is ours while this source runs: the connector (which keeps idle links alive)
     // and screen windows leave it alone. A connector attempt in progress gives way at once.
+    bool told = false;
     for (int waited = 0; !link.Lease(200); ++waited)
     {
         if (Interrupted()) return interrupted();
         if (waited < 15) pipeline.Hold();
-        // Someone else keeps it (the phone's screen open in its own window): say so.
-        else if (waited == 15 && pipeline.Live())
+        // Someone else keeps it (the phone's screen open in its own window, or pairing): say so.
+        else if (!told && link.InUse() && pipeline.Live())
         {
+            told = true;
             pipeline.ReleaseHold();
-            Wait(L"Nguồn này đang mở trong cửa sổ riêng. Đóng cửa sổ đó để dùng làm camera ảo", S_OK);
+            Wait(L"Nguồn này đang được dùng ở chỗ khác (cửa sổ màn hình riêng, hoặc đang ghép đôi)", S_OK);
         }
     }
     phone::LeaseGuard lease(&link);
@@ -994,7 +1004,7 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
         const bool ok = !Interrupted() && link.Reconnect(error);
         SetBlocking(nullptr);
         if (!ok) why = error.empty() ? L"Mất kết nối với điện thoại" : Widen(error);
-        return ok;
+        return ok && !Interrupted(); // a switch while it connected: the caller returns
     };
     auto sendStart = [&] {
         return link.SendControl(json::Value::MakeObject()
@@ -1072,12 +1082,15 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     }
     if (Interrupted())
     {
+        // Switched away before the phone answered: its "started" (and "stopped") for this start
+        // would still come and be taken for the next start's. A fresh connection next time.
         link.SendControl(json::Value::MakeObject().Set("type", "stop"));
+        link.Close();
         return interrupted();
     }
 
-    const uint32_t width = static_cast<uint32_t>(started["width"].Int(format.width));
-    const uint32_t height = static_cast<uint32_t>(started["height"].Int(format.height));
+    uint32_t width = static_cast<uint32_t>(started["width"].Int(format.width));
+    uint32_t height = static_cast<uint32_t>(started["height"].Int(format.height));
     VideoDecoder decoder;
     hr = decoder.Init(started["codec"].Str() == "h264" ? false : hevc, width, height);
     if (FAILED(hr))
@@ -1160,7 +1173,15 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
                 size = unit.size();
             }
             const double t0 = QpcMs();
-            const HRESULT dhr = decoder.Decode(data, size, m.ptsUs * 10, [&](const uint8_t* nv12, long pitch, uint32_t, uint32_t) {
+            const HRESULT dhr = decoder.Decode(data, size, m.ptsUs * 10, [&](const uint8_t* nv12, long pitch, uint32_t w, uint32_t h) {
+                if (w != width || h != height)
+                {
+                    // The phone changed the stream's size: the pipeline must not read past the
+                    // frame. Same camera rule as any new size (fit during a call).
+                    width = w;
+                    height = h;
+                    if (FAILED(pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264))) return;
+                }
                 pipeline.Frame(nv12, pitch, m.ptsUs * 10);
             });
             decodeMs += QpcMs() - t0;
@@ -1269,16 +1290,28 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
     {
         // Nobody needs the picture any more: stop capturing (back to standby).
         if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
-        const ULONGLONG now = GetTickCount64();
+        ULONGLONG now = GetTickCount64();
         // A window sends frames only when it changes, up to the screen's rate: take at most 30 a
-        // second, and read one back from the GPU only when it goes somewhere.
-        const bool due = now - lastTaken >= 30;
-        const bool read = due && (!srcW || pipeline.WillPublish());
+        // second (waiting rather than dropping, so the newest frame of a burst is the one kept),
+        // and read one back from the GPU only when it goes somewhere.
+        if (now - lastTaken < 30)
+        {
+            Sleep(static_cast<DWORD>(30 - (now - lastTaken)));
+            now = GetTickCount64();
+        }
+        const bool read = !srcW || pipeline.WillPublish();
         const WindowCapture::Result result = capture.Next(100, read, onFrame);
         if (result == WindowCapture::Result::Closed)
         {
             why = L"Cửa sổ đã đóng. Hãy chọn nguồn khác";
             outcome = Outcome::Fatal;
+            break;
+        }
+        if (result == WindowCapture::Result::Error)
+        {
+            // Capture failed for now (e.g. the graphics device was reset): open it again.
+            why = L"Không quay được cửa sổ, đang thử lại";
+            outcome = Outcome::Lost;
             break;
         }
         if (FAILED(hr))
@@ -1290,15 +1323,12 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
         if (result == WindowCapture::Result::Frame)
         {
             lastFrame = now;
-            if (due)
+            lastTaken = now;
+            ts += kInterval100ns;
+            if (!read && srcW)
             {
-                lastTaken = now;
-                ts += kInterval100ns;
-                if (!read && srcW)
-                {
-                    pipeline.Count(ts); // counted, not converted: nobody watches
-                    pipeline.Tick();
-                }
+                pipeline.Count(ts); // counted, not converted: nobody watches
+                pipeline.Tick();
             }
         }
         else if (srcW && now - lastFrame >= 500)

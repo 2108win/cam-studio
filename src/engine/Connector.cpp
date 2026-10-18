@@ -367,7 +367,10 @@ bool Connector::CoveredElsewhere(const std::string& key, const Endpoint& e, cons
     {
         if (otherKey == key || !other.link || other.endpoint.screen != e.screen) continue;
         const std::string otherId = Identity(other.endpoint, *other.link);
-        // A cable phone never connected has no id yet: a Wi‑Fi phone of the same name is it.
+        // A cable phone never connected has no id yet. It may be any Wi‑Fi phone of the same OS
+        // (names do not match on an iPhone: mDNS says "iPhone", the cable gives the user's
+        // name), so while one of those is in use, wait: connecting would take it away.
+        if (id.empty() && e.Usb() && !other.endpoint.Usb() && other.endpoint.os == e.os && other.link->InUse()) return true;
         const bool same = !id.empty() ? otherId == id
                                       : e.Usb() && !other.endpoint.Usb() && !e.name.empty() && other.endpoint.name == e.name;
         if (!same) continue;

@@ -801,7 +801,10 @@ public sealed partial class MainWindow : Window
     // using it keep it, frozen for a moment). A connected phone has its formats already.
     private async void OnCameraPicked(int camera)
     {
-        if (camera < 0 || camera >= _cameras.Count || (camera == _camera && _windowSource is null && _format >= 0)) return;
+        // The same source again does nothing, unless it is waiting (e.g. "chọn lại điện thoại" to pair).
+        if (camera < 0 || camera >= _cameras.Count ||
+            (camera == _camera && _windowSource is null && _format >= 0 && (EngineState)Engine.GetStatus().State != EngineState.Waiting))
+            return;
         _autoPick = false; // the user's choice: kept, never replaced by a "better" one
         string pickedId = _ids[camera];
         int previous = _camera;

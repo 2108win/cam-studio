@@ -68,6 +68,7 @@ public:
         InterlockedIncrement64(&m_header->slotSeq[slot]); // even: done
         InterlockedExchange64(&m_header->writeTime100ns, MFGetSystemTime());
         InterlockedExchange64(&m_header->latest, (((latest >> 2) + 1) << 2) | slot);
+        m_released = false;
         if (m_event) SetEvent(m_event);
     }
 
@@ -77,7 +78,8 @@ public:
     // signed difference). The next Write() or ReleaseHold() sets the real time again.
     void HoldFor(uint32_t ms)
     {
-        if (!m_header || !m_header->latest) return;
+        // After a loss the old picture stays gone: retries must not bring it back frozen.
+        if (!m_header || !m_header->latest || m_released) return;
         const LONG64 until = MFGetSystemTime() + static_cast<LONG64>(ms) * 10000 - CAMSTUDIO_STALE_100NS;
         if (until > m_header->writeTime100ns) InterlockedExchange64(&m_header->writeTime100ns, until);
     }
@@ -85,6 +87,7 @@ public:
     // The source is gone: the held frame ages from now, and readers show "no signal" in 2 s.
     void ReleaseHold()
     {
+        m_released = true; // until the next frame is written
         if (!m_header) return;
         const LONG64 now = MFGetSystemTime();
         if (m_header->writeTime100ns > now) InterlockedExchange64(&m_header->writeTime100ns, now);
@@ -95,4 +98,5 @@ private:
     HANDLE m_event = nullptr;
     SharedFrameHeader* m_header = nullptr;
     ULONGLONG m_lastAttempt = 0;
+    bool m_released = false; // ReleaseHold since the last Write: HoldFor does nothing
 };

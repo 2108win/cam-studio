@@ -276,6 +276,11 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         if (!allowPairing)
         {
             m_errorCode = "pair";
+            {
+                // Picking the phone then connects and pairs (cs_load_formats goes by the caps).
+                std::lock_guard lk(m_infoLock);
+                m_caps.clear();
+            }
             return fail("Điện thoại cần ghép đôi lại: chọn lại điện thoại trong danh sách camera");
         }
         // The old key, if any, stays until a new pairing succeeds.
@@ -303,7 +308,8 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         return fail("Điện thoại xác thực sai: có thể không phải thiết bị đã ghép đôi");
     if (newPairing) SavePairKey(deviceId, kPair);
 
-    // 4. session keys
+    // 4. session keys (under the send lock: the app's controls may send from another thread)
+    std::lock_guard lk(m_sendLock);
     m_upKey = crypto::UpKey(z, kPair, t);
     m_downKey = crypto::DownKey(z, kPair, t);
     m_sendCounter = m_receiveCounter = 0;
@@ -387,14 +393,15 @@ bool PhoneLink::Lease(int timeoutMs)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (m_leaseState != 0)
     {
-        if (m_leaseState == 1 && m_attempting && !m_preempted)
+        if (m_leaseState == 1 && m_attempting)
         {
-            // The connector is connecting: cut it short (we connect ourselves).
+            // The connector is connecting: cut it short (we connect ourselves). Again on every
+            // wake: an Abort() landing just before its connect resets is lost.
             m_preempted = true;
             lk.unlock();
             Abort();
             lk.lock();
-            continue;
+            if (m_leaseState == 0) break;
         }
         // Woken by Unlease, or every 100 ms to see whether an attempt started meanwhile.
         const auto wake = std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(100));

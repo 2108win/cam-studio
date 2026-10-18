@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <optional>
 #include <memory>
 #include <mutex>
 
@@ -230,7 +231,7 @@ CS_API int32_t cs_refresh_cameras()
         g_kinds.push_back(0);
         g_cameras.push_back(std::move(c));
     }
-    for (const phone::Endpoint& e : phone::KnownPhones())
+    for (const phone::Endpoint& e : g_connector ? phone::KnownPhones() : std::vector<phone::Endpoint>())
     {
         CameraDevice d;
         d.name = Widen(e.name.empty() ? e.host : e.name) +
@@ -241,7 +242,7 @@ CS_API int32_t cs_refresh_cameras()
         g_cameras.push_back(std::move(d));
         g_endpoints.push_back(e);
     }
-    g_connector->Wake();
+    if (g_connector) g_connector->Wake();
     return static_cast<int32_t>(g_cameras.size());
 }
 
@@ -280,7 +281,7 @@ CS_API int32_t cs_camera_state(int32_t camera, wchar_t* error, int32_t capacity)
         endpoint = EndpointOf(camera);
     }
     std::string why;
-    const phone::LinkState state = g_connector->State(phone::EndpointKey(endpoint), &why);
+    const phone::LinkState state = g_connector ? g_connector->State(phone::EndpointKey(endpoint), &why) : phone::LinkState::Idle;
     CopyOut(Widen(why), error, capacity);
     return static_cast<int32_t>(state);
 }
@@ -324,17 +325,19 @@ CS_API int32_t cs_load_formats(int32_t camera)
         // they are kept across reconnects. Otherwise connect now, pairing if needed.
         phone::PhoneLink& link = *cam.phone;
         capsText = link.Caps();
+        // Held until the end of this branch: connecting, pairing and asking for caps read the
+        // link, and the connector (or anyone else) must stay off it meanwhile.
+        std::optional<phone::LeaseGuard> lease;
         if (capsText.empty())
         {
-            // The lease keeps the connector and everyone else off the link meanwhile (a
-            // connector attempt in progress is cut short: this one may pair).
+            // A connector attempt in progress is cut short: this one may pair.
             if (!link.Lease(30000))
             {
                 std::lock_guard lk(g_lock);
                 g_lastError = L"Điện thoại đang bận, hãy thử lại sau giây lát";
                 return E_FAIL;
             }
-            phone::LeaseGuard lease(&link);
+            lease.emplace(&link);
             capsText = link.Caps(); // the connector may have just got them
         }
         if (capsText.empty())

@@ -29,7 +29,8 @@ void CaptureWindowSize(HWND window, uint32_t& width, uint32_t& height);
 class WindowCapture
 {
 public:
-    enum class Result { Frame, Timeout, Closed };
+    // Error: capture failed for now (device lost, a transient WinRT error): reopen and go on.
+    enum class Result { Frame, Timeout, Closed, Error };
     // BGRA rows, top-down, valid only during the call.
     using FrameCallback = std::function<void(const uint8_t* bgra, uint32_t pitch, uint32_t width, uint32_t height)>;
 
