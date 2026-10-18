@@ -56,6 +56,9 @@ struct CsStatus
     int32_t sourceRotation;   // phones: rotation applied from the phone's orientation
     int32_t standby;          // running, but the source is closed until an app opens the camera
                               // (or the preview is on screen): nothing captured, decoded or sent
+    uint32_t pictureWidth;    // the picture inside the output: smaller than width x height when
+    uint32_t pictureHeight;   //   fitted with black bars (an app keeps the camera's size)
+    uint32_t sourceId;        // which cs_start/cs_switch the frame counts belong to
     wchar_t error[256];
 };
 
@@ -109,12 +112,23 @@ CS_API void cs_pairing_answer(int32_t accept);
 CS_API void cs_add_phone(const wchar_t* host, int32_t port);
 
 // Starts capture + virtual camera for a camera and an index from the last
-// cs_load_formats() of that camera. Returns an HRESULT.
+// cs_load_formats() of that camera (a fresh start: the camera is published again).
+// Returns the source id (> 0, see CsStatus.sourceId), or an HRESULT < 0.
 CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image);
+// Moves the running virtual camera to another camera or mode (or starts it): the camera stays
+// registered, apps using it see the last picture frozen until the new source's first frame.
+// Same arguments and result as cs_start.
+CS_API int32_t cs_switch(int32_t camera, int32_t format, const CsImage* image);
 CS_API void cs_stop();
 
-// Live picture settings. Returns 1 if the session restarted (size change).
+// Live picture settings. Returns 1 when the picture changes shape (the camera then follows
+// the output size rule: a new size while no app uses it, otherwise fitted with bars).
 CS_API int32_t cs_set_image(const CsImage* image);
+
+// "Kích thước camera ảo": 0 auto (the source's own size; an app using the camera keeps the size
+// it has and other pictures are fitted with black bars until it lets go), 1 3840x2160,
+// 2 1920x1080, 3 1280x720.
+CS_API void cs_set_output_size(int32_t mode);
 
 CS_API void cs_get_status(CsStatus* status);
 CS_API void cs_set_preview_enabled(int32_t enabled);

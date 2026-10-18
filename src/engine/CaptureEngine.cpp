@@ -16,11 +16,12 @@ constexpr ULONGLONG kPreviewIntervalMs = 33; // ~30 fps is plenty for a preview
 // Source closed after this long with no app on the camera and no preview on
 // screen (an app switching cameras or a quick glance should not reopen it).
 constexpr ULONGLONG kIdleCloseMs = 5000;
-
-inline uint8_t Clamp255(int v)
-{
-    return static_cast<uint8_t>(v < 0 ? 0 : v > 255 ? 255 : v);
-}
+// An app that stopped streaming this recently still counts as using the camera: apps restart
+// their stream when they change mode (Discord does), and rebuilding the camera then drops it.
+constexpr ULONGLONG kConsumerGraceMs = 5000;
+// How long the last picture stays on the camera while the next source opens (refreshed while
+// it is still opening). After that, or once the source is reported lost, apps show "no signal".
+constexpr uint32_t kHoldMs = 10000;
 
 double QpcMs()
 {
@@ -81,7 +82,8 @@ HRESULT ReadCameraFormats(const CameraDevice& cam, std::vector<FormatOption>& op
 // ---- Pipeline: shared by every source -------------------------------------------
 //
 // Owns the virtual camera registration and the shared-memory writer, and
-// runs orient -> crop/zoom -> adjust -> publish on each NV12 frame.
+// runs orient -> crop/zoom -> fit -> adjust -> publish on each NV12 frame.
+// It outlives a source: Switch() hands the next source the same camera.
 
 class CaptureEngine::Pipeline
 {
@@ -89,61 +91,25 @@ public:
     explicit Pipeline(CaptureEngine& engine) : m_engine(engine) {}
     ~Pipeline() { End(); }
 
-    // Registers the virtual camera for this source size and marks the
-    // session running. Called again when the size changes, and when a lost
-    // source comes back: a virtual camera of the same size is kept, so apps
-    // using it (Discord, Zoom…) never lose it.
+    // A source (a new one, or the same one again) delivers width x height frames from now on.
+    // Publishes the virtual camera for it, or keeps the one already published when an app is
+    // using it (PlanOutput): apps using it (Discord, Zoom…) never lose it.
     HRESULT Begin(uint32_t width, uint32_t height, uint32_t fpsNum, uint32_t fpsDen, const GUID& subtype)
     {
         m_width = width;
         m_height = height;
+        m_fpsNum = fpsNum ? fpsNum : 30;
+        m_fpsDen = fpsNum ? fpsDen : 1;
         m_interval100ns = fpsNum ? 1e7 * fpsDen / fpsNum : 333333.0;
         m_firstTs = -1;
         m_received = m_dropped = 0;
-        {
-            std::lock_guard lk(m_engine.m_lock);
-            m_layout = ComputeLayout(width, height, m_engine.EffectiveImageLocked());
-        }
-        if (m_vcam && (m_vcamWidth != m_layout.outWidth || m_vcamHeight != m_layout.outHeight)) End();
-        if (!m_vcam)
-        {
-            HRESULT hr = E_FAIL;
-            // E_ACCESSDENIED: an app still holds a camera instance we removed a
-            // moment ago. Retry a few times with a fresh registration.
-            for (int attempt = 0; attempt < 4; ++attempt)
-            {
-                if (attempt) Sleep(500);
-                hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
-                    MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
-                    CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
-                if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (hãy cài lại Cam Studio bằng file CamStudio-Setup)"; return hr; }
-                MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, m_layout.outWidth, m_layout.outHeight);
-                MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, fpsNum, fpsDen);
-                hr = m_vcam->Start(nullptr);
-                if (SUCCEEDED(hr)) break;
-                RemoveCamera(m_vcam.Get());
-                m_vcam->Shutdown();
-                m_vcam.Reset();
-                if (hr != E_ACCESSDENIED) break;
-            }
-            if (FAILED(hr))
-            {
-                // An app (DirectShow, e.g. Discord) still holds an old instance of
-                // the camera: closing it, or a fresh Frame Server, clears this.
-                m_failure = hr == E_ACCESSDENIED
-                    ? L"Một ứng dụng (thường là Discord) vẫn giữ camera ảo cũ. Tắt camera trong ứng dụng đó rồi bật lại, hoặc khởi động lại dịch vụ camera"
-                    : L"Không bật được camera ảo";
-                return hr;
-            }
-            m_vcamWidth = m_layout.outWidth;
-            m_vcamHeight = m_layout.outHeight;
-        }
+        Relayout();
+        if (m_broken) return m_brokenHr;
 
         std::lock_guard lk(m_engine.m_lock);
         auto& s = m_engine.m_status;
         s.state = State::Running;
-        s.width = m_layout.outWidth;
-        s.height = m_layout.outHeight;
+        s.error.clear();
         s.cameraWidth = width;
         s.cameraHeight = height;
         s.cameraSubtype = subtype;
@@ -161,6 +127,7 @@ public:
             m_vcam->Shutdown();
             m_vcam.Reset();
         }
+        m_vcamWidth = m_vcamHeight = 0;
     }
 
     // Unregisters the camera outright. Without this a DirectShow app that
@@ -176,6 +143,8 @@ public:
 
     // The virtual camera is registered (it outlives a lost source).
     bool Live() const { return m_vcam != nullptr; }
+    // The camera had to be rebuilt and could not be: nothing more can be published.
+    bool Broken() const { return m_broken; }
 
     // Some app is streaming from the virtual camera right now (Frame Server
     // started our source's stream). Cheap: the mapping is looked up at most
@@ -188,17 +157,35 @@ public:
 
     const std::wstring& Failure() const { return m_failure; }
 
-    // True when the effective output size no longer matches this session
-    // (e.g. the phone was turned): the caller rebuilds the virtual camera.
-    bool SizeChanged() const
+    // Keeps the last picture on the camera while the next source opens (see FrameWriter::HoldFor).
+    void Hold() { m_writer.HoldFor(kHoldMs); }
+    void ReleaseHold() { m_writer.ReleaseHold(); }
+
+    // Picks up a change of picture shape (settings, the phone turned), of the size setting, or
+    // an app letting go of the camera. Called on every frame, and by Run in standby; cheap when
+    // nothing changed.
+    void Tick()
     {
-        std::lock_guard lk(m_engine.m_lock);
-        const FrameLayout l = ComputeLayout(m_width, m_height, m_engine.EffectiveImageLocked());
-        return l.outWidth != m_layout.outWidth || l.outHeight != m_layout.outHeight;
+        const uint32_t gen = m_engine.m_layoutGen;
+        const ULONGLONG now = GetTickCount64();
+        if (gen == m_layoutGenSeen && now - m_lastRelayout < 1000) return;
+        m_layoutGenSeen = gen;
+        m_lastRelayout = now;
+        if (m_width) Relayout();
     }
 
     // One source frame. timestamp100ns is on the source's own clock.
     void Frame(const uint8_t* data, long pitch, int64_t timestamp100ns)
+    {
+        Count(timestamp100ns);
+        Tick();
+        if (m_broken) return;
+        m_writer.TryOpen();
+        Publish(data, pitch);
+    }
+
+    // A frame that arrived but is not worth converting (see WillPublish): counted only.
+    void Count(int64_t timestamp100ns)
     {
         // Dropped = frames the timeline says should have arrived minus those
         // that did; counting per gap would also count jitter as drops.
@@ -206,9 +193,6 @@ public:
         ++m_received;
         const double missing = std::floor((timestamp100ns - m_firstTs) / m_interval100ns + 1.5) - static_cast<double>(m_received);
         m_dropped = missing > 0 ? static_cast<uint64_t>(missing) : 0;
-
-        m_writer.TryOpen();
-        Publish(data, pitch);
 
         ++m_frames;
         const ULONGLONG now = GetTickCount64();
@@ -230,20 +214,108 @@ public:
         }
     }
 
+    // Whether the next frame will go anywhere (an app, the 1-a-second keep-fresh write, the
+    // preview). A window source checks this before reading the frame back from the GPU.
+    bool WillPublish()
+    {
+        m_writer.TryOpen();
+        return m_writer.ConsumerActive() || (m_writer.IsOpen() && GetTickCount64() - m_lastWriteTick >= 1000) ||
+               m_engine.PreviewWanted();
+    }
+
     double LastFps() const { return m_lastFps; }
 
 private:
-    void Publish(const uint8_t* data, long pitch)
+    // Applies the size rule and computes the layout for the current settings.
+    void Relayout()
     {
-        const double t0 = QpcMs();
         ImageSettings image;
+        OutputSize mode;
         {
             std::lock_guard lk(m_engine.m_lock);
             image = m_engine.EffectiveImageLocked();
+            mode = static_cast<OutputSize>(m_engine.m_outputSize.load());
         }
-        const FrameLayout l = ComputeLayout(m_width, m_height, image);
-        if (l.outWidth != m_layout.outWidth || l.outHeight != m_layout.outHeight)
-            return; // size change pending: the session is being rebuilt
+        const FrameLayout natural = ComputeLayout(m_width, m_height, image);
+        const ULONGLONG now = GetTickCount64();
+        const bool consumer = ConsumerActive();
+        if (consumer) m_consumerSeen = now;
+        const bool holds = consumer || (m_consumerSeen && now - m_consumerSeen < kConsumerGraceMs);
+        OutputPlan plan = PlanOutput(mode, natural.pictureWidth, natural.pictureHeight,
+                                     m_vcam ? m_vcamWidth : 0, m_vcam ? m_vcamHeight : 0, holds);
+        // A rebuild that was refused a moment ago (an app still holds the old camera): stay
+        // fitted for a while instead of trying again on every frame.
+        if (plan.rebuild && m_vcam && now < m_noRebuildUntil) plan = { m_vcamWidth, m_vcamHeight, false };
+        if (plan.rebuild) Register(plan.width, plan.height);
+
+        m_image = image;
+        m_layout = m_vcam ? ComputeLayout(m_width, m_height, image, m_vcamWidth, m_vcamHeight) : natural;
+        std::lock_guard lk(m_engine.m_lock);
+        auto& s = m_engine.m_status;
+        s.width = m_layout.outWidth;
+        s.height = m_layout.outHeight;
+        s.pictureWidth = m_layout.pictureWidth;
+        s.pictureHeight = m_layout.pictureHeight;
+    }
+
+    // Publishes the virtual camera at this size, in place of the current one.
+    void Register(uint32_t width, uint32_t height)
+    {
+        const uint32_t oldW = m_vcamWidth, oldH = m_vcamHeight;
+        HRESULT hr = Create(width, height);
+        if (FAILED(hr) && oldW && hr == E_ACCESSDENIED && SUCCEEDED(Create(oldW, oldH)))
+        {
+            // An app (DirectShow) still holds the camera we just removed: put back the size it
+            // had, keep fitting into it, and try the new size later.
+            m_noRebuildUntil = GetTickCount64() + 30000;
+            hr = S_OK;
+        }
+        m_broken = FAILED(hr);
+        m_brokenHr = hr;
+    }
+
+    HRESULT Create(uint32_t width, uint32_t height)
+    {
+        End();
+        HRESULT hr = E_FAIL;
+        // E_ACCESSDENIED: an app still holds a camera instance we removed a
+        // moment ago. Retry a few times with a fresh registration.
+        for (int attempt = 0; attempt < 4; ++attempt)
+        {
+            if (attempt) Sleep(500);
+            hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource,
+                MFVirtualCameraLifetime_Session, MFVirtualCameraAccess_CurrentUser,
+                CAMSTUDIO_VCAM_FRIENDLY_NAME, CAMSTUDIO_VCAM_CLSID_STRING, nullptr, 0, &m_vcam);
+            if (FAILED(hr)) { m_failure = L"Không tạo được camera ảo (hãy cài lại Cam Studio bằng file CamStudio-Setup)"; return hr; }
+            MFSetAttributeSize(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_SIZE, width, height);
+            MFSetAttributeRatio(m_vcam.Get(), CAMSTUDIO_ATTR_NATIVE_FPS, m_fpsNum, m_fpsDen);
+            hr = m_vcam->Start(nullptr);
+            if (SUCCEEDED(hr)) break;
+            RemoveCamera(m_vcam.Get());
+            m_vcam->Shutdown();
+            m_vcam.Reset();
+            if (hr != E_ACCESSDENIED) break;
+        }
+        if (FAILED(hr))
+        {
+            // An app (DirectShow, e.g. Discord) still holds an old instance of
+            // the camera: closing it, or a fresh Frame Server, clears this.
+            m_failure = hr == E_ACCESSDENIED
+                ? L"Một ứng dụng (thường là Discord) vẫn giữ camera ảo cũ. Tắt camera trong ứng dụng đó rồi bật lại, hoặc khởi động lại dịch vụ camera"
+                : L"Không bật được camera ảo";
+            return hr;
+        }
+        m_vcamWidth = width;
+        m_vcamHeight = height;
+        m_consumerSeen = 0;
+        return S_OK;
+    }
+
+    void Publish(const uint8_t* data, long pitch)
+    {
+        const double t0 = QpcMs();
+        const FrameLayout& l = m_layout;
+        const ImageSettings& image = m_image;
 
         // Nobody is watching (no app on the virtual camera, preview hidden):
         // skip the per-frame work, just keep the source flowing. One frame a
@@ -265,25 +337,62 @@ private:
             frame = owned = m_oriented.data();
             framePitch = static_cast<long>(l.orientedWidth);
         }
-        if (l.needsResample)
+
+        // The picture alone (no bars): what the preview shows.
+        const uint8_t* picY = nullptr;
+        const uint8_t* picUv = nullptr;
+        long picPitch = 0;
+        if (l.fitted)
         {
-            m_output.resize(CamStudioNv12Bytes(l.outWidth, l.outHeight));
-            Nv12CropScaleBilinear(frame, framePitch, l.orientedWidth, l.orientedHeight, l.source,
-                m_output.data(), l.outWidth, l.outHeight);
-            frame = owned = m_output.data();
+            // Scaled into its rectangle of a frame at the camera's size. The bars are painted
+            // once per layout; frames only write the rectangle.
+            const size_t bytes = CamStudioNv12Bytes(l.outWidth, l.outHeight);
+            const uint32_t rect[6] = { l.outWidth, l.outHeight, l.destX, l.destY, l.destWidth, l.destHeight };
+            if (m_fit.size() != bytes || !std::equal(rect, rect + 6, m_barsFor))
+            {
+                m_fit.resize(bytes);
+                Nv12FillBars(m_fit.data(), l.outWidth, l.outHeight, l.destX, l.destY, l.destWidth, l.destHeight);
+                std::copy(rect, rect + 6, m_barsFor);
+            }
+            uint8_t* dstY = m_fit.data() + static_cast<size_t>(l.destY) * l.outWidth + l.destX;
+            uint8_t* dstUv = m_fit.data() + static_cast<size_t>(l.outWidth) * l.outHeight +
+                             static_cast<size_t>(l.destY / 2) * l.outWidth + l.destX;
+            Nv12CropScaleBilinearTo(frame, framePitch, l.orientedWidth, l.orientedHeight, l.source,
+                                    dstY, dstUv, static_cast<long>(l.outWidth), l.destWidth, l.destHeight);
+            if (!image.color.IsIdentity())
+                Nv12AdjustPlanes(dstY, dstUv, static_cast<long>(l.outWidth), dstY, dstUv, static_cast<long>(l.outWidth),
+                                 l.destWidth, l.destHeight, image.color); // the bars stay black
+            frame = m_fit.data();
             framePitch = static_cast<long>(l.outWidth);
+            picY = dstY;
+            picUv = dstUv;
+            picPitch = framePitch;
         }
-        if (!image.color.IsIdentity())
+        else
         {
-            // In place on our own buffer, or copy-and-adjust from the source's.
-            if (!owned)
+            if (l.needsResample)
             {
                 m_output.resize(CamStudioNv12Bytes(l.outWidth, l.outHeight));
-                owned = m_output.data();
+                Nv12CropScaleBilinear(frame, framePitch, l.orientedWidth, l.orientedHeight, l.source,
+                    m_output.data(), l.outWidth, l.outHeight);
+                frame = owned = m_output.data();
+                framePitch = static_cast<long>(l.outWidth);
             }
-            Nv12Adjust(frame, framePitch, owned, l.outWidth, l.outHeight, image.color);
-            frame = owned;
-            framePitch = static_cast<long>(l.outWidth);
+            if (!image.color.IsIdentity())
+            {
+                // In place on our own buffer, or copy-and-adjust from the source's.
+                if (!owned)
+                {
+                    m_output.resize(CamStudioNv12Bytes(l.outWidth, l.outHeight));
+                    owned = m_output.data();
+                }
+                Nv12Adjust(frame, framePitch, owned, l.outWidth, l.outHeight, image.color);
+                frame = owned;
+                framePitch = static_cast<long>(l.outWidth);
+            }
+            picY = frame;
+            picUv = frame + static_cast<size_t>(framePitch) * l.outHeight;
+            picPitch = framePitch;
         }
 
         if (toCamera)
@@ -291,7 +400,7 @@ private:
             m_writer.Write(frame, framePitch, l.outWidth, l.outHeight);
             m_lastWriteTick = tick;
         }
-        if (toPreview) m_engine.UpdatePreview(frame, framePitch, l.outWidth, l.outHeight);
+        if (toPreview) m_engine.UpdatePreview(picY, picUv, picPitch, l.destWidth, l.destHeight);
         m_workMs += QpcMs() - t0;
         ++m_workFrames;
     }
@@ -299,11 +408,20 @@ private:
     CaptureEngine& m_engine;
     ComPtr<IMFVirtualCamera> m_vcam;
     uint32_t m_vcamWidth = 0, m_vcamHeight = 0; // size the virtual camera was published with
+    uint32_t m_fpsNum = 30, m_fpsDen = 1;
     FrameWriter m_writer;
     std::wstring m_failure;
-    uint32_t m_width = 0, m_height = 0;
+    bool m_broken = false;
+    HRESULT m_brokenHr = S_OK;
+    uint32_t m_width = 0, m_height = 0;           // the source's frames
     FrameLayout m_layout;
-    std::vector<uint8_t> m_oriented, m_output;
+    ImageSettings m_image;
+    uint32_t m_layoutGenSeen = ~0u;
+    ULONGLONG m_lastRelayout = 0;
+    ULONGLONG m_consumerSeen = 0;                 // last time an app was streaming
+    ULONGLONG m_noRebuildUntil = 0;
+    std::vector<uint8_t> m_oriented, m_output, m_fit;
+    uint32_t m_barsFor[6] = {};                   // the layout m_fit's bars were painted for
     double m_interval100ns = 333333.0;
     double m_workMs = 0;
     unsigned m_workFrames = 0;
@@ -317,9 +435,10 @@ private:
 
 // ---- Engine control ------------------------------------------------------------------
 
-void CaptureEngine::Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image)
+uint32_t CaptureEngine::Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image)
 {
     Stop();
+    uint32_t id = 0;
     {
         std::lock_guard lk(m_lock);
         m_camera = cam;
@@ -327,8 +446,38 @@ void CaptureEngine::Start(const CameraDevice& cam, const NativeFormat& format, c
         m_image = image;
         m_sourceRotation = ExpectedRotationLocked(cam, format);
         m_phoneState.clear();
+        id = ++m_sourceSeq;
     }
     StartLocked();
+    std::lock_guard lk(m_lock);
+    m_status.sourceId = id;
+    return id;
+}
+
+uint32_t CaptureEngine::Switch(const CameraDevice& cam, const NativeFormat& format)
+{
+    bool running = false;
+    ImageSettings image;
+    {
+        std::lock_guard lk(m_lock);
+        running = m_thread.joinable() && m_status.state != State::Failed && m_status.state != State::Stopped;
+        image = m_image;
+    }
+    if (!running) return Start(cam, format, image);
+
+    std::shared_ptr<phone::PhoneLink> blocking;
+    uint32_t id = 0;
+    {
+        std::lock_guard lk(m_lock);
+        m_nextCamera = cam;
+        m_nextFormat = format;
+        id = m_nextSourceId = ++m_sourceSeq;
+        m_switch = true;
+        blocking = m_blocking;
+    }
+    // The source may be stuck reconnecting to a phone that is gone (up to ~12 s): cut it short.
+    if (blocking) blocking->Abort();
+    return id;
 }
 
 void CaptureEngine::StartLocked()
@@ -345,6 +494,7 @@ void CaptureEngine::StartLocked()
         format = m_format;
     }
     m_quit = false;
+    m_switch = false;
     m_thread = std::thread(&CaptureEngine::Run, this, cam, format);
     Notify();
 }
@@ -352,11 +502,23 @@ void CaptureEngine::StartLocked()
 void CaptureEngine::Stop()
 {
     m_quit = true;
+    std::shared_ptr<phone::PhoneLink> blocking;
+    {
+        std::lock_guard lk(m_lock);
+        blocking = m_blocking;
+    }
+    if (blocking) blocking->Abort();
     if (m_thread.joinable()) m_thread.join();
     std::lock_guard lk(m_lock);
     if (m_status.state != State::Failed) m_status.state = State::Stopped;
     m_status.fps = 0;
     m_status.sharedMemory = m_status.consumerActive = false;
+}
+
+void CaptureEngine::SetBlocking(const std::shared_ptr<phone::PhoneLink>& link)
+{
+    std::lock_guard lk(m_lock);
+    m_blocking = link;
 }
 
 CaptureEngine::Status CaptureEngine::GetStatus() const
@@ -424,27 +586,15 @@ ImageSettings CaptureEngine::EffectiveImageLocked() const
 
 bool CaptureEngine::SetImage(const ImageSettings& image)
 {
-    bool restart = false;
-    {
-        std::lock_guard lk(m_lock);
-        const bool live = m_status.state == State::Running || m_status.state == State::Starting;
-        const ImageSettings before = EffectiveImageLocked();
-        m_image = image;
-        if (live && m_status.cameraWidth)
-        {
-            const FrameLayout now = ComputeLayout(m_status.cameraWidth, m_status.cameraHeight, before);
-            const FrameLayout next = ComputeLayout(m_status.cameraWidth, m_status.cameraHeight, EffectiveImageLocked());
-            restart = now.outWidth != next.outWidth || now.outHeight != next.outHeight;
-        }
-    }
-    if (restart)
-    {
-        // The virtual camera's size is fixed per session: publish a new one.
-        m_quit = true;
-        if (m_thread.joinable()) m_thread.join();
-        StartLocked();
-    }
-    return restart;
+    std::lock_guard lk(m_lock);
+    const bool live = m_status.state == State::Running || m_status.state == State::Starting || m_status.state == State::Waiting;
+    const ImageSettings before = EffectiveImageLocked();
+    m_image = image;
+    ++m_layoutGen; // the pipeline applies it on the next frame (or in standby)
+    if (!live || !m_status.cameraWidth) return false;
+    const FrameLayout a = ComputeLayout(m_status.cameraWidth, m_status.cameraHeight, before);
+    const FrameLayout b = ComputeLayout(m_status.cameraWidth, m_status.cameraHeight, EffectiveImageLocked());
+    return a.pictureWidth != b.pictureWidth || a.pictureHeight != b.pictureHeight;
 }
 
 bool CaptureEngine::PreviewDue()
@@ -454,6 +604,11 @@ bool CaptureEngine::PreviewDue()
     if (now - m_lastPreviewTick < kPreviewIntervalMs) return false;
     m_lastPreviewTick = now;
     return true;
+}
+
+bool CaptureEngine::PreviewWanted() const
+{
+    return m_previewEnabled && GetTickCount64() - m_lastPreviewTick >= kPreviewIntervalMs;
 }
 
 bool CaptureEngine::CopyPreview(uint32_t* dst, size_t capacity, uint32_t& width, uint32_t& height, uint64_t& frameId) const
@@ -499,7 +654,7 @@ void CaptureEngine::Wait(const std::wstring& what, HRESULT hr)
 }
 
 // Downscaled NV12 -> BGRA (BT.601 limited range) for the on-screen preview.
-void CaptureEngine::UpdatePreview(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h)
+void CaptureEngine::UpdatePreview(const uint8_t* y, const uint8_t* uv, long pitch, uint32_t w, uint32_t h)
 {
     // Only as many pixels as the preview panel actually shows.
     const double scale = std::min({ 1.0, static_cast<double>(m_previewMaxW) / w, static_cast<double>(m_previewMaxH) / h });
@@ -507,30 +662,8 @@ void CaptureEngine::UpdatePreview(const uint8_t* nv12, long pitch, uint32_t w, u
     const uint32_t ph = std::max<uint32_t>(2, static_cast<uint32_t>(h * scale));
 
     thread_local std::vector<uint32_t> buf;
-    thread_local std::vector<uint32_t> columns;
     buf.resize(static_cast<size_t>(pw) * ph);
-    columns.resize(pw);
-    for (uint32_t x = 0; x < pw; ++x) columns[x] = static_cast<uint32_t>(static_cast<uint64_t>(x) * w / pw);
-
-    const uint8_t* uvPlane = nv12 + static_cast<size_t>(pitch) * h;
-    for (uint32_t y = 0; y < ph; ++y)
-    {
-        const uint32_t sy = static_cast<uint32_t>(static_cast<uint64_t>(y) * h / ph);
-        const uint8_t* row = nv12 + static_cast<size_t>(sy) * pitch;
-        const uint8_t* uv = uvPlane + static_cast<size_t>(sy / 2) * pitch;
-        uint32_t* out = buf.data() + static_cast<size_t>(y) * pw;
-        for (uint32_t x = 0; x < pw; ++x)
-        {
-            const uint32_t sx = columns[x];
-            const int c = row[sx] - 16;
-            const int d = uv[sx & ~1u] - 128;
-            const int e = uv[(sx & ~1u) + 1] - 128;
-            const uint8_t r = Clamp255((298 * c + 409 * e + 128) >> 8);
-            const uint8_t g = Clamp255((298 * c - 100 * d - 208 * e + 128) >> 8);
-            const uint8_t b = Clamp255((298 * c + 516 * d + 128) >> 8);
-            out[x] = 0xFF000000u | (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
-        }
-    }
+    Nv12ToBgra(y, uv, pitch, w, h, buf.data(), pw, ph);
     {
         std::lock_guard lk(m_lock);
         m_preview.swap(buf);
@@ -554,18 +687,51 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
         Pipeline pipeline(*this);
         CameraDevice webcam = cam; // found again after the webcam was unplugged
         bool lost = false;
+        bool begun = false;  // the pipeline knows this source's size
+        bool stuck = false;  // this source cannot run (Fatal while the camera is up): wait for another
         while (!m_quit)
         {
+            if (m_switch)
+            {
+                // Another source on the same virtual camera. Apps using it keep the last picture,
+                // frozen, until the new source's first frame.
+                pipeline.Hold();
+                std::lock_guard lk(m_lock);
+                m_switch = false;
+                cam = m_camera = m_nextCamera;
+                format = m_format = m_nextFormat;
+                m_sourceRotation = ExpectedRotationLocked(cam, format);
+                ++m_layoutGen;
+                m_phoneState.clear();
+                m_status.sourceId = m_nextSourceId;
+                m_status.framesCaptured = m_status.framesDropped = 0;
+                m_status.fps = 0;
+                m_status.error.clear();
+                if (m_status.state == State::Waiting) m_status.state = pipeline.Live() ? State::Running : State::Starting;
+                webcam = cam;
+                lost = false;
+                begun = false;
+                stuck = false;
+            }
+            if (stuck)
+            {
+                for (int i = 0; i < 2 && !Interrupted(); ++i) Sleep(100);
+                continue;
+            }
+
             // Standby: nothing needs a picture (no app on the camera, preview
             // hidden). The virtual camera is published so apps can find and
             // open it, but the source stays closed: no webcam light, no phone
             // encoding or Wi‑Fi traffic, no decoding. Opening it wakes us.
             if (!SourceWanted(pipeline))
             {
-                if (!pipeline.Live())
+                if (!pipeline.Live() || !begun)
                 {
+                    // In this source's shape (a phone at its last orientation): nothing to
+                    // rebuild when it starts.
                     const HRESULT hr = pipeline.Begin(format.width, format.height, format.fpsNum, format.fpsDen, format.subtype);
                     if (FAILED(hr)) { Fail(pipeline.Failure(), hr); break; }
+                    begun = true;
                 }
                 {
                     std::lock_guard lk(m_lock);
@@ -573,7 +739,9 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                     m_status.error.clear();
                 }
                 SetStandby(true);
-                for (int i = 0; i < 2 && !m_quit && !SourceWanted(pipeline); ++i) Sleep(100);
+                for (int i = 0; i < 2 && !Interrupted() && !SourceWanted(pipeline); ++i) Sleep(100);
+                pipeline.Tick(); // a new shape or size setting applies in standby too
+                if (pipeline.Broken()) { Fail(pipeline.Failure(), E_FAIL); break; }
                 continue;
             }
             SetStandby(false);
@@ -594,20 +762,35 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             {
                 outcome = RunWebcam(pipeline, webcam, format, why, hr);
             }
+            begun = true;
+            if (outcome == Outcome::Switch) continue;
             lost = outcome == Outcome::Lost;
             if (outcome == Outcome::Quit || m_quit) break;
             if (outcome == Outcome::Idle) continue; // back to standby
+            if (pipeline.Broken())
+            {
+                Fail(pipeline.Failure(), hr);
+                break;
+            }
             // Before the virtual camera exists there is nothing to keep alive:
             // report the problem (wrong lens, camera busy…) as before.
-            if (outcome == Outcome::Fatal || !pipeline.Live())
+            if (!pipeline.Live())
             {
                 Fail(why, hr);
                 break;
             }
+            pipeline.ReleaseHold();
+            Wait(why, hr);
+            if (outcome == Outcome::Fatal)
+            {
+                // A source picked while the camera is up cannot run (lens refused, no HEVC
+                // decoder…): keep the camera (apps keep it selected) until another one is picked.
+                stuck = true;
+                continue;
+            }
             // Keep the virtual camera up (apps that use it keep it selected and
             // show its "no signal" picture) and bring the source back by itself.
-            Wait(why, hr);
-            for (int i = 0; i < 20 && !m_quit; ++i) Sleep(100);
+            for (int i = 0; i < 20 && !Interrupted(); ++i) Sleep(100);
         }
         pipeline.End();
     }
@@ -637,6 +820,7 @@ CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const Camera
         STEP(handler->GetMediaTypeByIndex(format.index, &nativeType), L"Định dạng không còn tồn tại");
         STEP(handler->SetCurrentMediaType(nativeType.Get()), L"Camera từ chối định dạng đã chọn");
     }
+    pipeline.Hold();
 
     // 2. Decode/convert to NV12 at the same size (e.g. MJPG -> NV12).
     {
@@ -667,7 +851,7 @@ CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const Camera
     if (FAILED(hr)) { why = pipeline.Failure(); outcome = Outcome::Fatal; goto cleanup; }
 
     // 4. Capture loop.
-    while (!m_quit)
+    while (!Interrupted())
     {
         // Nobody needs the picture any more: close the webcam (its light goes off).
         if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; goto cleanup; }
@@ -704,6 +888,7 @@ CaptureEngine::Outcome CaptureEngine::RunWebcam(Pipeline& pipeline, const Camera
                 buffer->Unlock();
             }
         }
+        if (pipeline.Broken()) { why = pipeline.Failure(); outcome = Outcome::Fatal; goto cleanup; }
     }
 
 cleanup:
@@ -711,7 +896,7 @@ cleanup:
     reader.Reset();
     if (source) source->Shutdown();
     cam.activate->ShutdownObject();
-    return m_quit ? Outcome::Quit : outcome;
+    return m_quit ? Outcome::Quit : m_switch ? Outcome::Switch : outcome;
 }
 
 
@@ -724,6 +909,7 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     // ~0.1 bit per pixel per frame: 1080p30 ≈ 6 Mbps, 4K30 ≈ 25 Mbps.
     const uint32_t kbps = std::clamp<uint32_t>(
         static_cast<uint32_t>(static_cast<uint64_t>(format.width) * format.height * fps / 10000), 2000, 60000);
+    auto interrupted = [&] { return m_quit ? Outcome::Quit : Outcome::Switch; };
 
     // The connection is gone: the next attempt reconnects.
     auto lost = [&](const std::wstring& what) {
@@ -733,34 +919,52 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     };
 
     // The link is ours while this source runs: the connector (which keeps idle links alive)
-    // and screen windows leave it alone.
+    // and screen windows leave it alone. A connector attempt in progress gives way at once.
     while (!link.Lease(200))
-        if (m_quit) return Outcome::Quit;
+    {
+        if (Interrupted()) return interrupted();
+        pipeline.Hold();
+    }
     phone::LeaseGuard lease(&link);
 
     // After a lost connection (phone app closed and reopened, Wi‑Fi dropped):
     // reconnect quietly. Only an already-paired phone gets back in.
-    if (!link.Connected())
-    {
+    auto reconnect = [&]() -> bool {
         std::string error;
-        if (!link.Reconnect(error))
-        {
-            why = Widen(error);
-            return Outcome::Lost;
-        }
-    }
-
-    if (!link.SendControl(json::Value::MakeObject()
+        pipeline.Hold();
+        SetBlocking(cam.phone); // Switch()/Stop() cut it short
+        const bool ok = !Interrupted() && link.Reconnect(error);
+        SetBlocking(nullptr);
+        if (!ok) why = error.empty() ? L"Mất kết nối với điện thoại" : Widen(error);
+        return ok;
+    };
+    auto sendStart = [&] {
+        return link.SendControl(json::Value::MakeObject()
             .Set("type", "start").Set("lens", format.phoneCamera)
             .Set("width", format.width).Set("height", format.height).Set("fps", fps)
-            .Set("codec", hevc ? "hevc" : "h264").Set("bitrateKbps", kbps)))
-        return lost(L"Mất kết nối với điện thoại");
+            .Set("codec", hevc ? "hevc" : "h264").Set("bitrateKbps", kbps));
+    };
+
+    // An idle link kept by the connector may have died without anyone noticing (the phone
+    // left the Wi‑Fi): if it says nothing at all after "start", one fresh connection.
+    bool reused = link.Connected();
+    if (!reused && !reconnect()) return Interrupted() ? interrupted() : Outcome::Lost;
+    if (!sendStart())
+    {
+        if (!reused) return lost(L"Mất kết nối với điện thoại");
+        reused = false;
+        link.Close();
+        if (!reconnect()) return Interrupted() ? interrupted() : Outcome::Lost;
+        if (!sendStart()) return lost(L"Mất kết nối với điện thoại");
+    }
 
     auto stateFrom = [&](const json::Value& v) {
         std::lock_guard lk(m_lock);
         if (!v["orientation"].IsNull())
         {
-            m_sourceRotation = ((v["orientation"].Int() % 360) + 360) % 360;
+            const int rotation = ((v["orientation"].Int() % 360) + 360) % 360;
+            if (rotation != m_sourceRotation) ++m_layoutGen; // the phone was turned: new shape
+            m_sourceRotation = rotation;
             m_rotationMemory[cam.name + L"|" + Widen(format.phoneCamera)] = m_sourceRotation;
         }
         if (v["type"].Str() == "state") m_phoneState = v.Dump();
@@ -775,24 +979,44 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
 
     // Wait for "started" (or an error) before decoding anything.
     json::Value started;
-    const ULONGLONG deadline = GetTickCount64() + 10000;
-    while (!m_quit)
+    ULONGLONG sentAt = GetTickCount64();
+    ULONGLONG deadline = sentAt + 10000;
+    bool heard = false;
+    while (!Interrupted())
     {
+        pipeline.Hold();
         phone::Message m;
         bool timedOut = false;
         if (!link.Receive(m, 500, timedOut))
         {
-            if (timedOut && GetTickCount64() < deadline) continue;
+            const ULONGLONG now = GetTickCount64();
+            if (reused && !heard && (!timedOut || now - sentAt >= 4000))
+            {
+                // Silent or closed: the kept link was dead. Start over once on a new one.
+                reused = false;
+                link.Close();
+                if (!reconnect()) return Interrupted() ? interrupted() : Outcome::Lost;
+                if (!sendStart()) return lost(L"Mất kết nối với điện thoại");
+                sentAt = GetTickCount64();
+                deadline = sentAt + 10000;
+                continue;
+            }
+            if (timedOut && now < deadline) continue;
             return lost(timedOut ? L"Điện thoại không bắt đầu phát (app trên điện thoại đang bị ẩn?)"
                                  : L"Mất kết nối với điện thoại");
         }
+        heard = true;
         if (m.kind != phone::Kind::Control) continue;
         json::Value v;
         try { v = m.Json(); } catch (const std::exception&) { continue; }
         if (v["type"].Str() == "error") return phoneError(v);
         if (v["type"].Str() == "started") { started = v; stateFrom(v); break; }
     }
-    if (m_quit) return Outcome::Quit;
+    if (Interrupted())
+    {
+        link.SendControl(json::Value::MakeObject().Set("type", "stop"));
+        return interrupted();
+    }
 
     const uint32_t width = static_cast<uint32_t>(started["width"].Int(format.width));
     const uint32_t height = static_cast<uint32_t>(started["height"].Int(format.height));
@@ -824,7 +1048,7 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     Outcome outcome = Outcome::Quit;
     ULONGLONG idleSince = 0;
 
-    while (!m_quit)
+    while (!Interrupted())
     {
         // Nobody needs the picture any more: the phone stops encoding and sending.
         if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
@@ -845,6 +1069,8 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
             outcome = lost(L"Điện thoại ngừng gửi hình (app trên điện thoại bị ẩn hoặc màn hình tắt?)");
             break;
         }
+        // Until the first frame of a new source decodes, the camera keeps the previous picture.
+        if (waitKeyframe) pipeline.Hold();
 
         if (got && m.kind == phone::Kind::Control)
         {
@@ -853,19 +1079,10 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
             const std::string type = v["type"].Str();
             if (type == "error") { outcome = phoneError(v); break; }
             if (type == "stopped") { why = L"Điện thoại đã dừng phát"; outcome = Outcome::Lost; break; }
+            if (type == "caps") link.SetCaps(v.Dump());
+            // A turn of the phone changes the picture's shape: the pipeline applies the size
+            // rule on the next frame (fit while an app uses the camera, else a new size).
             if (type == "state" || type == "started") stateFrom(v);
-            // The phone was turned: rebuild the virtual camera in the new shape.
-            if (pipeline.SizeChanged())
-            {
-                pipeline.End();
-                hr = pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264);
-                if (FAILED(hr))
-                {
-                    why = pipeline.Failure();
-                    outcome = Outcome::Fatal;
-                    break;
-                }
-            }
         }
         else if (got && m.kind == phone::Kind::VideoConfig)
         {
@@ -901,6 +1118,7 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
             {
                 waitKeyframe = false;
             }
+            if (pipeline.Broken()) { why = pipeline.Failure(); outcome = Outcome::Fatal; break; }
         }
 
         if (now - lastStats >= 1000)
@@ -917,5 +1135,5 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     }
 
     if (link.Connected()) link.SendControl(json::Value::MakeObject().Set("type", "stop"));
-    return m_quit ? Outcome::Quit : outcome;
+    return m_quit ? Outcome::Quit : m_switch ? Outcome::Switch : outcome;
 }

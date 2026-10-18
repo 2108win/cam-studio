@@ -71,6 +71,25 @@ public:
         if (m_event) SetEvent(m_event);
     }
 
+    // Keeps the latest frame good for readers for `ms` more, so an app keeps showing it (frozen)
+    // instead of "no signal" while the next source opens. Nothing is copied: the picture is
+    // already in its slot, only its time moves (ahead of now: readers check the age with a
+    // signed difference). The next Write() or ReleaseHold() sets the real time again.
+    void HoldFor(uint32_t ms)
+    {
+        if (!m_header || !m_header->latest) return;
+        const LONG64 until = MFGetSystemTime() + static_cast<LONG64>(ms) * 10000 - CAMSTUDIO_STALE_100NS;
+        if (until > m_header->writeTime100ns) InterlockedExchange64(&m_header->writeTime100ns, until);
+    }
+
+    // The source is gone: the held frame ages from now, and readers show "no signal" in 2 s.
+    void ReleaseHold()
+    {
+        if (!m_header) return;
+        const LONG64 now = MFGetSystemTime();
+        if (m_header->writeTime100ns > now) InterlockedExchange64(&m_header->writeTime100ns, now);
+    }
+
 private:
     HANDLE m_mapping = nullptr;
     HANDLE m_event = nullptr;

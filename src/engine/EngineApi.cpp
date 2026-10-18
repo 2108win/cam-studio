@@ -421,7 +421,9 @@ CS_API void cs_add_phone(const wchar_t* host, int32_t port)
     phone::AddManual(Narrow(host), static_cast<uint16_t>(port));
 }
 
-CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image)
+namespace
+{
+int32_t StartOrSwitch(int32_t camera, int32_t format, const CsImage* image, bool keepCamera)
 {
     CameraDevice cam;
     NativeFormat fmt;
@@ -437,8 +439,28 @@ CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image)
         engine = g_engine.get();
         g_streamingLink = cam.phone;
     }
-    engine->Start(cam, fmt, ToImage(image));
-    return S_OK;
+    uint32_t id = 0;
+    if (keepCamera)
+    {
+        engine->SetImage(ToImage(image));
+        id = engine->Switch(cam, fmt);
+    }
+    else
+    {
+        id = engine->Start(cam, fmt, ToImage(image));
+    }
+    return static_cast<int32_t>(id & 0x7FFFFFFF);
+}
+} // namespace
+
+CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image)
+{
+    return StartOrSwitch(camera, format, image, false);
+}
+
+CS_API int32_t cs_switch(int32_t camera, int32_t format, const CsImage* image)
+{
+    return StartOrSwitch(camera, format, image, true);
 }
 
 CS_API void cs_stop()
@@ -451,6 +473,11 @@ CS_API void cs_stop()
 CS_API int32_t cs_set_image(const CsImage* image)
 {
     return g_engine && g_engine->SetImage(ToImage(image)) ? 1 : 0;
+}
+
+CS_API void cs_set_output_size(int32_t mode)
+{
+    if (g_engine && mode >= 0 && mode <= 3) g_engine->SetOutputSize(static_cast<OutputSize>(mode));
 }
 
 CS_API void cs_get_status(CsStatus* out)
@@ -473,6 +500,9 @@ CS_API void cs_get_status(CsStatus* out)
     out->consumerActive = s.consumerActive ? 1 : 0;
     out->sourceRotation = s.sourceRotation;
     out->standby = s.standby ? 1 : 0;
+    out->pictureWidth = s.pictureWidth;
+    out->pictureHeight = s.pictureHeight;
+    out->sourceId = s.sourceId;
     wcsncpy_s(out->error, s.error.c_str(), _TRUNCATE);
 }
 

@@ -1,7 +1,8 @@
-// Runs one capture session on a worker thread:
-//   source (webcam or phone) -> NV12 -> orient -> crop/zoom -> adjust
+// Runs the virtual camera on a worker thread:
+//   source (webcam, phone, or a window on this PC) -> NV12 -> orient -> crop/zoom -> fit -> adjust
 //     -> shared memory -> virtual camera
-// and keeps a small BGRA copy of the latest frame for the preview.
+// and keeps a small BGRA copy of the latest frame for the preview. Switch() moves to another
+// source while the virtual camera stays registered, so apps using it never lose it.
 #pragma once
 
 #include "../common/MfDevices.h"
@@ -14,6 +15,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+namespace phone { class PhoneLink; }
 
 // One entry of the resolution picker: a distinct size + frame rate, backed
 // by the camera's cheapest-to-convert native subtype for that combination.
@@ -51,6 +54,9 @@ public:
         bool consumerActive = false; // some app is streaming from the camera
         int sourceRotation = 0;      // phones: rotation the phone asked for
         bool standby = false;        // virtual camera up, source closed until something needs it
+        uint32_t pictureWidth = 0;   // the picture inside the output: smaller than width x height
+        uint32_t pictureHeight = 0;  //   when it is fitted with black bars
+        uint32_t sourceId = 0;       // which Start()/Switch() the frames counted above belong to
         std::wstring error;
     };
 
@@ -58,13 +64,27 @@ public:
 
     void SetNotify(HWND window, UINT msg) { m_notifyWindow = window; m_notifyMsg = msg; }
 
-    void Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image);
+    // Both return the id the new source's status will carry (Status::sourceId).
+    uint32_t Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image);
+    // Moves to another source, or another mode of the same one, keeping the virtual camera: an
+    // app using it sees the last picture frozen until the new source's first frame, never "no
+    // signal". Starts when nothing runs.
+    uint32_t Switch(const CameraDevice& cam, const NativeFormat& format);
     void Stop();
     Status GetStatus() const;
 
-    // Applies on the next frame. If the new settings change the output size
-    // (rotation 0<->90, crop aspect) the session restarts; returns true then.
+    // Applies on the next frame. Returns true when the picture changes shape (rotation 0<->90,
+    // crop aspect): the virtual camera then follows the size rule (SetOutputSize).
     bool SetImage(const ImageSettings& image);
+
+    // "Kích thước camera ảo". Auto: the source's own size while no app uses the camera; an app
+    // using it keeps its size and other pictures are fitted inside with black bars, until it
+    // lets go. Fixed sizes fit every source.
+    void SetOutputSize(OutputSize size)
+    {
+        m_outputSize = static_cast<int>(size);
+        ++m_layoutGen;
+    }
 
     void SetPreviewEnabled(bool enabled) { m_previewEnabled = enabled; }
 
@@ -88,11 +108,15 @@ private:
     // How one attempt at running the source ended.
     enum class Outcome
     {
-        Quit,  // Stop() was called
-        Lost,  // the source went away: retry while the virtual camera stays up
-        Fatal, // retrying cannot help (missing decoder, virtual camera refused…)
-        Idle,  // nobody needed a picture for a while: source closed, back to standby
+        Quit,   // Stop() was called
+        Lost,   // the source went away: retry while the virtual camera stays up
+        Fatal,  // retrying cannot help (missing decoder, lens refused…)
+        Idle,   // nobody needed a picture for a while: source closed, back to standby
+        Switch, // Switch() was called: run the next source on the same virtual camera
     };
+
+    // A source loop should return now.
+    bool Interrupted() const { return m_quit || m_switch; }
 
     // A picture is needed: an app streams from the virtual camera, or the
     // preview is on screen. Otherwise the source stays closed (standby).
@@ -105,16 +129,23 @@ private:
     void Run(CameraDevice cam, NativeFormat format);
     Outcome RunWebcam(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
     Outcome RunPhone(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
+    Outcome RunWindow(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format, std::wstring& why, HRESULT& hr);
     void Fail(const std::wstring& what, HRESULT hr);
     void Wait(const std::wstring& what, HRESULT hr);
     void Notify() const;
-    void UpdatePreview(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h);
+    void UpdatePreview(const uint8_t* y, const uint8_t* uv, long pitch, uint32_t w, uint32_t h);
     bool PreviewDue();
+    bool PreviewWanted() const; // PreviewDue without taking the slot
     void StartLocked();
     ImageSettings EffectiveImageLocked() const; // user settings + phone orientation
+    // A phone link the source is blocked on while it reconnects: Switch()/Stop() abort it.
+    void SetBlocking(const std::shared_ptr<phone::PhoneLink>& link);
 
     std::thread m_thread;
     std::atomic<bool> m_quit{ false };
+    std::atomic<bool> m_switch{ false };   // m_next* is waiting to take over
+    std::atomic<int> m_outputSize{ 0 };    // OutputSize
+    std::atomic<uint32_t> m_layoutGen{ 0 }; // bumped when the picture's shape may change
     std::atomic<bool> m_previewEnabled{ true };
     std::atomic<uint32_t> m_previewMaxW{ 1280 };
     std::atomic<uint32_t> m_previewMaxH{ 720 };
@@ -130,9 +161,14 @@ private:
     uint64_t m_previewId = 0;
     ULONGLONG m_lastPreviewTick = 0;
 
-    // Kept to restart the same session when the output size changes.
+    // The source running now, and the one Switch() asked for (under m_lock).
     CameraDevice m_camera;
     NativeFormat m_format;
+    CameraDevice m_nextCamera;
+    NativeFormat m_nextFormat;
+    uint32_t m_sourceSeq = 0;  // last id handed out by Start()/Switch()
+    uint32_t m_nextSourceId = 0;
+    std::shared_ptr<phone::PhoneLink> m_blocking;
 
     // Last orientation each phone source reported (camera name + lens), so the
     // virtual camera published in standby already has the right shape and is
