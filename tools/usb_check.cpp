@@ -12,7 +12,7 @@
 //                                        report when the phone closes it (silent: after ~10 s)
 //
 // "hello" is a real connection, so the phone drops the PC it is streaming to (one PC at a time).
-// A probe must not: the session in progress keeps streaming (docs/protocol.md 1).
+// A probe must not: the session in progress keeps streaming (docs/protocol.md 3.1).
 #include "../src/engine/Json.h"
 #include "../src/engine/UsbTransport.h"
 

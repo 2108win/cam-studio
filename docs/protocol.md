@@ -204,7 +204,7 @@ PC → ĐT  {"type":"reveal","pub":"<base64 pcPub>"}
   - "hợp lệ" là đúng `type`, `v = 1`, có `clientId` và `commit` base64;
   - phiên cũ đóng ngay trước khi điện thoại trả `hello`, kể cả khi bắt tay sau đó thất bại (ví dụ `notPaired`).
 - **Kết nối không phải PC:** đóng trước khi gửi `hello`, gửi thứ khác, hoặc im lặng quá **10 giây**. Điện thoại đóng kết nối đó, còn phiên đang phát và dòng trạng thái trên app giữ nguyên. Vì vậy dò xem cổng có mở không (ví dụ qua cáp USB) không làm rớt hình.
-- **App cũ:** Android 0.1.3 và iOS 0.1.0 (build 20261018.0743) trở về trước bỏ phiên ngay khi nhận kết nối. Vì thế PC không dò cổng (mục 1.2).
+- **App cũ:** các bản build trước thay đổi này (ngày 2026‑10‑18) bỏ phiên ngay khi nhận kết nối: mọi APK Android trước đó, và iOS TestFlight tới build 20261018.0743. Số phiên bản chưa đổi (Android 0.1.3, iOS 0.1.0), nên không dựa vào nó để phân biệt. Vì thế PC không dò cổng (mục 1.2).
 
 ### 3.2 Ghép đôi lần đầu (`paired == false`, hoặc PC không còn khóa ghép đôi)
 

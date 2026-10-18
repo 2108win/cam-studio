@@ -48,11 +48,14 @@ class PhoneServer(
         thread = Thread(::acceptLoop, "accept").apply { start() }
     }
 
-    @Synchronized fun stop() {
-        running = false
+    fun stop() {
+        val current = synchronized(this) {
+            running = false
+            session
+        }
         registration?.let { runCatching { nsd.unregisterService(it) } }
         registration = null
-        session?.close()
+        current?.close()
         runCatching { server?.close() }
     }
 
@@ -71,7 +74,7 @@ class PhoneServer(
                 break
             }
             // The session in progress keeps streaming until this connection sends a valid hello
-            // (docs/protocol.md 1): a PC that only checks whether the port is open (over USB, say)
+            // (docs/protocol.md 3.1): a PC that only checks whether the port is open (over USB, say)
             // must not drop it.
             val s = Session(context, socket, store, ui, source, canPair = kind == Kind.CAMERA, claim = ::claim)
             Thread({
@@ -84,10 +87,13 @@ class PhoneServer(
     }
 
     /** `s` sent a valid hello: it replaces the session in progress. False once the server stopped. */
-    @Synchronized private fun claim(s: Session): Boolean {
-        if (!running) return false
-        session?.close()
-        session = s
+    private fun claim(s: Session): Boolean {
+        // The old session is closed outside the lock: stopping a camera may take a while.
+        val old = synchronized(this) {
+            if (!running) return false
+            session.also { session = s }
+        }
+        old?.close()
         return true
     }
 

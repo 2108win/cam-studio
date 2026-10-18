@@ -90,8 +90,9 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
     closed junk at once and a silent probe after 10.5 s; its status still said "Đang phát …".
   - `usb-check hello <udid> 47322` with no broadcast gives the new "iPhone chưa chia sẻ màn hình…".
   - **Not run on the device:** the screen extension over USB (the user skipped it), and a second
-    real `hello` taking over. Both were checked on the Mac instead: the iOS `PhoneServer` and
-    `Session` built with stub sources, for both kinds (47321, 47322). All of these passed:
+    real `hello` taking over. Both were checked on the Mac instead, with a throwaway harness (not in
+    the repo): the iOS `PhoneServer` and `Session` built with stub sources, for both kinds (47321,
+    47322). All of these passed:
     - probes leave the session and the status alone;
     - a valid hello replaces the session;
     - the session ending sets "Đang chờ…" once;
@@ -233,8 +234,10 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   - **Status:** shown through `CsStatus.standby`.
 - **USB cable (docs/protocol.md 1.2):** no phone change was needed for the tunnel; it arrives on loopback.
   - **The PC never probes a phone port** to see whether the app is open or sharing its screen. Phone
-    apps from 2026-10-18 on are probe-safe (below), but older ones (Android 0.1.3, iOS TestFlight
-    20261018.0743 and before) drop the session in progress on any accepted connection.
+    apps built with the hello-before-replace change (2026-10-18) are probe-safe (below). Older builds
+    drop the session in progress on any accepted connection: every earlier APK, and iOS TestFlight up
+    to 20261018.0743. The version numbers did not change (Android 0.1.3, iOS 0.1.0), so they cannot
+    tell the two apart.
   - So every phone ready on the cable is listed twice, whether or not it shares its screen:
     "<name> (USB)" on 47321 and "<name> · Màn hình (USB)" on 47322. When nothing listens on 47322,
     adb answers `FAIL` and usbmux `3`, and `OpenAdb`/`OpenUsbmux` say "chưa chia sẻ màn hình".
@@ -259,7 +262,8 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   - **Probe-safe since 2026-10-18** (`PhoneServer` on iOS, shared with the screen extension, and on
     Android): a connection waits apart from `session` until its hello is valid, then `claim`s it.
     One that closes first, sends junk, or is silent for 10 s is closed; the session in progress
-    and the status text stay as they were.
+    and the status text stay as they were. Android swaps `session` under the lock and closes the
+    old one outside it (a camera can take a while to stop).
   - iOS `Connection.readExact` has no timeout, so the 10 s deadline is a main-queue timer that
     cancels the `NWConnection` (that ends the pending receive). Android uses `soTimeout`.
 - **Any `error` ends the PC's stream** (`CaptureEngine::RunPhone`). So a `set` the phone cannot apply

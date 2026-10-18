@@ -88,7 +88,7 @@ final class PhoneServer {
         listener.newConnectionHandler = { [weak self] connection in
             guard let self, let ui = self.ui, !self.stopped else { connection.cancel(); return }
             // The session in progress keeps streaming until this connection sends a valid hello
-            // (docs/protocol.md 1): a PC that only checks whether the port is open (over USB, say)
+            // (docs/protocol.md 3.1): a PC that only checks whether the port is open (over USB, say)
             // must not drop it. One that stays silent is closed after a few seconds.
             let s = Session(connection: connection, store: self.store, ui: ui, source: self.source)
             self.waiting.append(s)
