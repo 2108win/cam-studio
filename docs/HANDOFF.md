@@ -1,7 +1,7 @@
 # Handoff: unfinished work
 
 > **Tóm tắt:** ngày 2026-10-18 phần PC đã build và chạy trên Windows, Redmi qua cáp và Wi‑Fi (cả
-> Discord) chạy tốt, có tự động cập nhật (0.1.4). Còn lại: phát hành 0.1.4 và các bài thử cần
+> Discord) chạy tốt, có tự động cập nhật; bản 0.1.4 đã đăng trên GitHub. Còn lại: các bài thử cần
 > người cầm máy (mục 3).
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
@@ -27,8 +27,8 @@ it once everything is tested.
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
-| Automatic updates, PC (`Updater.cs`) | yes | fake feed only; real install **no** |
-| Automatic updates, Android (`AppUpdater.kt`) | yes | installed 0.1.4; update path **no** |
+| Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
+| Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
 
 ## 2. The user's decisions (do not ask again)
 
@@ -47,11 +47,8 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-0. **Release 0.1.4** (`build\dist`, built 2026-10-18): ask the user before publishing it on GitHub.
-   Then test the real update: install 0.1.4 (UAC), serve a 0.1.5 build from a fake feed
-   (`CAMSTUDIO_UPDATE_FEED`, docs/updates.md), open the app: 15 s notice, UAC, silent setup, the app
-   opens again not elevated; "Không" at UAC keeps the app running. On the phone: a 0.1.5 release
-   shows "Có bản mới", installs after the confirmations.
+0. **v0.1.4 is published** (2026-10-18) and installed on the user's PC and Redmi. At the next
+   release, check on the phone: "Có bản mới", the confirmations, the app restarts as the new version.
 1. **Redmi, unlocked:** "Chia sẻ màn hình" → on the PC: "Redmi 9T · Màn hình (USB)", the screen
    window, "Dùng làm camera ảo"; stop/start sharing while an app holds the camera.
 2. **Unplug tests** while Discord (or `camstudio-verify --hold`) holds the camera: the phone cable,
