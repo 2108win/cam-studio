@@ -98,7 +98,7 @@ final class PhoneServer {
                 s.close()
             }
             Thread {
-                s.run(claim: { DispatchQueue.main.sync { self.claim(s) } })
+                s.run(claim: { auto in DispatchQueue.main.sync { self.claim(s, auto: auto) } })
                 DispatchQueue.main.async {
                     self.waiting.removeAll { $0 === s }
                     if self.session === s {
@@ -112,14 +112,19 @@ final class PhoneServer {
         self.listener = listener
     }
 
-    /// Main queue: `s` sent a valid hello, so it replaces the session in progress. False when it
-    /// was too late (closed for silence) or the server stopped.
-    private func claim(_ s: Session) -> Bool {
-        guard !stopped, let i = waiting.firstIndex(where: { $0 === s }) else { return false }
+    /// Main queue: `s` sent a valid hello, so it replaces the session in progress. Refused when it
+    /// was too late (closed for silence) or the server stopped. A PC that connects by itself
+    /// (`auto`) does not take the phone from another PC: it is told "busy" (docs/protocol.md 3.1).
+    /// The same PC coming back (its old link may be dead without the phone knowing) still may.
+    private func claim(_ s: Session, auto: Bool) -> Session.Claim {
+        guard !stopped, let i = waiting.firstIndex(where: { $0 === s }) else { return .refused }
         waiting.remove(at: i)
+        if auto, let current = session, !current.closed, current.clientId != s.clientId {
+            return .busy(otherPc: current.pcName)
+        }
         session?.close()
         session = s
-        return true
+        return .accepted
     }
 
     func stop() {

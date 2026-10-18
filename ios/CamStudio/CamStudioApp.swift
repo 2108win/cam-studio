@@ -4,8 +4,10 @@ import SwiftUI
 
 /// The iPhone side of Cam Studio. The PC picks lens, size and controls;
 /// this screen shows status, the address for "add by IP" and the pairing
-/// code. It must stay open while streaming (iOS stops the camera of
-/// background apps), so the screen dims itself.
+/// code, in two parts: the camera and the screen. iOS stops the camera of
+/// background apps, except in a Picture in Picture window (BackgroundCamera),
+/// so while streaming the app either stays open (the screen dims itself) or
+/// moves the camera into that floating window.
 @main
 struct CamStudioApp: App {
     @StateObject private var model = AppModel()
@@ -25,7 +27,17 @@ final class AppModel: ObservableObject, Session.UI {
     @Published var addresses: [String] = []
     @Published var streaming = false
     @Published var pairing: (pcName: String, code: String)?
+    /// A capture session is running: the preview is shown (it is the PiP source too).
+    @Published var previewing = false
+    @Published var backgroundCamera = BackgroundCamera.enabled {
+        didSet {
+            BackgroundCamera.enabled = backgroundCamera
+            pip.allowAutomaticStart(BackgroundCamera.active)
+        }
+    }
 
+    let pip = BackgroundCamera()
+    private let camera = CameraSource()
     private var server: PhoneServer?
     private var pairingAnswer: Bool?
     private let pairingDone = DispatchSemaphore(value: 0)
@@ -42,7 +54,12 @@ final class AppModel: ObservableObject, Session.UI {
         AVCaptureDevice.requestAccess(for: .video) { _ in }
         let store = Store()
         store.shareLegacyKeys()
-        let server = PhoneServer(ui: self, source: CameraSource(), kind: .camera, store: store)
+        camera.onCapture = { [weak self] session, device, size in
+            guard let self else { return }
+            self.pip.attach(session, device: device, size: size)
+            self.previewing = session != nil
+        }
+        let server = PhoneServer(ui: self, source: camera, kind: .camera, store: store)
         server.start(onReady: { [weak self] port in
             DispatchQueue.main.async {
                 self?.addresses = PhoneServer.addresses().map { "\($0):\(port)" }
@@ -60,12 +77,15 @@ final class AppModel: ObservableObject, Session.UI {
         foreground = phase != .background
         if phase == .background {
             wasInBackground = true
+            // The brightness is the whole iPhone's: give it back to the other apps.
+            setDimmed(false)
             server?.session?.appBackgrounded()
         }
         if phase == .active {
             if wasInBackground { server?.resumeFromBackground() }
             wasInBackground = false
             addresses = PhoneServer.addresses().map { "\($0):\(server?.port ?? 0)" }
+            if streaming { setDimmed(true) }
         }
     }
 
@@ -118,39 +138,19 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 20) {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.blue)
-                Text("Cam Studio").font(.largeTitle.bold()).foregroundStyle(.white)
-                Text(model.status)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.85))
-                if !model.addresses.isEmpty {
-                    VStack(spacing: 4) {
-                        ForEach(model.addresses, id: \.self) { Text($0).font(.body.monospaced()).foregroundStyle(.blue) }
+            ScrollView {
+                VStack(spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "video.fill").foregroundStyle(.blue)
+                        Text("Cam Studio").bold()
                     }
-                    .textSelection(.enabled)
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .padding(.top, 12)
+                    cameraPart
+                    screenPart
                 }
-                Text("Trên PC: mở Cam Studio, chọn iPhone này trong danh sách camera.\nNếu không thấy, chọn \"Thêm điện thoại theo địa chỉ IP\" và nhập địa chỉ ở trên.\nGiữ ứng dụng này mở trong lúc dùng camera.")
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.gray)
-                    .padding(.horizontal, 32)
-                Button {
-                    BroadcastPicker.show()
-                } label: {
-                    Label("Chia sẻ màn hình sang máy tính", systemImage: "rectangle.on.rectangle")
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .background(BroadcastPicker.Host().frame(width: 1, height: 1).opacity(0.02))
-                Text("Trên PC, màn hình hiện thành nguồn \"iPhone · Màn hình\". Ghép đôi bằng camera trước, rồi mới chia sẻ màn hình.")
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.gray)
-                    .padding(.horizontal, 32)
+                .padding(16)
             }
         }
         .statusBarHidden(true)
@@ -165,6 +165,90 @@ struct ContentView: View {
             Text("Kiểm tra mã trên máy tính có giống mã này không:\n\n\(code.prefix(3)) \(code.suffix(3))\n\nChỉ đồng ý nếu hai mã giống nhau.")
         }
     }
+
+    /// The camera: served all the time, the PC starts and stops it.
+    private var cameraPart: some View {
+        Part(title: "Camera", icon: "camera.fill") {
+            Text(model.status)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.9))
+            if model.previewing {
+                // Also the source of the floating window when the app is left (BackgroundCamera).
+                CameraPreview(pip: model.pip)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            if !model.addresses.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(model.addresses, id: \.self) { Text($0).font(.body.monospaced()).foregroundStyle(.blue) }
+                }
+                .textSelection(.enabled)
+            }
+            Toggle("Tiếp tục phát khi rời app", isOn: $model.backgroundCamera)
+                .disabled(!BackgroundCamera.supported)
+                .foregroundStyle(.white)
+            Hint(BackgroundCamera.supported
+                 ? (model.backgroundCamera
+                    ? "Rời app trong lúc phát: hình camera thu vào một khung nổi nhỏ và vẫn gửi sang máy tính."
+                    : "Giữ ứng dụng này mở trong lúc dùng camera.")
+                 : "iPhone này không cho camera chạy khi rời app: giữ ứng dụng này mở trong lúc dùng camera.")
+            Hint("Trên PC: mở Cam Studio, chọn iPhone này trong danh sách camera. Nếu không thấy, chọn \"Thêm điện thoại theo địa chỉ IP\" và nhập địa chỉ ở trên, hoặc cắm cáp USB.")
+        }
+    }
+
+    /// The screen: a separate broadcast (the CamStudioScreen extension), a separate source on the PC.
+    private var screenPart: some View {
+        Part(title: "Màn hình", icon: "rectangle.on.rectangle") {
+            Button {
+                BroadcastPicker.show()
+            } label: {
+                Label("Chia sẻ màn hình sang máy tính", systemImage: "record.circle")
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .background(BroadcastPicker.Host().frame(width: 1, height: 1).opacity(0.02))
+            Hint("Trên PC, màn hình hiện thành nguồn \"iPhone · Màn hình\", tách riêng với camera. Vẫn chạy khi bạn mở ứng dụng khác. Ghép đôi bằng camera trước, rồi mới chia sẻ màn hình.")
+        }
+    }
+}
+
+/// One titled part of the screen.
+private struct Part<Content: View>: View {
+    let title: String
+    let icon: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            content
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct Hint: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.footnote)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.gray)
+    }
+}
+
+/// The camera preview owned by BackgroundCamera (the same view moves into the PiP window).
+private struct CameraPreview: UIViewRepresentable {
+    let pip: BackgroundCamera
+    func makeUIView(context: Context) -> UIView { pip.container }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 /// The system broadcast picker, the only way to start a screen broadcast: it lists the
