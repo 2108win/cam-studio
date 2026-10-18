@@ -62,6 +62,9 @@ public unsafe struct CsStatus
     public int ConsumerActive;
     public int SourceRotation;
     public int Standby;       // virtual camera up, source closed until an app opens it (or the preview shows)
+    public uint PictureWidth; // the picture inside the output (smaller when fitted with black bars)
+    public uint PictureHeight;
+    public uint SourceId;     // which Start/Switch the frame counts belong to
     public fixed char Error[256];
 
     public readonly string ErrorText
@@ -71,6 +74,18 @@ public unsafe struct CsStatus
             fixed (char* p = Error) return new string(p);
         }
     }
+}
+
+// Mirrors CsLinkState: a phone's background connection, for the camera menu.
+public enum LinkState
+{
+    Idle = 0,
+    Connected = 1,    // webcams always report this
+    Connecting = 2,
+    NeedsPairing = 3,
+    Busy = 4,         // another PC has the phone
+    Unreachable = 5,
+    Elsewhere = 6,    // the same phone is connected another way (Wi‑Fi / cable)
 }
 
 public enum EngineState
@@ -91,6 +106,9 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial int cs_refresh_cameras();
     [LibraryImport(Dll)] public static partial int cs_camera_name(int camera, char* buffer, int capacity);
     [LibraryImport(Dll)] public static partial int cs_camera_kind(int camera);
+    [LibraryImport(Dll)] public static partial int cs_camera_id(int camera, char* buffer, int capacity);
+    [LibraryImport(Dll)] public static partial int cs_camera_state(int camera, char* error, int capacity);
+    [LibraryImport(Dll)] public static partial uint cs_sources_generation();
     [LibraryImport(Dll)] public static partial int cs_load_formats(int camera);
     [LibraryImport(Dll)] public static partial int cs_get_format(int index, CsFormat* format);
     [LibraryImport(Dll)] public static partial int cs_last_error(char* buffer, int capacity);
@@ -98,6 +116,8 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial void cs_pairing_answer(int accept);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_add_phone(string host, int port);
     [LibraryImport(Dll)] public static partial int cs_start(int camera, int format, CsImage* image);
+    [LibraryImport(Dll)] public static partial int cs_switch(int camera, int format, CsImage* image);
+    [LibraryImport(Dll)] public static partial void cs_set_output_size(int mode);
     [LibraryImport(Dll)] public static partial void cs_stop();
     [LibraryImport(Dll)] public static partial int cs_set_image(CsImage* image);
     [LibraryImport(Dll)] public static partial void cs_get_status(CsStatus* status);
@@ -108,12 +128,31 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial int cs_phone_state(byte* buffer, int capacity);
     [LibraryImport(Dll)] public static partial int cs_phone_send(byte* json);
 
-    public static bool IsPhone(int camera) => cs_camera_kind(camera) == 1;
+    // Phone camera (1) or a phone's shared screen (2): both connect over the network or a cable.
+    public static bool IsPhone(int camera) => cs_camera_kind(camera) is 1 or 2;
+    public static bool IsScreen(int camera) => cs_camera_kind(camera) == 2;
 
     public static string CameraName(int camera)
     {
         char* buf = stackalloc char[512];
         return Text(buf, cs_camera_name(camera, buf, 512));
+    }
+
+    public static string CameraId(int camera)
+    {
+        int needed = cs_camera_id(camera, null, 0);
+        if (needed <= 0) return string.Empty;
+        char[] buf = new char[needed + 1];
+        fixed (char* p = buf) cs_camera_id(camera, p, buf.Length);
+        return new string(buf, 0, needed);
+    }
+
+    public static LinkState CameraState(int camera, out string error)
+    {
+        char* buf = stackalloc char[512];
+        int state = cs_camera_state(camera, buf, 512);
+        error = new string(buf);
+        return state < 0 ? LinkState.Idle : (LinkState)state;
     }
 
     public static string LastError()
@@ -158,7 +197,9 @@ internal static unsafe partial class Engine
         return f;
     }
 
+    // Both return the new source's id (> 0, see CsStatus.SourceId) or an HRESULT (< 0).
     public static int Start(int camera, int format, CsImage image) => cs_start(camera, format, &image);
+    public static int Switch(int camera, int format, CsImage image) => cs_switch(camera, format, &image);
 
     public static bool SetImage(CsImage image) => cs_set_image(&image) != 0;
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Microsoft.Win32;
 
 namespace CamStudio.Services;
@@ -40,6 +41,9 @@ public sealed class AppSettings
     public int Contrast { get; set; }
     public int Saturation { get; set; }
     public int Temperature { get; set; }
+    public int OutputSize { get; set; }    // "Kích thước camera ảo": 0 auto, 1 4K, 2 1080p, 3 720p
+    // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
+    public Dictionary<string, string> Modes { get; } = new();
 
     public static AppSettings Load()
     {
@@ -66,6 +70,13 @@ public sealed class AppSettings
         s.Contrast = Math.Clamp(Int("Contrast", 0), -100, 100);
         s.Saturation = Math.Clamp(Int("Saturation", 0), -100, 100);
         s.Temperature = Math.Clamp(Int("Temperature", 0), -100, 100);
+        s.OutputSize = Math.Clamp(Int("OutputSize", 0), 0, 3);
+        using (var modes = key.OpenSubKey("Modes"))
+        {
+            if (modes is not null)
+                foreach (string name in modes.GetValueNames())
+                    if (modes.GetValue(name) is string v) s.Modes[name] = v;
+        }
         return s;
     }
 
@@ -90,6 +101,9 @@ public sealed class AppSettings
         key.SetValue("Contrast", Contrast, RegistryValueKind.DWord);
         key.SetValue("Saturation", Saturation, RegistryValueKind.DWord);
         key.SetValue("Temperature", Temperature, RegistryValueKind.DWord);
+        key.SetValue("OutputSize", OutputSize, RegistryValueKind.DWord);
+        using var modes = key.CreateSubKey("Modes");
+        foreach (var (id, mode) in Modes) modes.SetValue(id, mode);
     }
 }
 

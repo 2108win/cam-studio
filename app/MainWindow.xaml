@@ -53,6 +53,10 @@
                 </DropDownButton.Flyout>
             </DropDownButton>
 
+            <!-- Quick switching: the sources ready right now (Ctrl+1…9) -->
+            <StackPanel x:Name="SourceRow" Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
+
             <!-- Virtual camera on/off with live status -->
             <Border Grid.Column="3" Style="{StaticResource CardStyle}" MinHeight="0" Padding="14,4,6,4" CornerRadius="8">
                 <StackPanel Orientation="Horizontal" Spacing="10">
@@ -323,6 +327,16 @@
                                               OnContent="Bật (chạy ẩn ở khay)" OffContent="Tắt" Toggled="AutostartToggle_Toggled" />
                                 <ToggleSwitch x:Name="CloseToTrayToggle" Header="Khi đóng cửa sổ"
                                               OnContent="Chạy tiếp ở khay" OffContent="Thoát hẳn" Toggled="CloseToTrayToggle_Toggled" />
+                                <ComboBox x:Name="OutputSizeCombo" Header="Kích thước camera ảo" HorizontalAlignment="Stretch"
+                                          SelectionChanged="OutputSizeCombo_SelectionChanged">
+                                    <x:String>Tự động (nét nhất)</x:String>
+                                    <x:String>4K · 3840 × 2160</x:String>
+                                    <x:String>1080p · 1920 × 1080</x:String>
+                                    <x:String>720p · 1280 × 720</x:String>
+                                </ComboBox>
+                                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen, gọi xong tự về cỡ gốc." />
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>

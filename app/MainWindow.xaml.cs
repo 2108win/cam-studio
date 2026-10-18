@@ -77,9 +77,11 @@ public sealed partial class MainWindow : Window
 
         int hr = Engine.cs_init();
         if (hr < 0) throw new InvalidOperationException($"Engine init failed 0x{hr:X8}");
+        Engine.cs_set_output_size(_settings.OutputSize);
 
         SetupWindow();
         ApplyTheme();
+        SetupSourceShortcuts();
 
         _tray = new TrayIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "CamStudio.ico"));
         _tray.Activated += () => DispatcherQueue.TryEnqueue(ShowFromTray);
@@ -123,16 +125,13 @@ public sealed partial class MainWindow : Window
     }
 
     // Cheap refresh when the camera menu opens: new phones show up without
-    // reloading the selected camera's formats (the engine keeps them).
+    // reloading the selected camera's formats (the engine keeps them). Safe while
+    // streaming: sources are found again by id.
     private void RefreshCameraList()
     {
-        if (IsCapturing && _isPhone) return; // the streaming phone's index must not move
-        string? current = _camera >= 0 && _camera < _cameras.Count ? _cameras[_camera] : null;
-        _cameras.Clear();
-        int count = Engine.cs_refresh_cameras();
-        for (int i = 0; i < count; i++) _cameras.Add(Engine.CameraName(i));
-        _camera = current is null ? -1 : _cameras.IndexOf(current);
+        ReadCameraList();
         BuildCameraMenu();
+        UpdateSourceRow();
     }
 
     // ---- Window chrome ----------------------------------------------------------
@@ -269,17 +268,28 @@ public sealed partial class MainWindow : Window
     private IReadOnlyList<TrayIcon.MenuItem?> BuildTrayMenu()
     {
         bool running = IsCapturing;
-        return new List<TrayIcon.MenuItem?>
+        var items = new List<TrayIcon.MenuItem?>
         {
             new("Mở Cam Studio", () => DispatcherQueue.TryEnqueue(ShowFromTray), IsDefault: true),
             null,
+        };
+        // Quick switching: the sources ready right now.
+        var sources = TraySourceItems().ToList();
+        if (sources.Count > 1)
+        {
+            items.AddRange(sources);
+            items.Add(null);
+        }
+        items.AddRange(new List<TrayIcon.MenuItem?>
+        {
             new(running ? "Tắt camera ảo" : "Bật camera ảo", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = !running)),
             new("Lật ngang", () => DispatcherQueue.TryEnqueue(() => { MirrorButton.IsChecked = !_settings.Mirror; Mirror_Click(this, new RoutedEventArgs()); }), Checked: _settings.Mirror),
             null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
             null,
             new("Thoát", () => DispatcherQueue.TryEnqueue(ExitApp)),
-        };
+        });
+        return items;
     }
 
     // ---- Settings <-> UI ----------------------------------------------------------
@@ -297,6 +307,7 @@ public sealed partial class MainWindow : Window
         ThemeCombo.SelectedIndex = _settings.Theme;
         AutostartToggle.IsOn = Autostart.IsEnabled;
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
+        OutputSizeCombo.SelectedIndex = _settings.OutputSize;
         UpdateToolIndicators();
     }
 
@@ -337,12 +348,14 @@ public sealed partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task RefreshCamerasAsync(string? prefer)
     {
-        // Indices change on refresh: never refresh under a running session.
-        if (IsCapturing) return;
+        // While the camera runs, only the list: the running source stays selected.
+        if (IsCapturing && string.IsNullOrEmpty(prefer))
+        {
+            RefreshCameraList();
+            return;
+        }
         string? current = _camera >= 0 && _camera < _cameras.Count ? _cameras[_camera] : null;
-        _cameras.Clear();
-        int count = Engine.cs_refresh_cameras();
-        for (int i = 0; i < count; i++) _cameras.Add(Engine.CameraName(i));
+        ReadCameraList();
 
         string? want = !string.IsNullOrEmpty(prefer) ? prefer : current;
         int pick = _cameras.Count > 0 ? 0 : -1;
@@ -353,7 +366,8 @@ public sealed partial class MainWindow : Window
             if (byName < 0 && int.TryParse(want, out int idx) && idx < _cameras.Count) byName = idx;
             if (byName >= 0) pick = byName;
         }
-        await SelectCameraAsync(pick);
+        if (IsCapturing && pick != _camera) OnCameraPicked(pick); // e.g. a phone just added by IP
+        else await SelectCameraAsync(pick);
     }
 
     private async System.Threading.Tasks.Task SelectCameraAsync(int index)
@@ -362,30 +376,8 @@ public sealed partial class MainWindow : Window
         _isPhone = index >= 0 && Engine.IsPhone(index);
         CameraButtonText.Text = index >= 0 ? _cameras[index] : "Không tìm thấy camera";
         BuildCameraMenu();
+        UpdateSourceRow();
         await LoadFormatsAsync();
-    }
-
-    private void BuildCameraMenu()
-    {
-        CameraMenu.Items.Clear();
-        for (int i = 0; i < _cameras.Count; i++)
-        {
-            int cam = i;
-            var item = new RadioMenuFlyoutItem
-            {
-                Text = _cameras[i], GroupName = "camera", IsChecked = i == _camera,
-                Icon = new FontIcon { Glyph = Engine.IsPhone(i) ? "" : "" },
-            };
-            item.Click += (_, _) => OnCameraPicked(cam);
-            CameraMenu.Items.Add(item);
-        }
-        if (_cameras.Count > 0) CameraMenu.Items.Add(new MenuFlyoutSeparator());
-        var refresh = new MenuFlyoutItem { Text = "Tìm lại camera và điện thoại", Icon = new FontIcon { Glyph = "" } };
-        refresh.Click += async (_, _) => await RefreshCamerasAsync(null);
-        CameraMenu.Items.Add(refresh);
-        var addPhone = new MenuFlyoutItem { Text = "Thêm điện thoại theo địa chỉ IP…", Icon = new FontIcon { Glyph = "" } };
-        addPhone.Click += async (_, _) => await AddPhoneByIpAsync();
-        CameraMenu.Items.Add(addPhone);
     }
 
     private async System.Threading.Tasks.Task LoadFormatsAsync()
@@ -460,9 +452,15 @@ public sealed partial class MainWindow : Window
             AppSettings.WriteDiagnostic("last-caps.json", capsJson);
         }
 
-        // Restore the saved mode for the same camera; otherwise native.
+        // Restore the mode this source had last time; otherwise the last camera's (older
+        // settings); otherwise native.
         int pick = _formats.Count > 0 ? 0 : -1;
-        if (_settings.Width != 0 && _cameras[cam] == _settings.Camera)
+        int mine = SavedFormat(cam);
+        if (mine >= 0)
+        {
+            pick = mine;
+        }
+        else if (_settings.Width != 0 && _cameras[cam] == _settings.Camera)
         {
             int saved = _formats.FindIndex(f => f.Format.Width == _settings.Width && f.Format.Height == _settings.Height &&
                                                 (uint)Math.Round(f.Format.Fps * 1000) == _settings.FpsMilli);
@@ -707,6 +705,7 @@ public sealed partial class MainWindow : Window
         _phoneSent.Clear(); // controls belong to the previous lens
         // If the new lens fails to open, go back to this one (see UpdateStatus).
         _lensSwitchFrom = IsCapturing && _format >= 0 ? _format : -1;
+        _expectSourceId = 0;
         OnFormatPicked(pick.Index, force: true);
     }
 
@@ -718,7 +717,13 @@ public sealed partial class MainWindow : Window
         if (_format >= 0) _brokenLenses.Add(_formats[_format].Format.LensText);
         string failed = _format >= 0 ? _formats[_format].Format.LensText : "";
         int generation = _loadGeneration;
+        bool live = IsCapturing; // the camera is still up (waiting): switch straight back
         OnFormatPicked(back);
+        if (live)
+        {
+            ShowError($"Không mở được {failed}, đã quay lại ống kính trước. {error}");
+            return;
+        }
         ShowError($"Không mở được {failed}, đang quay lại ống kính trước… {error}");
         // Some phones (MIUI) keep every camera busy for a moment after a refused open.
         await System.Threading.Tasks.Task.Delay(3000);
@@ -747,14 +752,28 @@ public sealed partial class MainWindow : Window
         SendPhone("exposureBias", Math.Round(e.NewValue, 1));
     }
 
+    // Another source: while the camera is on it moves there without being taken down (apps
+    // using it keep it, frozen for a moment). A connected phone has its formats already.
     private async void OnCameraPicked(int camera)
     {
-        if (camera == _camera) return;
+        if (camera < 0 || camera >= _cameras.Count || camera == _camera) return;
+        int previous = _camera;
         bool wasCapturing = IsCapturing;
-        if (wasCapturing) StopCapture(); // a phone needs its own connection setup first
         await SelectCameraAsync(camera);
+        if (_camera != camera) return; // another pick meanwhile
+        if (_format < 0)
+        {
+            // Could not load it (pairing declined, phone gone): the camera still shows the
+            // previous source, so show that one again.
+            if (wasCapturing && previous >= 0 && previous < _cameras.Count)
+            {
+                string error = ErrorBar.Message;
+                await SelectCameraAsync(previous);
+                ShowError(error);
+            }
+            return;
+        }
         SaveSourceAndRestart();
-        if (wasCapturing && _format >= 0) StartCapture();
     }
 
     private void OnFormatPicked(int format, bool force = false)
@@ -766,18 +785,8 @@ public sealed partial class MainWindow : Window
 
     private void SaveSourceAndRestart()
     {
-        if (_camera >= 0 && _format >= 0)
-        {
-            var f = _formats[_format].Format;
-            _settings.Camera = _cameras[_camera];
-            // 0 means "native", so another camera also starts at its best mode.
-            bool native = f.IsNative != 0;
-            _settings.Width = native ? 0 : f.Width;
-            _settings.Height = native ? 0 : f.Height;
-            _settings.FpsMilli = native ? 0 : (uint)Math.Round(f.Fps * 1000);
-            _settings.Save();
-        }
-        if (IsCapturing) StartCapture(); // apply right away
+        SaveSource();
+        if (IsCapturing) SwitchCapture(); // apply right away, keeping the virtual camera
     }
 
     // ---- Capture -----------------------------------------------------------------
@@ -800,6 +809,7 @@ public sealed partial class MainWindow : Window
             _phoneSent.Clear();
         }
         int hr = Engine.Start(_camera, _format, CurrentImage());
+        if (hr > 0) _expectSourceId = hr;
         if (hr < 0)
         {
             ShowError($"Không khởi động được camera (0x{hr:X8}).");
@@ -1010,11 +1020,13 @@ public sealed partial class MainWindow : Window
     private (double fx, double fy) VisibleFraction()
     {
         var s = Engine.GetStatus();
-        if (s.Width == 0 || s.CameraWidth == 0) return (1 / _settings.Zoom, 1 / _settings.Zoom);
+        // The picture's own size: the output may be bigger, with black bars around it.
+        uint pw = s.PictureWidth != 0 ? s.PictureWidth : s.Width, ph = s.PictureHeight != 0 ? s.PictureHeight : s.Height;
+        if (pw == 0 || s.CameraWidth == 0) return (1 / _settings.Zoom, 1 / _settings.Zoom);
         bool swap = (_settings.Rotation + s.SourceRotation) % 180 != 0;
         double ow = swap ? s.CameraHeight : s.CameraWidth;
         double oh = swap ? s.CameraWidth : s.CameraHeight;
-        return (s.Width / _settings.Zoom / ow, s.Height / _settings.Zoom / oh);
+        return (pw / _settings.Zoom / ow, ph / _settings.Zoom / oh);
     }
 
     private void ClampCenter()
@@ -1223,10 +1235,9 @@ public sealed partial class MainWindow : Window
                 ClearPreview();
                 if (_isPhone && _lensSwitchFrom >= 0)
                 {
-                    // The new lens never delivered a frame: treat it like a failed open.
+                    // The new lens never delivered a frame: treat it like a failed open. The
+                    // camera stays up; the previous lens takes over again.
                     string error = s.ErrorText;
-                    Engine.cs_stop();
-                    SetToggleQuietly(false);
                     DispatcherQueue.TryEnqueue(() => RevertLensSwitch(error));
                 }
             }
@@ -1239,7 +1250,7 @@ public sealed partial class MainWindow : Window
         if (state == EngineState.Waiting && _lensSwitchFrom < 0) ShowWaiting(s.ErrorText);
         // A phone says "started" before the camera has really opened: only
         // frames prove the new lens works.
-        if (running && s.FramesCaptured > 0) _lensSwitchFrom = -1;
+        if (running && s.FramesCaptured > 0 && (_expectSourceId == 0 || s.SourceId == _expectSourceId)) _lensSwitchFrom = -1;
 
         (string text, string pill, Color dot) = state switch
         {
@@ -1256,6 +1267,7 @@ public sealed partial class MainWindow : Window
 
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
+        RefreshSourcesIfChanged();
 
         StatusText.Text = text;
         StatusDot.Fill = new SolidColorBrush(dot);
