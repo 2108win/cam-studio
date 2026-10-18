@@ -155,7 +155,8 @@ build does not install. **Real install tested** on the user's PC: installed 0.1.
 temporary 0.1.5 setup from the fake feed, opened the installed app: 15 s notice, UAC, silent setup,
 the app reopened with `--updated`, not elevated, "Phiên bản 0.1.5", no second install; then 0.1.4
 put back. **v0.1.4 published on GitHub** (`scripts/publish-release.py`). Not tested: "Không" at
-UAC, and the Android install path (needs a release newer than 0.1.4).
+UAC, and the Android install path (needs a release newer than 0.1.4). **v0.1.5** (the new PC layout) was then
+tested the same way with its real setup and published; the PC updated itself to it.
 
 Gotchas:
 - The computer-use tool minimizes windows of apps it is not allowed to control, and Windows

@@ -1,7 +1,7 @@
 # Handoff: unfinished work
 
 > **Tóm tắt:** ngày 2026-10-18 phần PC đã build và chạy trên Windows, Redmi qua cáp và Wi‑Fi (cả
-> Discord) chạy tốt, có tự động cập nhật; bản 0.1.4 đã đăng trên GitHub. Còn lại: các bài thử cần
+> Discord) chạy tốt, có tự động cập nhật; bản 0.1.5 (giao diện mới) đã đăng trên GitHub. Còn lại: các bài thử cần
 > người cầm máy (mục 3).
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
@@ -47,8 +47,9 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-0. **v0.1.4 is published** (2026-10-18) and installed on the user's PC and Redmi. At the next
-   release, check on the phone: "Có bản mới", the confirmations, the app restarts as the new version.
+0. **v0.1.5 is published** (2026-10-18, the new PC layout): the user's PC updated itself 0.1.4 ->
+   0.1.5 (UAC, relaunch, not elevated). The Redmi still runs 0.1.4: opening the app there should show
+   "Có bản mới 0.1.5". Check the confirmations and that the app restarts as 0.1.5 (needs the PIN).
 1. **Redmi, unlocked:** "Chia sẻ màn hình" → on the PC: "Redmi 9T · Màn hình (USB)", the screen
    window, "Dùng làm camera ảo"; stop/start sharing while an app holds the camera.
 2. **Unplug tests** while Discord (or `camstudio-verify --hold`) holds the camera: the phone cable,
