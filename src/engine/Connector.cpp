@@ -45,12 +45,12 @@ std::string EndpointKey(const Endpoint& e)
     return (e.Usb() ? "usb:" + e.serial : e.host) + ":" + std::to_string(e.port);
 }
 
-void Connector::Start()
+void Connector::Start(uint32_t delayMs, std::function<void()> beforeFirst)
 {
     std::lock_guard lk(m_lock);
     if (m_thread.joinable()) return;
     m_stop = false;
-    m_thread = std::thread(&Connector::Run, this);
+    m_thread = std::thread(&Connector::Run, this, delayMs, std::move(beforeFirst));
 }
 
 void Connector::Stop()
@@ -123,8 +123,15 @@ void Connector::Set(const std::string& key, LinkState state, const std::string& 
     ++m_generation;
 }
 
-void Connector::Run()
+void Connector::Run(uint32_t delayMs, std::function<void()> beforeFirst)
 {
+    if (delayMs)
+    {
+        std::unique_lock lk(m_lock);
+        m_wake.wait_for(lk, std::chrono::milliseconds(delayMs), [this] { return m_stop; });
+        if (m_stop) return;
+    }
+    if (beforeFirst) beforeFirst();
     for (;;)
     {
         // The phones to look after: everything listed now, plus links still open from before.
@@ -145,7 +152,16 @@ void Connector::Run()
                 const std::string key = EndpointKey(e);
                 Entry& entry = m_entries[key];
                 if (!entry.link) entry.link = std::make_shared<PhoneLink>();
-                changed |= !before[key] || entry.endpoint.name != e.name;
+                const bool back = !before[key] || entry.endpoint.host != e.host || entry.endpoint.port != e.port ||
+                                  entry.endpoint.ready != e.ready;
+                if (back && e.ready)
+                {
+                    // The phone (re)appeared: its app was opened again, the cable plugged in or
+                    // allowed. Try now, not after the wait from earlier failures.
+                    entry.retryAt = 0;
+                    entry.drops = 0;
+                }
+                changed |= back || entry.endpoint.name != e.name;
                 entry.endpoint = e;
                 entry.listed = true;
             }

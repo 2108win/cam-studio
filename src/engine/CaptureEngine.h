@@ -56,7 +56,8 @@ public:
         bool standby = false;        // virtual camera up, source closed until something needs it
         uint32_t pictureWidth = 0;   // the picture inside the output: smaller than width x height
         uint32_t pictureHeight = 0;  //   when it is fitted with black bars
-        uint32_t sourceId = 0;       // which Start()/Switch() the frames counted above belong to
+        uint32_t sourceId = 0;       // which Start()/Switch() the frame counts belong to
+        bool noSource = false;       // the camera is up with no source: apps see "no signal"
         std::wstring error;
     };
 
@@ -68,7 +69,8 @@ public:
     uint32_t Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image);
     // Moves to another source, or another mode of the same one, keeping the virtual camera: an
     // app using it sees the last picture frozen until the new source's first frame, never "no
-    // signal". Starts when nothing runs.
+    // signal". Starts when nothing runs. An empty CameraDevice is "no source": the camera stays
+    // registered (at format's size if it must be published now) and shows "no signal".
     uint32_t Switch(const CameraDevice& cam, const NativeFormat& format);
     void Stop();
     Status GetStatus() const;

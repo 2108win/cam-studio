@@ -69,7 +69,7 @@
                     </StackPanel>
                     <ToggleSwitch x:Name="VcamToggle" OnContent="" OffContent="" MinWidth="0" Margin="8,0,0,0"
                                   VerticalAlignment="Center" Toggled="VcamToggle_Toggled"
-                                  ToolTipService.ToolTip="Bật/tắt camera ảo &quot;Cam Studio&quot;" />
+                                  ToolTipService.ToolTip="Phát / tạm dừng hình. Camera ảo &quot;Cam Studio&quot; luôn có trong các ứng dụng khi Cam Studio chạy; khi tạm dừng, ứng dụng thấy &quot;không có tín hiệu&quot;" />
                 </StackPanel>
             </Border>
         </Grid>
@@ -93,7 +93,7 @@
                             Click="PlaceholderStart_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE768;" FontSize="14" />
-                            <TextBlock Text="Bật camera ảo" />
+                            <TextBlock Text="Phát hình" />
                         </StackPanel>
                     </Button>
                 </StackPanel>

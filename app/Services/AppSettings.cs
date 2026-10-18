@@ -24,6 +24,9 @@ public sealed class AppSettings
     }
 
     public string Camera { get; set; } = "";
+    public string CameraId { get; set; } = ""; // the engine id of the source the user picked last
+    public uint LastWidth { get; set; }        // the camera's last size: published at launch, before any source
+    public uint LastHeight { get; set; }
     public uint Width { get; set; }        // 0 = camera's native mode
     public uint Height { get; set; }
     public uint FpsMilli { get; set; }
@@ -53,6 +56,9 @@ public sealed class AppSettings
 
         int Int(string name, int fallback) => key.GetValue(name) is int v ? v : fallback;
         s.Camera = key.GetValue("Camera") as string ?? "";
+        s.CameraId = key.GetValue("CameraId") as string ?? "";
+        s.LastWidth = (uint)Int("LastWidth", 0);
+        s.LastHeight = (uint)Int("LastHeight", 0);
         s.Width = (uint)Int("Width", 0);
         s.Height = (uint)Int("Height", 0);
         s.FpsMilli = (uint)Int("FpsMilli", 0);
@@ -84,6 +90,9 @@ public sealed class AppSettings
     {
         using var key = Registry.CurrentUser.CreateSubKey(KeyPath);
         key.SetValue("Camera", Camera);
+        key.SetValue("CameraId", CameraId);
+        key.SetValue("LastWidth", (int)LastWidth, RegistryValueKind.DWord);
+        key.SetValue("LastHeight", (int)LastHeight, RegistryValueKind.DWord);
         key.SetValue("Width", (int)Width, RegistryValueKind.DWord);
         key.SetValue("Height", (int)Height, RegistryValueKind.DWord);
         key.SetValue("FpsMilli", (int)FpsMilli, RegistryValueKind.DWord);

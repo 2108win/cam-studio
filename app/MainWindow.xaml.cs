@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
     private int _statusTicks;
     private List<string> _consumers = new();
     private EngineState _lastState = EngineState.Stopped;
+    private DateTime _cameraRetryAt = DateTime.MaxValue; // re-register the camera after a failure
 
     // Preview: the engine writes straight into the bitmap's pixel buffer.
     private WriteableBitmap? _bitmap;
@@ -75,7 +76,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        int hr = Engine.cs_init();
+        // Started with Windows (--tray): look for phones only after 20 s, so the PC boots first.
+        // The camera itself is registered at once (cheap).
+        int hr = Engine.cs_init_delayed(options.Tray ? 20000 : 0);
         if (hr < 0) throw new InvalidOperationException($"Engine init failed 0x{hr:X8}");
         Engine.cs_set_output_size(_settings.OutputSize);
 
@@ -104,24 +107,38 @@ public sealed partial class MainWindow : Window
         InitAsync(options);
     }
 
-    // Phones connect over the network, so loading the source list is async.
+    // The virtual camera exists from launch until the app exits, with or without a source:
+    // with none, apps that open it see "no signal". A source feeds it as soon as there is one
+    // (MaybeAutoPick, on every status tick: phones are found and connected in the background).
     private async void InitAsync(LaunchOptions options)
     {
-        string? want = options.Device ?? _settings.Camera;
-        // Phones on Wi‑Fi take a few seconds to be discovered: if the wanted
-        // camera is not listed yet, wait for it (up to ~6 s) before settling.
-        for (int attempt = 0; attempt < 6 && !string.IsNullOrEmpty(want); attempt++)
-        {
-            int count = Engine.cs_refresh_cameras();
-            bool found = false;
-            for (int i = 0; i < count && !found; i++)
-                found = Engine.CameraName(i).Contains(want, StringComparison.OrdinalIgnoreCase);
-            if (found) break;
-            await System.Threading.Tasks.Task.Delay(1000);
-        }
-        await RefreshCamerasAsync(want);
-        if ((options.Device is not null || options.Tray) && _camera >= 0 && _format >= 0) StartCapture();
+        Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight); // the last size: no rebuild later
+        SetToggleQuietly(true); // the picture is on: the first source feeds it
         CameraMenu.Opening += (_, _) => RefreshCameraList();
+        if (options.Device is { } want)
+        {
+            // --device: that camera. A phone on Wi‑Fi takes a few seconds to be found.
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                int count = Engine.cs_refresh_cameras();
+                bool found = false;
+                for (int i = 0; i < count && !found; i++)
+                    found = Engine.CameraName(i).Contains(want, StringComparison.OrdinalIgnoreCase);
+                if (found) break;
+                await System.Threading.Tasks.Task.Delay(1000);
+            }
+            await RefreshCamerasAsync(want);
+            if (_camera >= 0 && _format >= 0) StartCapture();
+            return;
+        }
+        // The source picked last, else the best there is now; a better one may follow.
+        _autoPick = true;
+        ReadCameraList();
+        BuildCameraMenu();
+        UpdateSourceRow();
+        if (BestSource() < 0) CameraButtonText.Text = "Đang tìm nguồn hình…";
+        var s = Engine.GetStatus();
+        AutoPickAsync(none: true, lost: false, consumer: s.ConsumerActive != 0);
     }
 
     // Cheap refresh when the camera menu opens: new phones show up without
@@ -283,7 +300,7 @@ public sealed partial class MainWindow : Window
         }
         items.AddRange(new List<TrayIcon.MenuItem?>
         {
-            new(running ? "Tắt camera ảo" : "Bật camera ảo", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = !running)),
+            new(running ? "Tạm dừng hình (camera ảo vẫn có)" : "Phát hình", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = !running)),
             new("Lật ngang", () => DispatcherQueue.TryEnqueue(() => { MirrorButton.IsChecked = !_settings.Mirror; Mirror_Click(this, new RoutedEventArgs()); }), Checked: _settings.Mirror),
             null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
@@ -759,6 +776,7 @@ public sealed partial class MainWindow : Window
     private async void OnCameraPicked(int camera)
     {
         if (camera < 0 || camera >= _cameras.Count || (camera == _camera && _windowSource is null)) return;
+        _autoPick = false; // the user's choice: kept, never replaced by a "better" one
         int previous = _camera;
         var previousWindow = _windowSource;
         bool wasCapturing = IsCapturing;
@@ -798,13 +816,27 @@ public sealed partial class MainWindow : Window
     private void SaveSourceAndRestart()
     {
         SaveSource();
-        if (IsCapturing) SwitchCapture(); // apply right away, keeping the virtual camera
+        // Apply right away (unless the picture is turned off), keeping the virtual camera.
+        if (!_paused) StartCapture();
     }
 
     // ---- Capture -----------------------------------------------------------------
 
-    private bool IsCapturing => (EngineState)Engine.GetStatus().State is EngineState.Running or EngineState.Starting or EngineState.Waiting;
+    // A source feeds the camera (it may be waiting for that source to come back).
+    private bool IsCapturing
+    {
+        get
+        {
+            var s = Engine.GetStatus();
+            return ((EngineState)s.State is EngineState.Running or EngineState.Starting or EngineState.Waiting) && s.NoSource == 0;
+        }
+    }
 
+    // The virtual camera is registered (with or without a source).
+    private bool EngineUp => (EngineState)Engine.GetStatus().State is not (EngineState.Stopped or EngineState.Failed);
+
+    // Feeds the camera from the selected source. The camera is already up (it lives as long as
+    // the app): this switches, without taking it down.
     private void StartCapture()
     {
         if (_windowSource is { } window)
@@ -814,8 +846,21 @@ public sealed partial class MainWindow : Window
         }
         if (_camera < 0 || _format < 0)
         {
-            ShowError("Chưa có camera. Cắm camera rồi chọn \"Tìm lại camera\".");
-            SetToggleQuietly(false);
+            // Nothing picked yet: take the best source there is, now or when one turns up.
+            _autoPick = true;
+            int best = BestSource();
+            if (best >= 0)
+            {
+                AutoPickAsync(none: true, lost: false, consumer: false);
+                return;
+            }
+            ShowWaiting("Chưa có nguồn hình: cắm webcam, hoặc mở app Cam Studio trên điện thoại");
+            return;
+        }
+        if (EngineUp)
+        {
+            SwitchCapture();
+            SetToggleQuietly(true);
             return;
         }
         ErrorBar.IsOpen = false;
@@ -841,9 +886,10 @@ public sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
+    // The picture off: the source closes, the camera stays (apps keep it and see "no signal").
     private void StopCapture()
     {
-        Engine.cs_stop();
+        Engine.cs_switch_none(0, 0);
         ClearPreview();
         SetToggleQuietly(false);
         UpdateStatus();
@@ -852,6 +898,7 @@ public sealed partial class MainWindow : Window
     private void VcamToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
+        _paused = !VcamToggle.IsOn;
         if (VcamToggle.IsOn) StartCapture();
         else StopCapture();
     }
@@ -1232,18 +1279,19 @@ public sealed partial class MainWindow : Window
     {
         var s = Engine.GetStatus();
         var state = (EngineState)s.State;
-        bool running = state == EngineState.Running;
+        bool running = state == EngineState.Running && s.NoSource == 0;
         _statusTicks++;
 
         if (state != _lastState)
         {
             if (state == EngineState.Failed)
             {
+                // The camera itself could not be registered (a source failing never ends it).
                 string error = s.ErrorText;
                 ShowError(error);
                 Engine.cs_stop(); // join the finished worker
                 ClearPreview();
-                SetToggleQuietly(false);
+                _cameraRetryAt = DateTime.UtcNow.AddSeconds(10);
                 if (_isPhone && _lensSwitchFrom >= 0)
                     DispatcherQueue.TryEnqueue(() => RevertLensSwitch(error));
             }
@@ -1263,6 +1311,22 @@ public sealed partial class MainWindow : Window
             if (state is EngineState.Stopped) ClearPreview();
             _lastState = state;
         }
+        // The camera lives as long as the app: after a failure, register it again now and then
+        // (an app may have let go of the old one).
+        if (state == EngineState.Stopped && !_exiting && DateTime.UtcNow >= _cameraRetryAt)
+        {
+            _cameraRetryAt = DateTime.UtcNow.AddSeconds(30);
+            if (!_paused && (_camera >= 0 && _format >= 0 || _windowSource is not null)) StartCapture();
+            else Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
+        }
+        // Remember the camera's size: next launch publishes it at that size before any source.
+        if (running && s.Width > 0 && (s.Width != _settings.LastWidth || s.Height != _settings.LastHeight))
+        {
+            _settings.LastWidth = s.Width;
+            _settings.LastHeight = s.Height;
+            _settings.Save();
+        }
+        MaybeAutoPick(s);
         // While waiting the reason can change (app hidden -> phone unreachable…).
         if (state == EngineState.Waiting && _lensSwitchFrom < 0) ShowWaiting(s.ErrorText);
         // A phone says "started" before the camera has really opened: only
@@ -1272,6 +1336,9 @@ public sealed partial class MainWindow : Window
         (string text, string pill, Color dot) = state switch
         {
             EngineState.Starting => ("Đang khởi động…", "Đang khởi động", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
+            // Always there for apps; with no source they see "no signal".
+            EngineState.Running when s.NoSource != 0 && _paused => ("Đã tạm dừng · ứng dụng thấy “không có tín hiệu”", "Đã tạm dừng hình", Color.FromArgb(255, 0x8A, 0x8A, 0x8A)),
+            EngineState.Running when s.NoSource != 0 => ("Chưa có nguồn hình · ứng dụng thấy “không có tín hiệu”", "Đang chờ nguồn hình", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
             // Standby: the camera is there for apps, the source sleeps until one opens it.
             EngineState.Running when s.Standby != 0 => ($"Sẵn sàng · chờ ứng dụng dùng · {s.Width} × {s.Height}", "Sẵn sàng (nguồn đang nghỉ, tự bật khi có ứng dụng dùng)", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
             EngineState.Running when s.ConsumerActive != 0 => ($"Đang được dùng · {s.Width} × {s.Height}", "Đang được dùng", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
@@ -1295,9 +1362,11 @@ public sealed partial class MainWindow : Window
         {
             EngineState.Starting => "Đang khởi động camera…",
             EngineState.Waiting => "Đang chờ nguồn hình… Camera ảo vẫn bật",
-            _ => "Camera ảo đang tắt",
+            EngineState.Running when s.NoSource != 0 && _paused => "Đã tạm dừng hình. Camera ảo vẫn có trong các ứng dụng",
+            EngineState.Running when s.NoSource != 0 => "Đang chờ nguồn hình… Camera ảo vẫn có trong các ứng dụng",
+            _ => "Camera ảo chưa chạy",
         };
-        PlaceholderStart.Visibility = running || state is EngineState.Starting or EngineState.Waiting ? Visibility.Collapsed : Visibility.Visible;
+        PlaceholderStart.Visibility = _paused || state is EngineState.Stopped or EngineState.Failed ? Visibility.Visible : Visibility.Collapsed;
 
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.

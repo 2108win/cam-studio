@@ -194,6 +194,8 @@ public sealed partial class MainWindow
     // The window becomes the camera's source at once (the camera is turned on if it was off).
     private void OnWindowPicked(long handle, string title)
     {
+        _autoPick = false;
+        _paused = false;
         int id = Engine.SwitchWindow(handle, CurrentImage());
         if (id < 0)
         {
@@ -292,6 +294,114 @@ public sealed partial class MainWindow
         }
     }
 
+    // ---- Picking a source by itself ---------------------------------------------------------------
+    //
+    // The virtual camera is there from launch until the app exits. With no source it shows "no
+    // signal"; a source feeds it as soon as there is one: the one the user picked last, else a
+    // phone (cable, then Wi‑Fi), a USB webcam, the camera built into the PC.
+
+    private bool _autoPick;    // the source was chosen automatically: a better one may take over
+    private bool _paused;      // the user turned the picture off: the camera shows "no signal"
+    private bool _picking;
+    private bool _lastConsumer;
+    private DateTime _waitingSince = DateTime.MaxValue;
+    private readonly Dictionary<string, bool> _builtIn = new(); // webcam id -> built into the PC
+
+    // Lower is better; -1: not usable right now.
+    private int Priority(int cam)
+    {
+        if (cam < 0 || cam >= _ids.Count || _kinds[cam] == 2) return -1; // screens open in a window
+        if (_kinds[cam] == 1 && Engine.CameraState(cam, out _) != LinkState.Connected) return -1;
+        bool saved = _settings.CameraId.Length > 0 ? _ids[cam] == _settings.CameraId : _cameras[cam] == _settings.Camera;
+        if (saved) return 0;
+        if (_kinds[cam] == 1) return _ids[cam].StartsWith("phone:usb:", StringComparison.Ordinal) ? 1 : 2;
+        return IsBuiltIn(cam) ? 4 : 3;
+    }
+
+    private int BestSource()
+    {
+        int best = -1, bestPriority = int.MaxValue;
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            int p = Priority(i);
+            if (p >= 0 && p < bestPriority) (best, bestPriority) = (i, p);
+        }
+        return best;
+    }
+
+    private bool IsBuiltIn(int cam)
+    {
+        string id = _ids[cam];
+        if (_builtIn.TryGetValue(id, out bool known)) return known;
+        _builtIn[id] = false; // until the lookup below answers
+        DetectBuiltIn(id);
+        return false;
+    }
+
+    // Cameras built into the PC say which side of it they are on; USB webcams do not.
+    private async void DetectBuiltIn(string id)
+    {
+        if (!id.StartsWith("cam:", StringComparison.Ordinal)) return;
+        try
+        {
+            var info = await Windows.Devices.Enumeration.DeviceInformation.CreateFromIdAsync(id["cam:".Length..]);
+            _builtIn[id] = info.EnclosureLocation is { } where && where.Panel != Windows.Devices.Enumeration.Panel.Unknown;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    // The status tick (also while hidden in the tray): phones came or went, an app opened the
+    // camera while it has no source, or the source has been lost for a while.
+    private void MaybeAutoPick(CsStatus s)
+    {
+        var state = (EngineState)s.State;
+        _waitingSince = state == EngineState.Waiting ? (_waitingSince == DateTime.MaxValue ? DateTime.UtcNow : _waitingSince) : DateTime.MaxValue;
+        if (!_autoPick || _paused || _picking || _exiting) return;
+        bool consumer = s.ConsumerActive != 0;
+        bool woke = consumer && !_lastConsumer && s.NoSource != 0; // an app opened the camera: look again
+        _lastConsumer = consumer;
+        bool changed = Engine.cs_sources_generation() != _sourcesGeneration;
+        if (changed || woke)
+        {
+            ReadCameraList();
+            UpdateSourceRow();
+        }
+        bool lost = DateTime.UtcNow - _waitingSince > TimeSpan.FromSeconds(10);
+        bool none = s.NoSource != 0 || state is EngineState.Stopped or EngineState.Failed;
+        if (changed || woke || none || lost) AutoPickAsync(none, lost, consumer);
+    }
+
+    // none: nothing feeds the camera (no source yet); lost: the source has been gone for more
+    // than 10 s. Then any usable source will do, even during a call.
+    private async void AutoPickAsync(bool none, bool lost, bool consumer)
+    {
+        if (!_autoPick || _paused || _picking || _exiting) return;
+        int best = BestSource();
+        // The lost source itself is still the best: the engine keeps retrying it.
+        if (best < 0 || (best == _camera && !none)) return;
+        bool noSource = none || lost;
+        if (!noSource)
+        {
+            // A better source than the one picked automatically: only while no app uses the
+            // camera, never in the middle of a call.
+            if (consumer) return;
+            int current = Priority(_camera);
+            if (current >= 0 && current <= Priority(best)) return;
+        }
+        _picking = true;
+        try
+        {
+            await SelectCameraAsync(best);
+            if (_camera == best && _format >= 0 && _autoPick && !_paused) StartCapture();
+        }
+        finally
+        {
+            _picking = false;
+        }
+    }
+
     // ---- Moving the virtual camera ------------------------------------------------------------
 
     // The camera is on: move it to the selected source and mode, keeping it registered.
@@ -328,6 +438,7 @@ public sealed partial class MainWindow
         _settings.Width = native ? 0 : f.Width;
         _settings.Height = native ? 0 : f.Height;
         _settings.FpsMilli = native ? 0 : (uint)Math.Round(f.Fps * 1000);
+        _settings.CameraId = _ids[_camera];
         _settings.Modes[_ids[_camera]] = $"{f.LensText}|{_settings.Width}|{_settings.Height}|{_settings.FpsMilli}";
         _settings.Save();
     }

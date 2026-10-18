@@ -24,6 +24,12 @@ constexpr ULONGLONG kConsumerGraceMs = 5000;
 // it is still opening). After that, or once the source is reported lost, apps show "no signal".
 constexpr uint32_t kHoldMs = 10000;
 
+// "No source": nothing to open (CaptureEngine::Switch with an empty CameraDevice).
+bool IsNoSource(const CameraDevice& cam)
+{
+    return !cam.IsPhone() && !cam.IsPcWindow() && !cam.activate;
+}
+
 double QpcMs()
 {
     static const double freq = [] {
@@ -708,6 +714,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                 m_status.framesCaptured = m_status.framesDropped = 0;
                 m_status.fps = 0;
                 m_status.error.clear();
+                m_status.noSource = IsNoSource(cam);
                 if (m_status.state == State::Waiting) m_status.state = pipeline.Live() ? State::Running : State::Starting;
                 webcam = cam;
                 lost = false;
@@ -717,6 +724,41 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             if (stuck)
             {
                 for (int i = 0; i < 2 && !Interrupted(); ++i) Sleep(100);
+                continue;
+            }
+
+            if (IsNoSource(cam))
+            {
+                // No source (none found yet, or the picture is turned off): the camera stays
+                // registered, at the size it has, and apps that use it see "no signal". Only
+                // whether an app streams from it is watched (the app looks for a source then).
+                if (!pipeline.Live())
+                {
+                    const HRESULT hr = pipeline.Begin(format.width, format.height, format.fpsNum, format.fpsDen, MFVideoFormat_NV12);
+                    if (FAILED(hr)) { Fail(pipeline.Failure(), hr); break; }
+                }
+                pipeline.ReleaseHold();
+                SetStandby(false);
+                {
+                    std::lock_guard lk(m_lock);
+                    m_status.noSource = true;
+                    m_status.state = State::Running;
+                    m_status.error.clear();
+                    m_status.fps = 0;
+                }
+                Notify();
+                while (!Interrupted())
+                {
+                    const bool consumer = pipeline.ConsumerActive();
+                    bool changed = false;
+                    {
+                        std::lock_guard lk(m_lock);
+                        changed = m_status.consumerActive != consumer;
+                        m_status.consumerActive = consumer;
+                    }
+                    if (changed) Notify();
+                    Sleep(200);
+                }
                 continue;
             }
 
@@ -777,12 +819,17 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                 Fail(pipeline.Failure(), hr);
                 break;
             }
-            // Before the virtual camera exists there is nothing to keep alive:
-            // report the problem (wrong lens, camera busy…) as before.
+            // The camera lives as long as the app, so a source that fails before it was ever
+            // published publishes it anyway (apps see "no signal") and is waited for like a
+            // source lost later. Only the camera itself failing ends the session.
             if (!pipeline.Live())
             {
-                Fail(why, hr);
-                break;
+                const HRESULT bhr = pipeline.Begin(format.width, format.height, format.fpsNum, format.fpsDen, format.subtype);
+                if (FAILED(bhr))
+                {
+                    Fail(pipeline.Failure(), bhr);
+                    break;
+                }
             }
             pipeline.ReleaseHold();
             Wait(why, hr);

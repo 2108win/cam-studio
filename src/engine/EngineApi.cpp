@@ -167,6 +167,11 @@ const phone::Endpoint& EndpointOf(int32_t camera)
 
 CS_API int32_t cs_init()
 {
+    return cs_init_delayed(0);
+}
+
+CS_API int32_t cs_init_delayed(int32_t delayMs)
+{
     std::lock_guard lk(g_lock);
     if (g_initCount++ == 0)
     {
@@ -179,8 +184,8 @@ CS_API int32_t cs_init()
         g_engine = std::make_unique<CaptureEngine>();
         if (!g_connector) g_connector = new phone::Connector; // lives until the process ends
         phone::SetOnChange([] { g_connector->Wake(); });
-        phone::StartDiscovery();
-        g_connector->Start();
+        // Discovery starts on the connector's thread, after the delay (it may start adb).
+        g_connector->Start(static_cast<uint32_t>(std::max(0, delayMs)), [] { phone::StartDiscovery(); });
     }
     return S_OK;
 }
@@ -472,6 +477,24 @@ CS_API int32_t cs_switch(int32_t camera, int32_t format, const CsImage* image)
     return StartOrSwitch(camera, format, image, true);
 }
 
+CS_API int32_t cs_switch_none(int32_t width, int32_t height)
+{
+    CaptureEngine* engine = nullptr;
+    {
+        std::lock_guard lk(g_lock);
+        if (!g_engine) return E_UNEXPECTED;
+        engine = g_engine.get();
+        g_streamingLink.reset();
+    }
+    NativeFormat fmt;
+    fmt.width = width >= 2 && width <= 7680 ? static_cast<UINT32>(width) & ~1u : 1920;
+    fmt.height = height >= 2 && height <= 7680 ? static_cast<UINT32>(height) & ~1u : 1080;
+    fmt.fpsNum = 30;
+    fmt.fpsDen = 1;
+    fmt.subtype = MFVideoFormat_NV12;
+    return static_cast<int32_t>(engine->Switch(CameraDevice{}, fmt) & 0x7FFFFFFF);
+}
+
 CS_API void cs_stop()
 {
     if (g_engine) g_engine->Stop();
@@ -512,6 +535,7 @@ CS_API void cs_get_status(CsStatus* out)
     out->pictureWidth = s.pictureWidth;
     out->pictureHeight = s.pictureHeight;
     out->sourceId = s.sourceId;
+    out->noSource = s.noSource ? 1 : 0;
     wcsncpy_s(out->error, s.error.c_str(), _TRUNCATE);
 }
 

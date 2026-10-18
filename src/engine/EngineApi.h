@@ -59,10 +59,14 @@ struct CsStatus
     uint32_t pictureWidth;    // the picture inside the output: smaller than width x height when
     uint32_t pictureHeight;   //   fitted with black bars (an app keeps the camera's size)
     uint32_t sourceId;        // which cs_start/cs_switch the frame counts belong to
+    int32_t noSource;         // the camera is up with no source (cs_switch_none): apps see "no signal"
     wchar_t error[256];
 };
 
 CS_API int32_t cs_init();
+// Same, but phones are looked for (discovery, the background connector) only after delayMs:
+// started with Windows, the app lets the PC boot first. The camera itself can start at once.
+CS_API int32_t cs_init_delayed(int32_t delayMs);
 CS_API void cs_shutdown();
 
 // Cameras: webcams, then phones (found on Wi‑Fi, added by IP, or on a USB
@@ -120,6 +124,10 @@ CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image);
 // Same arguments and result as cs_start.
 CS_API int32_t cs_switch(int32_t camera, int32_t format, const CsImage* image);
 CS_API void cs_stop();
+// No source: the virtual camera stays registered (published at width x height if it is not up
+// yet) and apps using it see "no signal". The camera's lifetime is the app's: the app starts it
+// at launch with no source and moves it from source to source with cs_switch.
+CS_API int32_t cs_switch_none(int32_t width, int32_t height);
 
 // Live picture settings. Returns 1 when the picture changes shape (the camera then follows
 // the output size rule: a new size while no app uses it, otherwise fitted with bars).

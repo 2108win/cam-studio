@@ -15,6 +15,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -43,7 +44,9 @@ class Connector
 public:
     ~Connector() { Stop(); }
 
-    void Start();
+    // delayMs: the first look waits this long (started with Windows: let it boot first);
+    // beforeFirst runs on the connector's thread just before it (starts discovery).
+    void Start(uint32_t delayMs = 0, std::function<void()> beforeFirst = nullptr);
     void Stop();
     // After Stop(): forgets every phone, closing the idle links.
     void Clear();
@@ -70,7 +73,7 @@ private:
         unsigned drops = 0;          // connections lost in a row (each one doubles the wait)
     };
 
-    void Run();
+    void Run(uint32_t delayMs, std::function<void()> beforeFirst);
     void Service(const std::string& key);
     void Drain(PhoneLink& link);
     void Attempt(const std::string& key, const Endpoint& e, PhoneLink& link);

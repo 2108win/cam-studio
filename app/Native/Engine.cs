@@ -65,6 +65,7 @@ public unsafe struct CsStatus
     public uint PictureWidth; // the picture inside the output (smaller when fitted with black bars)
     public uint PictureHeight;
     public uint SourceId;     // which Start/Switch the frame counts belong to
+    public int NoSource;      // the camera is up with no source (cs_switch_none): apps see "no signal"
     public fixed char Error[256];
 
     public readonly string ErrorText
@@ -102,6 +103,8 @@ internal static unsafe partial class Engine
     private const string Dll = "CamStudioEngine.dll";
 
     [LibraryImport(Dll)] public static partial int cs_init();
+    [LibraryImport(Dll)] public static partial int cs_init_delayed(int delayMs);
+    [LibraryImport(Dll)] public static partial int cs_switch_none(int width, int height);
     [LibraryImport(Dll)] public static partial void cs_shutdown();
     [LibraryImport(Dll)] public static partial int cs_refresh_cameras();
     [LibraryImport(Dll)] public static partial int cs_camera_name(int camera, char* buffer, int capacity);
