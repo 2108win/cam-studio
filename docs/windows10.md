@@ -42,5 +42,6 @@ App WinUI: `TargetPlatformMinVersion` 10.0.19041.0.
 - Chỉ Windows 64-bit (x64), phiên bản 2004 (19041) trở lên. Windows 10 32-bit không được hỗ trợ.
 - Windows on ARM: chưa; camera ảo của Windows 11 đòi DLL ARM64 (Frame Server là tiến trình ARM64).
 - Nguồn "Cửa sổ trên máy tính" cần Windows 10 1903 trở lên (Windows.Graphics.Capture).
-- Chưa thử trên máy Windows 10 thật; trên Windows 11 đã thử bằng `CAMSTUDIO_FORCE_DSHOW=1` và
+- Đã đăng trong v0.1.6 (installer dựng trên máy này, đã cài trên PC Windows 11 của người dùng).
+  Chưa thử trên máy Windows 10 thật; trên Windows 11 đã thử bằng `CAMSTUDIO_FORCE_DSHOW=1` và
   `camstudio-dshow-consumer` (xem CLAUDE.md).
