@@ -320,7 +320,9 @@ public sealed partial class MainWindow
     {
         if (cam < 0 || cam >= _ids.Count || _kinds[cam] == 2) return -1; // screens open in a window
         if (_pickFailedUntil.TryGetValue(_ids[cam], out var until) && DateTime.UtcNow < until) return -1;
-        if (_kinds[cam] == 1 && Engine.CameraState(cam, out _) != LinkState.Connected) return -1;
+        // Elsewhere: this PC holds the phone the other way (Wi‑Fi / cable), so it can switch over;
+        // e.g. launched before adb saw the cable, then the cable the user picked last turns up.
+        if (_kinds[cam] == 1 && Engine.CameraState(cam, out _) is not (LinkState.Connected or LinkState.Elsewhere)) return -1;
         bool saved = _settings.CameraId.Length > 0 ? _ids[cam] == _settings.CameraId : _cameras[cam] == _settings.Camera;
         if (saved) return 0;
         if (_kinds[cam] == 1) return _ids[cam].StartsWith("phone:usb:", StringComparison.Ordinal) ? 1 : 2;
