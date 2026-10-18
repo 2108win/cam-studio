@@ -23,11 +23,14 @@ public sealed partial class MainWindow
     private int _expectSourceId;                   // the engine source a lens switch waits for
     private readonly Dictionary<string, ScreenWindow> _screenWindows = new(); // by source id
     private (long Handle, string Title)? _windowSource;  // a window on this PC is the camera's source
+    // The selected source by id. _camera is its index in the latest list, or -1 while it is not
+    // listed (phone app hidden, cable out): it is found again when it comes back.
+    private string? _selectedId;
 
-    // Reads the engine's list into _cameras/_ids/_kinds and finds the current source again by id.
+    // Reads the engine's list into _cameras/_ids/_kinds and finds the selected source again by id.
     private void ReadCameraList()
     {
-        string? currentId = _camera >= 0 && _camera < _ids.Count ? _ids[_camera] : null;
+        string? currentId = _selectedId;
         _cameras.Clear();
         _ids.Clear();
         _kinds.Clear();
@@ -196,6 +199,7 @@ public sealed partial class MainWindow
     {
         _autoPick = false;
         _paused = false;
+        _selectedId = null;
         int id = Engine.SwitchWindow(handle, CurrentImage());
         if (id < 0)
         {
@@ -286,6 +290,7 @@ public sealed partial class MainWindow
     private IEnumerable<TrayIcon.MenuItem> TraySourceItems()
     {
         ReadCameraList(); // the window may have been hidden a long time
+        UpdateSourceRow();
         foreach (int cam in QuickSources())
         {
             int pick = cam;
@@ -305,12 +310,16 @@ public sealed partial class MainWindow
     private bool _picking;
     private bool _lastConsumer;
     private DateTime _waitingSince = DateTime.MaxValue;
+    private DateTime _lostRefresh;
     private readonly Dictionary<string, bool> _builtIn = new(); // webcam id -> built into the PC
+    // Sources whose formats did not load when picked automatically: not tried again before then.
+    private readonly Dictionary<string, DateTime> _pickFailedUntil = new();
 
     // Lower is better; -1: not usable right now.
     private int Priority(int cam)
     {
         if (cam < 0 || cam >= _ids.Count || _kinds[cam] == 2) return -1; // screens open in a window
+        if (_pickFailedUntil.TryGetValue(_ids[cam], out var until) && DateTime.UtcNow < until) return -1;
         if (_kinds[cam] == 1 && Engine.CameraState(cam, out _) != LinkState.Connected) return -1;
         bool saved = _settings.CameraId.Length > 0 ? _ids[cam] == _settings.CameraId : _cameras[cam] == _settings.Camera;
         if (saved) return 0;
@@ -318,11 +327,13 @@ public sealed partial class MainWindow
         return IsBuiltIn(cam) ? 4 : 3;
     }
 
-    private int BestSource()
+    // except: a source not to consider (the lost one).
+    private int BestSource(int except = -1)
     {
         int best = -1, bestPriority = int.MaxValue;
         for (int i = 0; i < _cameras.Count; i++)
         {
+            if (i == except) continue;
             int p = Priority(i);
             if (p >= 0 && p < bestPriority) (best, bestPriority) = (i, p);
         }
@@ -345,7 +356,11 @@ public sealed partial class MainWindow
         try
         {
             var info = await Windows.Devices.Enumeration.DeviceInformation.CreateFromIdAsync(id["cam:".Length..]);
-            _builtIn[id] = info.EnclosureLocation is { } where && where.Panel != Windows.Devices.Enumeration.Panel.Unknown;
+            bool builtIn = info.EnclosureLocation is { } where && where.Panel != Windows.Devices.Enumeration.Panel.Unknown;
+            _builtIn[id] = builtIn;
+            // Picked while this was unknown: a USB webcam may be the better choice now.
+            if (builtIn && _autoPick && _selectedId == id)
+                AutoPickAsync(none: false, lost: false, consumer: Engine.GetStatus().ConsumerActive != 0);
         }
         catch (Exception)
         {
@@ -359,17 +374,24 @@ public sealed partial class MainWindow
         var state = (EngineState)s.State;
         _waitingSince = state == EngineState.Waiting ? (_waitingSince == DateTime.MaxValue ? DateTime.UtcNow : _waitingSince) : DateTime.MaxValue;
         if (!_autoPick || _paused || _picking || _exiting) return;
+        // A switch asked for and not taken over yet (the engine's status lags up to 200 ms).
+        if (_expectSourceId != 0 && s.SourceId != _expectSourceId) return;
+        // The camera itself failed: it is registered again by the retry in UpdateStatus.
+        if (state is EngineState.Stopped or EngineState.Failed) return;
         bool consumer = s.ConsumerActive != 0;
         bool woke = consumer && !_lastConsumer && s.NoSource != 0; // an app opened the camera: look again
         _lastConsumer = consumer;
         bool changed = Engine.cs_sources_generation() != _sourcesGeneration;
-        if (changed || woke)
+        bool lost = DateTime.UtcNow - _waitingSince > TimeSpan.FromSeconds(10);
+        // Webcams plugged or unplugged do not change the generation: look every 5 s while lost.
+        bool relist = lost && DateTime.UtcNow - _lostRefresh > TimeSpan.FromSeconds(5);
+        if (relist) _lostRefresh = DateTime.UtcNow;
+        if (changed || woke || relist)
         {
             ReadCameraList();
             UpdateSourceRow();
         }
-        bool lost = DateTime.UtcNow - _waitingSince > TimeSpan.FromSeconds(10);
-        bool none = s.NoSource != 0 || state is EngineState.Stopped or EngineState.Failed;
+        bool none = s.NoSource != 0;
         if (changed || woke || none || lost) AutoPickAsync(none, lost, consumer);
     }
 
@@ -378,8 +400,8 @@ public sealed partial class MainWindow
     private async void AutoPickAsync(bool none, bool lost, bool consumer)
     {
         if (!_autoPick || _paused || _picking || _exiting) return;
-        int best = BestSource();
-        // The lost source itself is still the best: the engine keeps retrying it.
+        // A lost source is not a candidate; otherwise the current one may stay.
+        int best = BestSource(except: lost ? _camera : -1);
         if (best < 0 || (best == _camera && !none)) return;
         bool noSource = none || lost;
         if (!noSource)
@@ -391,10 +413,18 @@ public sealed partial class MainWindow
             if (current >= 0 && current <= Priority(best)) return;
         }
         _picking = true;
+        string bestId = _ids[best];
         try
         {
             await SelectCameraAsync(best);
-            if (_camera == best && _format >= 0 && _autoPick && !_paused) StartCapture();
+            if (_selectedId != bestId || !_autoPick || _paused) return; // something else was picked meanwhile
+            if (_format < 0)
+            {
+                // Held by another app, or no usable mode: try others, this one again in 30 s.
+                _pickFailedUntil[bestId] = DateTime.UtcNow.AddSeconds(30);
+                return;
+            }
+            StartCapture();
         }
         finally
         {

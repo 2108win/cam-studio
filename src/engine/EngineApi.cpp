@@ -28,6 +28,7 @@ std::vector<int32_t> g_kinds;                      // 0 webcam, 1 phone camera, 
 std::vector<phone::Endpoint> g_endpoints;          // parallel to phone entries in g_cameras
 std::vector<FormatOption> g_formats;
 std::wstring g_formatsId;                          // whose formats g_formats are
+std::atomic<uint32_t> g_formatsRequest{ 0 };       // the newest cs_load_formats call
 std::string g_phoneCaps;
 std::wstring g_lastError;
 std::wstring g_pairingCode;
@@ -294,6 +295,8 @@ CS_API int32_t cs_load_formats(int32_t camera)
     CameraDevice cam;
     phone::Endpoint endpoint;
     std::wstring id;
+    // A phone's load can take long (pairing): a newer call (another camera picked meanwhile) wins.
+    const uint32_t request = ++g_formatsRequest;
     {
         std::lock_guard lk(g_lock);
         if (!ValidCamera(camera)) return E_INVALIDARG;
@@ -389,10 +392,12 @@ CS_API int32_t cs_load_formats(int32_t camera)
     }
 
     std::lock_guard lk(g_lock);
+    const int32_t count = static_cast<int32_t>(formats.size());
+    if (request != g_formatsRequest) return count; // superseded: the newer call's table stays
     g_formats = std::move(formats);
     g_formatsId = id;
     g_phoneCaps = capsText;
-    return static_cast<int32_t>(g_formats.size());
+    return count;
 }
 
 CS_API int32_t cs_get_format(int32_t index, CsFormat* format)

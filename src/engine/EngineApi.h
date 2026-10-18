@@ -100,7 +100,8 @@ CS_API uint32_t cs_sources_generation();
 // Reads a camera's formats (best first). For phones the connector usually has them already
 // (instant); otherwise this connects and, the first time, pairs: poll cs_pairing_code
 // meanwhile. Blocking; call it off the UI thread. Returns the count, or <0 (HRESULT) on error;
-// the message is then in cs_last_error.
+// the message is then in cs_last_error. Only the newest call replaces the table that
+// cs_get_format reads (an older one still loading when another camera is picked is dropped).
 CS_API int32_t cs_load_formats(int32_t camera);
 CS_API int32_t cs_get_format(int32_t index, CsFormat* format);
 CS_API int32_t cs_last_error(wchar_t* buffer, int32_t capacity);

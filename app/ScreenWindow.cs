@@ -32,7 +32,7 @@ public sealed unsafe partial class ScreenWindow : Window
         TextAlignment = TextAlignment.Center,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(24),
-        Text = "Đang kết nối điện thoại…",
+        Text = "Đang kết nối điện thoại…\nChuột phải vào cửa sổ: luôn nằm trên cùng",
     };
     private readonly DispatcherQueueTimer _timer;
     private readonly WndProcDelegate _wndProc; // kept alive for the window's lifetime
@@ -59,8 +59,7 @@ public sealed unsafe partial class ScreenWindow : Window
             if (AppWindow.Presenter is OverlappedPresenter p) p.IsAlwaysOnTop = onTop.IsChecked;
         };
         menu.Items.Add(onTop);
-        _root.ContextFlyout = menu;
-        ToolTipService.SetToolTip(_root, "Chuột phải: luôn nằm trên cùng");
+        _root.ContextFlyout = menu; // no tooltip: it would show inside the window a meeting app shares
         _root.SizeChanged += (_, _) => SendSize();
         Content = _root;
 
@@ -130,7 +129,7 @@ public sealed unsafe partial class ScreenWindow : Window
         _image.Opacity = state == 2 ? 1 : 0.35;
         _status.Text = state switch
         {
-            1 => "Đang kết nối điện thoại…",
+            1 => "Đang kết nối điện thoại…\nChuột phải vào cửa sổ: luôn nằm trên cùng",
             3 => error.Length > 0 ? error + "\nĐang thử lại…" : "Đang chờ điện thoại…",
             _ => _status.Text,
         };
@@ -173,7 +172,7 @@ public sealed unsafe partial class ScreenWindow : Window
             KeepAspect((int)wParam, (RECT*)lParam);
             return 1;
         }
-        return CallWindowProcW(_oldWndProc, hwnd, msg, wParam, lParam);
+        return _oldWndProc != 0 ? CallWindowProcW(_oldWndProc, hwnd, msg, wParam, lParam) : DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     // The edge being dragged sets the size; the opposite edges stay where they are.
@@ -196,6 +195,7 @@ public sealed unsafe partial class ScreenWindow : Window
 
     [LibraryImport("user32.dll")] private static partial nint SetWindowLongPtrW(nint hwnd, int index, nint value);
     [LibraryImport("user32.dll")] private static partial nint CallWindowProcW(nint proc, nint hwnd, uint msg, nint wParam, nint lParam);
+    [LibraryImport("user32.dll")] private static partial nint DefWindowProcW(nint hwnd, uint msg, nint wParam, nint lParam);
     [LibraryImport("user32.dll")] private static partial int GetWindowRect(nint hwnd, out RECT rect);
     [LibraryImport("user32.dll")] private static partial int GetClientRect(nint hwnd, out RECT rect);
     [LibraryImport("user32.dll")] private static partial uint GetDpiForWindow(nint hwnd);

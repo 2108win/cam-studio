@@ -59,6 +59,7 @@ public sealed partial class MainWindow : Window
     private List<string> _consumers = new();
     private EngineState _lastState = EngineState.Stopped;
     private DateTime _cameraRetryAt = DateTime.MaxValue; // re-register the camera after a failure
+    private bool _noSource = true;                        // the camera shows "no signal" (no source, or paused)
 
     // Preview: the engine writes straight into the bitmap's pixel buffer.
     private WriteableBitmap? _bitmap;
@@ -127,8 +128,7 @@ public sealed partial class MainWindow : Window
                 if (found) break;
                 await System.Threading.Tasks.Task.Delay(1000);
             }
-            await RefreshCamerasAsync(want);
-            if (_camera >= 0 && _format >= 0) StartCapture();
+            await RefreshCamerasAsync(want); // also starts it
             return;
         }
         // The source picked last, else the best there is now; a better one may follow.
@@ -271,11 +271,16 @@ public sealed partial class MainWindow : Window
     public void ExitApp()
     {
         _exiting = true;
+        Shutdown(); // Close() from code may not raise AppWindow.Closing
         Close();
     }
 
+    private bool _shutDown;
+
     private void Shutdown()
     {
+        if (_shutDown) return;
+        _shutDown = true;
         _previewTimer.Stop();
         _statusTimer.Stop();
         CloseScreenWindows();
@@ -285,7 +290,7 @@ public sealed partial class MainWindow : Window
 
     private IReadOnlyList<TrayIcon.MenuItem?> BuildTrayMenu()
     {
-        bool running = IsCapturing;
+        bool paused = _paused;
         var items = new List<TrayIcon.MenuItem?>
         {
             new("Mở Cam Studio", () => DispatcherQueue.TryEnqueue(ShowFromTray), IsDefault: true),
@@ -300,7 +305,7 @@ public sealed partial class MainWindow : Window
         }
         items.AddRange(new List<TrayIcon.MenuItem?>
         {
-            new(running ? "Tạm dừng hình (camera ảo vẫn có)" : "Phát hình", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = !running)),
+            new(paused ? "Phát hình" : "Tạm dừng hình (camera ảo vẫn có)", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = paused)),
             new("Lật ngang", () => DispatcherQueue.TryEnqueue(() => { MirrorButton.IsChecked = !_settings.Mirror; Mirror_Click(this, new RoutedEventArgs()); }), Checked: _settings.Mirror),
             null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
@@ -377,21 +382,35 @@ public sealed partial class MainWindow : Window
 
         string? want = !string.IsNullOrEmpty(prefer) ? prefer : current;
         int pick = _cameras.Count > 0 ? 0 : -1;
+        bool found = false;
         if (!string.IsNullOrEmpty(want))
         {
             int byName = _cameras.FindIndex(c => c.Equals(want, StringComparison.OrdinalIgnoreCase));
             if (byName < 0) byName = _cameras.FindIndex(c => c.Contains(want, StringComparison.OrdinalIgnoreCase));
             if (byName < 0 && int.TryParse(want, out int idx) && idx < _cameras.Count) byName = idx;
             if (byName >= 0) pick = byName;
+            found = byName >= 0;
         }
-        if (IsCapturing && pick != _camera) OnCameraPicked(pick); // e.g. a phone just added by IP
-        else await SelectCameraAsync(pick);
+        if (IsCapturing || (!found && _autoPick))
+        {
+            // Streaming: only a match moves it (e.g. a phone just added by IP). Picking by
+            // itself: the best source is found on the next status tick.
+            if (IsCapturing && found && pick != _camera) OnCameraPicked(pick);
+            BuildCameraMenu();
+            UpdateSourceRow();
+            return;
+        }
+        if (found) _autoPick = false; // the user's (or --device's) choice
+        await SelectCameraAsync(pick);
+        // The picture is on: feed the camera from it.
+        if (!_paused && _format >= 0 && !IsCapturing) StartCapture();
     }
 
     private async System.Threading.Tasks.Task SelectCameraAsync(int index)
     {
         _windowSource = null;
         _camera = index;
+        _selectedId = index >= 0 ? _ids[index] : null;
         _isPhone = index >= 0 && Engine.IsPhone(index);
         CameraButtonText.Text = index >= 0 ? _cameras[index] : "Không tìm thấy camera";
         BuildCameraMenu();
@@ -407,6 +426,9 @@ public sealed partial class MainWindow : Window
         SelectFormat(-1);
         int cam = _camera;
         if (cam < 0) return;
+        // The list may be re-read while this waits (status tick, menu): find the source by id after.
+        string id = _ids[cam];
+        string name = _cameras[cam];
 
         int n;
         if (_isPhone)
@@ -424,7 +446,7 @@ public sealed partial class MainWindow : Window
                 if (code.Length > 0 && pairing is null && !answered)
                 {
                     // Both sides must accept: the PC user answers here.
-                    pairing = PairingDialog(_cameras[cam], code);
+                    pairing = PairingDialog(name, code);
                     var shown = pairing;
                     _ = shown.ShowAsync().AsTask().ContinueWith(t =>
                     {
@@ -452,6 +474,8 @@ public sealed partial class MainWindow : Window
             n = Engine.cs_load_formats(cam);
         }
         if (generation != _loadGeneration) return; // another camera was picked meanwhile
+        cam = _ids.IndexOf(id);
+        if (cam < 0 || _selectedId != id) return;  // it left the list meanwhile
 
         if (n < 0)
         {
@@ -701,7 +725,8 @@ public sealed partial class MainWindow : Window
 
     private void UpdateOverlayVisibility()
     {
-        bool running = (EngineState)Engine.GetStatus().State == EngineState.Running;
+        var status = Engine.GetStatus();
+        bool running = (EngineState)status.State == EngineState.Running && status.NoSource == 0;
         // A phone keeps its lens chips while stopped, so a lens can be picked
         // (or a failed one left) before starting.
         bool lensPicker = _isPhone && (LensChips.Children.Count > 0 || FacingButton.Visibility == Visibility.Visible);
@@ -732,6 +757,7 @@ public sealed partial class MainWindow : Window
     private async void RevertLensSwitch(string error)
     {
         int back = _lensSwitchFrom;
+        if (back < 0) return; // already reverted
         _lensSwitchFrom = -1;
         if (_format >= 0) _brokenLenses.Add(_formats[_format].Format.LensText);
         string failed = _format >= 0 ? _formats[_format].Format.LensText : "";
@@ -775,13 +801,14 @@ public sealed partial class MainWindow : Window
     // using it keep it, frozen for a moment). A connected phone has its formats already.
     private async void OnCameraPicked(int camera)
     {
-        if (camera < 0 || camera >= _cameras.Count || (camera == _camera && _windowSource is null)) return;
+        if (camera < 0 || camera >= _cameras.Count || (camera == _camera && _windowSource is null && _format >= 0)) return;
         _autoPick = false; // the user's choice: kept, never replaced by a "better" one
+        string pickedId = _ids[camera];
         int previous = _camera;
         var previousWindow = _windowSource;
         bool wasCapturing = IsCapturing;
         await SelectCameraAsync(camera);
-        if (_camera != camera) return; // another pick meanwhile
+        if (_selectedId != pickedId) return; // another pick meanwhile
         if (_format < 0)
         {
             // Could not load it (pairing declined, phone gone): the camera still shows the
@@ -844,6 +871,13 @@ public sealed partial class MainWindow : Window
             OnWindowPicked(window.Handle, window.Title);
             return;
         }
+        if (_camera < 0 && _selectedId is not null)
+        {
+            // The chosen source is not listed right now (phone app hidden, cable out): it is
+            // used again when it comes back.
+            ShowWaiting("Nguồn đã chọn hiện không có");
+            return;
+        }
         if (_camera < 0 || _format < 0)
         {
             // Nothing picked yet: take the best source there is, now or when one turns up.
@@ -889,7 +923,9 @@ public sealed partial class MainWindow : Window
     // The picture off: the source closes, the camera stays (apps keep it and see "no signal").
     private void StopCapture()
     {
-        Engine.cs_switch_none(0, 0);
+        int id = Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
+        if (id > 0) _expectSourceId = id;
+        _noSource = true;
         ClearPreview();
         SetToggleQuietly(false);
         UpdateStatus();
@@ -903,7 +939,11 @@ public sealed partial class MainWindow : Window
         else StopCapture();
     }
 
-    private void PlaceholderStart_Click(object sender, RoutedEventArgs e) => VcamToggle.IsOn = true;
+    private void PlaceholderStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (VcamToggle.IsOn) StartCapture(); // already on (e.g. after a failure): try again
+        else VcamToggle.IsOn = true;
+    }
 
     private void SetToggleQuietly(bool on)
     {
@@ -1247,8 +1287,9 @@ public sealed partial class MainWindow : Window
     {
         uint w, h;
         ulong id;
-        // Waiting for the source: show the placeholder, not the last frame frozen.
-        if (_lastState == EngineState.Waiting) return;
+        // Waiting for the source, paused, or no source: show the placeholder, not the last frame
+        // (the engine keeps it).
+        if (_lastState == EngineState.Waiting || _paused || _noSource) return;
         Engine.cs_copy_preview(null, 0, &w, &h, &id); // size + id only
         if (id == _lastFrameId || w == 0 || h == 0) return;
 
@@ -1280,6 +1321,7 @@ public sealed partial class MainWindow : Window
         var s = Engine.GetStatus();
         var state = (EngineState)s.State;
         bool running = state == EngineState.Running && s.NoSource == 0;
+        _noSource = s.NoSource != 0;
         _statusTicks++;
 
         if (state != _lastState)
@@ -1313,7 +1355,7 @@ public sealed partial class MainWindow : Window
         }
         // The camera lives as long as the app: after a failure, register it again now and then
         // (an app may have let go of the old one).
-        if (state == EngineState.Stopped && !_exiting && DateTime.UtcNow >= _cameraRetryAt)
+        if (state is EngineState.Stopped or EngineState.Failed && !_exiting && DateTime.UtcNow >= _cameraRetryAt)
         {
             _cameraRetryAt = DateTime.UtcNow.AddSeconds(30);
             if (!_paused && (_camera >= 0 && _format >= 0 || _windowSource is not null)) StartCapture();
