@@ -736,15 +736,18 @@ public sealed partial class MainWindow : Window
         CameraSide.Visibility = running && _isPhone ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // Same resolution on the other lens when it has it, else that lens' native mode.
+    // Native stays native (else 1× → Macro → 1× ends at the macro's 4:3 size); otherwise the
+    // same resolution on the other lens when it has it, else that lens' native mode.
     private void SwitchLens(PhoneCaps.Lens target)
     {
         var current = _format >= 0 ? _formats[_format].Format : default;
         var onLens = _formats.Where(f => f.Format.LensText == target.Label).ToList();
         if (onLens.Count == 0) return;
-        var pick = onLens.FirstOrDefault(f => f.Format.Width == current.Width && f.Format.Height == current.Height && Math.Abs(f.Format.Fps - current.Fps) < 0.5)
-                   ?? onLens.FirstOrDefault(f => f.Format.Height == current.Height)
-                   ?? onLens[0];
+        var native = onLens.FirstOrDefault(f => f.Format.IsNative != 0) ?? onLens[0];
+        var pick = current.IsNative != 0 ? native
+                   : onLens.FirstOrDefault(f => f.Format.Width == current.Width && f.Format.Height == current.Height && Math.Abs(f.Format.Fps - current.Fps) < 0.5)
+                     ?? onLens.FirstOrDefault(f => f.Format.Height == current.Height)
+                     ?? native;
         _phoneZoom = 1;
         _phoneSent.Clear(); // controls belong to the previous lens
         // If the new lens fails to open, go back to this one (see UpdateStatus).
