@@ -1,5 +1,8 @@
 # Cam Studio trên Windows 10
 
+> Yêu cầu Windows 10 phiên bản 2004 (build 19041) trở lên, 64-bit. Engine nạp mDNS
+> (`DnsServiceBrowse`/`Resolve`, có từ build 18362) nên không chạy trên 1809/1903 cũ hơn.
+
 Windows 11 (build 22000 trở lên) có API camera ảo (`MFCreateVirtualCamera`): mọi ứng dụng đều thấy
 "Cam Studio". Windows 10 không có API này, nên ở đó Cam Studio dùng một **bộ lọc DirectShow**
 (`src/dshow`, DLL `CamStudioDShow64.dll` và `CamStudioDShow32.dll`) thay cho camera ảo của hệ thống.
@@ -30,13 +33,13 @@ thì vào chế độ DirectShow. Đặt `CAMSTUDIO_FORCE_DSHOW=1` để thử c
 
 ## Installer
 
-`MinVersion=10.0.17763` (Windows 10 1809). Windows 11: đăng ký `CamStudioVCam.dll` như trước.
+`MinVersion=10.0.19041` (Windows 10 2004). Windows 11: đăng ký `CamStudioVCam.dll` như trước.
 Windows 10: đăng ký hai DLL DirectShow (64 và 32-bit), không đăng ký camera Media Foundation.
-App WinUI: `TargetPlatformMinVersion` 10.0.17763.0 (Windows App SDK hỗ trợ từ 1809).
+App WinUI: `TargetPlatformMinVersion` 10.0.19041.0.
 
 ## Giới hạn
 
-- Chỉ Windows 64-bit (x64). Windows 10 32-bit không được hỗ trợ (app .NET/WinUI chỉ build x64).
+- Chỉ Windows 64-bit (x64), phiên bản 2004 (19041) trở lên. Windows 10 32-bit không được hỗ trợ.
 - Windows on ARM: chưa; camera ảo của Windows 11 đòi DLL ARM64 (Frame Server là tiến trình ARM64).
 - Nguồn "Cửa sổ trên máy tính" cần Windows 10 1903 trở lên (Windows.Graphics.Capture).
 - Chưa thử trên máy Windows 10 thật; trên Windows 11 đã thử bằng `CAMSTUDIO_FORCE_DSHOW=1` và

@@ -12,6 +12,8 @@ it once everything is tested.
 
 | Piece | Built | Tested on a device |
 |---|---|---|
+| **Windows 10 DirectShow filter** (x64+x86), engine run-time API pick | yes | Win11 forced path only; **no real Win10 PC**, no installer built |
+| **iPhone re-pair on key mismatch** (PC `pair` only on clean close) | yes | PC compiled; iOS `Store` **not compiled** (needs Mac) |
 | USB: Redmi over adb, engine starts/stops adb | yes | yes |
 | USB: iPhone through the Apple service on Windows | yes | **no** |
 | Webcam found again after unplug/replug | yes | **no** |

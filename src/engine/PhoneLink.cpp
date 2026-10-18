@@ -307,12 +307,16 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     if (!SendHandshake(json::Value::MakeObject().Set("type", "auth").Set("mac", crypto::Base64(crypto::PcMac(kPair, t)))))
         return fail("Mất kết nối với điện thoại");
     json::Value auth;
-    if (!ReadHandshake(auth, 8000) || auth["type"].Str() != "auth")
+    bool authTimedOut = false;
+    if (!ReadHandshake(auth, 8000, &authTimedOut))
     {
         if (newPairing) return fail("Ghép đôi thất bại");
-        // The phone has a key for this PC too, but another one: it closed on our MAC
-        // (docs/protocol.md 3.3). Only a new pairing can mend that, so the list says
-        // "Cần ghép đôi" and picking the phone pairs again (Connect retries with repair).
+        // A timeout or a mid-read network drop: just retry, do not force re-pairing.
+        if (authTimedOut) return fail("Điện thoại không trả lời khi xác thực. Thử lại.");
+        // A clean close right after our auth: the phone has a key for this PC too, but a
+        // different one, so it closed on our MAC (docs/protocol.md 3.3). Only a new pairing
+        // mends that: the list says "Cần ghép đôi" and picking the phone pairs again (Connect
+        // retries with repair).
         m_errorCode = "pair";
         {
             std::lock_guard lk(m_infoLock);
@@ -320,6 +324,8 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         }
         return fail("Điện thoại không nhận ra máy tính này. Chọn điện thoại để ghép đôi lại.");
     }
+    if (auth["type"].Str() != "auth")
+        return fail(newPairing ? "Ghép đôi thất bại" : "Điện thoại trả lời sai giao thức khi xác thực");
     if (!crypto::ConstantTimeEqual(crypto::FromBase64(auth["mac"].Str()), crypto::PhoneMac(kPair, t)))
         return fail("Điện thoại xác thực sai: có thể không phải thiết bị đã ghép đôi");
     if (newPairing) SavePairKey(deviceId, kPair);
@@ -507,16 +513,17 @@ bool PhoneLink::SendHandshake(const json::Value& v)
     return SendRecord(kHandshake, reinterpret_cast<const uint8_t*>(text.data()), text.size());
 }
 
-bool PhoneLink::ReadHandshake(json::Value& v, int timeoutMs)
+bool PhoneLink::ReadHandshake(json::Value& v, int timeoutMs, bool* timedOut)
 {
+    if (timedOut) *timedOut = false;
     if (m_socket == kInvalid) return false;
     uint8_t head[5];
-    bool timedOut = false;
-    if (!ReadExact(head, 5, timeoutMs, timedOut)) return false;
+    bool to = false;
+    if (!ReadExact(head, 5, timeoutMs, to)) { if (timedOut) *timedOut = to; return false; }
     const uint32_t length = GetU32(head);
     if (length < 1 || length > kMaxHandshake || head[4] != kHandshake) return false;
     std::string body(length - 1, '\0');
-    if (!ReadExact(reinterpret_cast<uint8_t*>(body.data()), body.size(), 8000, timedOut)) return false;
+    if (!ReadExact(reinterpret_cast<uint8_t*>(body.data()), body.size(), 8000, to)) { if (timedOut) *timedOut = to; return false; }
     try
     {
         v = json::Value::Parse(body);

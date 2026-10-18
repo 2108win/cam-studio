@@ -3,9 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
-    <!-- Windows 10 1809 and newer: the virtual camera API is Windows 11 only, Windows 10 gets the
-         DirectShow filter (docs/windows10.md). The engine checks at run time. -->
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <!-- Windows 10 2004 (build 19041) and newer: the virtual camera API is Windows 11 only,
+         Windows 10 gets the DirectShow filter (docs/windows10.md). The engine imports
+         DnsServiceBrowse/Resolve (mDNS), which need build 18362; 19041 is the supported floor. -->
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>CamStudio</RootNamespace>
     <AssemblyName>CamStudio</AssemblyName>
     <Version>0.1.5</Version>

@@ -33,9 +33,11 @@ DisableDirPage=auto
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 1809 (build 17763) or newer, 64-bit. Windows 11 gets the Media Foundation virtual
+; Windows 10 2004 (build 19041) or newer, 64-bit. Windows 11 gets the Media Foundation virtual
 ; camera (every app sees it); Windows 10 gets a DirectShow filter instead (docs/windows10.md).
-MinVersion=10.0.17763
+; The engine statically imports DnsServiceBrowse/Resolve (mDNS), added in build 18362, so 1809
+; cannot load it; 19041 is the supported floor.
+MinVersion=10.0.19041
 OutputDir={#OutputDir}
 OutputBaseFilename=CamStudio-Setup-{#AppVersion}
 SetupIconFile=..\..\app\Assets\CamStudio.ico

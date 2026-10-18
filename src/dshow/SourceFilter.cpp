@@ -319,7 +319,7 @@ HRESULT OutputPin::Build(const PinFormat& f, REFERENCE_TIME interval, AM_MEDIA_T
     return S_OK;
 }
 
-HRESULT OutputPin::NegotiateAllocator(IMemInputPin* input, uint32_t sampleBytes)
+HRESULT OutputPin::NegotiateAllocator(IMemInputPin* input, uint32_t sampleBytes, ComPtr<IMemAllocator>& out)
 {
     ALLOCATOR_PROPERTIES wanted{};
     input->GetAllocatorRequirements(&wanted); // optional
@@ -335,42 +335,47 @@ HRESULT OutputPin::NegotiateAllocator(IMemInputPin* input, uint32_t sampleBytes)
     RETURN_IF_FAILED(allocator->SetProperties(&props, &actual));
     if (actual.cbBuffer < static_cast<long>(sampleBytes)) return E_FAIL;
     RETURN_IF_FAILED(input->NotifyAllocator(allocator.Get(), FALSE));
-    m_allocator = allocator;
+    out = allocator;
     return S_OK;
 }
 
 IFACEMETHODIMP OutputPin::Connect(IPin* receiver, const AM_MEDIA_TYPE* pmt)
 {
     if (!receiver) return E_POINTER;
-    std::lock_guard lk(m_lock);
-    if (m_connected) return VFW_E_ALREADY_CONNECTED;
-    if (StateOf(m_filter) != State_Stopped) return VFW_E_NOT_STOPPED;
 
-    // Candidates, best first: a complete type the caller gave, else the current format and
-    // then everything offered (narrowed by a partial type).
+    // Build the candidate list under the lock, then call into the receiver WITHOUT it. A
+    // receiver may call back into this pin during ReceiveConnection (ConnectionMediaType,
+    // EnumMediaTypes, GetFormat); the mutex is not recursive, so holding it across the call
+    // would self-deadlock and hang the host app.
     std::vector<AM_MEDIA_TYPE> candidates;
-    auto push = [&](const PinFormat& f, REFERENCE_TIME interval) {
-        if (pmt)
+    {
+        std::lock_guard lk(m_lock);
+        if (m_connected) return VFW_E_ALREADY_CONNECTED;
+        if (StateOf(m_filter) != State_Stopped) return VFW_E_NOT_STOPPED;
+
+        auto push = [&](const PinFormat& f, REFERENCE_TIME interval) {
+            if (pmt)
+            {
+                if (pmt->majortype != GUID_NULL && pmt->majortype != MEDIATYPE_Video) return;
+                if (pmt->subtype != GUID_NULL && pmt->subtype != FourccSubtype(f.fourcc)) return;
+                if (pmt->formattype != GUID_NULL && pmt->formattype != FORMAT_VideoInfo) return;
+            }
+            AM_MEDIA_TYPE mt{};
+            if (SUCCEEDED(Build(f, interval, mt))) candidates.push_back(mt);
+        };
+        if (!IsPartial(pmt))
         {
-            if (pmt->majortype != GUID_NULL && pmt->majortype != MEDIATYPE_Video) return;
-            if (pmt->subtype != GUID_NULL && pmt->subtype != FourccSubtype(f.fourcc)) return;
-            if (pmt->formattype != GUID_NULL && pmt->formattype != FORMAT_VideoInfo) return;
+            PinFormat f;
+            REFERENCE_TIME interval = 0;
+            if (!Parse(*pmt, f, interval)) return VFW_E_TYPE_NOT_ACCEPTED;
+            AM_MEDIA_TYPE mt{};
+            if (SUCCEEDED(CopyMediaTypeFields(mt, *pmt))) candidates.push_back(mt);
         }
-        AM_MEDIA_TYPE mt{};
-        if (SUCCEEDED(Build(f, interval, mt))) candidates.push_back(mt);
-    };
-    if (!IsPartial(pmt))
-    {
-        AM_MEDIA_TYPE mt{};
-        PinFormat f;
-        REFERENCE_TIME interval = 0;
-        if (!Parse(*pmt, f, interval)) return VFW_E_TYPE_NOT_ACCEPTED;
-        if (SUCCEEDED(CopyMediaTypeFields(mt, *pmt))) candidates.push_back(mt);
-    }
-    else
-    {
-        if (m_formatSet) push(m_format, m_interval);
-        for (const PinFormat& f : Offered()) push(f, m_formatSet ? m_interval : 333333);
+        else
+        {
+            if (m_formatSet) push(m_format, m_interval);
+            for (const PinFormat& f : Offered()) push(f, m_formatSet ? m_interval : 333333);
+        }
     }
 
     HRESULT hr = VFW_E_NO_ACCEPTABLE_TYPES;
@@ -381,19 +386,25 @@ IFACEMETHODIMP OutputPin::Connect(IPin* receiver, const AM_MEDIA_TYPE* pmt)
         if (hr != S_OK && Parse(mt, f, interval) && receiver->ReceiveConnection(this, &mt) == S_OK)
         {
             ComPtr<IMemInputPin> input;
-            if (SUCCEEDED(receiver->QueryInterface(IID_PPV_ARGS(&input))) && SUCCEEDED(NegotiateAllocator(input.Get(), f.SampleBytes())))
+            ComPtr<IMemAllocator> allocator;
+            bool ok = SUCCEEDED(receiver->QueryInterface(IID_PPV_ARGS(&input))) &&
+                      SUCCEEDED(NegotiateAllocator(input.Get(), f.SampleBytes(), allocator));
+            if (ok)
             {
-                m_input = input;
-                m_connected = receiver;
-                m_format = f;
-                m_interval = interval;
-                m_formatSet = true;
-                hr = S_OK;
+                std::lock_guard lk(m_lock);
+                if (!m_connected)
+                {
+                    m_input = input;
+                    m_allocator = allocator;
+                    m_connected = receiver;
+                    m_format = f;
+                    m_interval = interval;
+                    m_formatSet = true;
+                    hr = S_OK;
+                }
+                else ok = false; // something connected while we were unlocked
             }
-            else
-            {
-                receiver->Disconnect();
-            }
+            if (!ok) receiver->Disconnect();
         }
         FreeMediaTypeFields(mt);
     }

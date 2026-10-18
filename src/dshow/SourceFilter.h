@@ -108,7 +108,7 @@ private:
     std::vector<PinFormat> Offered();
     static bool Parse(const AM_MEDIA_TYPE& mt, PinFormat& f, REFERENCE_TIME& interval);
     static HRESULT Build(const PinFormat& f, REFERENCE_TIME interval, AM_MEDIA_TYPE& mt);
-    HRESULT NegotiateAllocator(IMemInputPin* input, uint32_t sampleBytes);
+    HRESULT NegotiateAllocator(IMemInputPin* input, uint32_t sampleBytes, Microsoft::WRL::ComPtr<IMemAllocator>& out);
     void Worker();
     void StopWorker();
 

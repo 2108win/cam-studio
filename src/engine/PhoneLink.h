@@ -117,7 +117,7 @@ private:
     bool SendRecord(uint8_t type, const uint8_t* body, size_t size);
     bool ReadExact(uint8_t* dst, size_t size, int timeoutMs, bool& timedOut);
     bool SendHandshake(const json::Value& v);
-    bool ReadHandshake(json::Value& v, int timeoutMs);
+    bool ReadHandshake(json::Value& v, int timeoutMs, bool* timedOut = nullptr);
 
     // repair: pair again although both sides have a key (they no longer match).
     bool ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,

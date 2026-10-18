@@ -28,7 +28,8 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 | Part | Path | Builds on | How |
 |---|---|---|---|
 | Engine (C++, Media Foundation capture, H.264/HEVC decode, phone link, C API) | `src/engine` | Windows only | `scripts\build.ps1` (CMake + MSVC) |
-| Virtual camera media source (COM DLL loaded by Frame Server) | `src/vcam` | Windows only | same; install with `scripts\register.ps1` (admin) |
+| Virtual camera media source (COM DLL loaded by Frame Server, **Windows 11**) | `src/vcam` | Windows only | same; install with `scripts\register.ps1` (admin) |
+| DirectShow source filter (**Windows 10**, loaded inside the capturing app; x64 + x86) | `src/dshow` | Windows only | `scripts\build.ps1` builds both; see [docs/windows10.md](docs/windows10.md) |
 | Windows installer (Inno Setup: one `CamStudio-Setup-<ver>.exe`, Vietnamese/English UI) | `packaging/windows/CamStudio.iss` | Windows only | `scripts\package-release.ps1` (needs `winget install JRSoftware.InnoSetup`) |
 | Shared PC headers (shared memory, NV12 ops, MF devices) | `src/common` | Windows only | — |
 | PC app (WinUI 3, C#, .NET 10, unpackaged) | `app/` | Windows only | `scripts\build.ps1` |
@@ -172,6 +173,34 @@ Gotchas:
   the app's light/dark choice: give code-built controls a style whose setters use `ThemeResource`.
 - "Lật ngang" is one setting for every source, so it mirrors a window's text too: the user's choice
   (2026-10-18), keep it.
+
+### Windows 10 support (2026-10-18, DirectShow) — see [docs/windows10.md](docs/windows10.md)
+
+Windows 10 has no `MFCreateVirtualCamera`. The engine looks the API up at run time
+(`VirtualCameraApi()` in `CaptureEngine.cpp`); absent, it writes NV12 frames to a **session-local**
+shared-memory channel (`CAMSTUDIO_LOCAL_*` in `SharedFrame.h`) and a **DirectShow source filter**
+(`src/dshow`) inside the capturing app reads them. `CAMSTUDIO_FORCE_DSHOW=1` forces this path on
+Windows 11.
+- The filter is built x64 **and** x86 (`scripts\build.ps1` adds `build-x86`): a 32-bit app loads a
+  32-bit filter. `regsvr32` registers it (HKLM elevated, HKCU otherwise).
+- Only apps that capture through **DirectShow** see it on Windows 10 (Discord, OBS, Zoom, Chrome).
+  Media-Foundation-only apps (the Windows Camera app) do not.
+- **Floor: Windows 10 2004 (build 19041), x64 only.** The engine statically imports
+  `DnsServiceBrowse`/`Resolve` (mDNS, added in 18362), so 1809 can't load it. No 32-bit Windows, no
+  ARM. The installer picks the MF camera on Windows 11 (`IsWindows11`) or the two DirectShow DLLs on
+  Windows 10.
+- `tools/dshow-consumer --grab [--fourcc YUY2|I420]` measures the delivered frames (no window).
+- **Tested** on Windows 11 only, through the forced path: x64 and x86 filters deliver live
+  NV12/YUY2/I420 (consumer `--grab`), and the MF path still passes `camstudio-verify` (180/180 live).
+  **Not tested on a real Windows 10 PC. No installer built.** The `DllCanUnloadNow` is `S_FALSE`, so
+  once anything (even the Claude desktop app's device enumeration) loads the registered filter DLL it
+  stays mapped and locks the file: rename the DLL aside before rebuilding, or unregister first.
+- **iPhone pairing (same day):** when the PC and phone hold **different** pairing keys (app
+  reinstalled, or paired elsewhere), the phone closes cleanly on the PC's auth MAC. The PC now marks
+  the link `"pair"` only on that **clean close** (`ReadHandshake` surfaces `timedOut`), not on
+  timeouts; picking the phone re-pairs with the 6-digit code (`PhoneLink::Connect` retries with
+  `repair`, sends `pairStart` though both claim a key). iOS `Store` was tightened too (not compiled
+  here — needs a Mac build). A suspended/locked iPhone instead **does not answer hello at all**.
 
 ## Things learned the hard way
 

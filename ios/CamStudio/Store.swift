@@ -68,12 +68,15 @@ final class Store {
         var items: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &items) == errSecSuccess, let list = items as? [[String: Any]] else { return }
         for item in list where item[kSecAttrAccessGroup as String] as? String != group {
-            guard let clientId = item[kSecAttrAccount as String] as? String, let key = item[kSecValueData as String] as? Data else { continue }
+            guard let clientId = item[kSecAttrAccount as String] as? String, let key = item[kSecValueData as String] as? Data,
+                  let old = item[kSecAttrAccessGroup as String] as? String, old != group else { continue }
             if Store.read(Store.pairingService, clientId, group: group) == nil { Store.save(Store.pairingService, clientId, key) }
-            // The old copy goes: a read that misses the shared group for a moment (the Keychain
-            // does that now and then) must not fall back to a key from before a later pairing.
-            // The PC then saw "paired" and a wrong MAC, and could only pair again.
-            if let old = item[kSecAttrAccessGroup as String] as? String {
+            // Remove the old copy ONLY once the shared group really holds the key. save() falls
+            // back to the app's own group when the shared entitlement is missing, and deleting
+            // then would drop the only copy. Otherwise a read that misses the shared group for a
+            // moment could fall back to a key from before a later pairing, and the PC would see
+            // "paired" with a wrong MAC.
+            if Store.read(Store.pairingService, clientId, group: group) != nil {
                 SecItemDelete(Store.baseQuery(Store.pairingService, clientId, group: old) as CFDictionary)
             }
         }

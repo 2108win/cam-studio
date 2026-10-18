@@ -46,7 +46,7 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
 
 | Thiết bị | Tải | Cài đặt |
 |---|---|---|
-| **Windows 11**, hoặc **Windows 10** 1809 trở lên (64‑bit) | `CamStudio-Setup-<phiên bản>.exe` trong [Releases](https://github.com/2108win/cam-studio/releases/latest) | Bấm đúp file, bấm **Có** khi Windows hỏi quyền, rồi **Tiếp tục** đến hết. Không cần cài thêm .NET hay Visual C++. Trên Windows 10 camera ảo là bộ lọc DirectShow: Discord, OBS, Zoom, Chrome thấy nó; app Camera của Windows thì không ([chi tiết](docs/windows10.md)). |
+| **Windows 11**, hoặc **Windows 10** phiên bản 2004 (build 19041) trở lên (64‑bit) | `CamStudio-Setup-<phiên bản>.exe` trong [Releases](https://github.com/2108win/cam-studio/releases/latest) | Bấm đúp file, bấm **Có** khi Windows hỏi quyền, rồi **Tiếp tục** đến hết. Không cần cài thêm .NET hay Visual C++. Trên Windows 10 camera ảo là bộ lọc DirectShow: Discord, OBS, Zoom, Chrome thấy nó; app Camera của Windows thì không ([chi tiết](docs/windows10.md)). |
 | **Android** 8.0 trở lên | `CamStudio-<phiên bản>-android.apk` | Chép sang điện thoại, mở file và cho phép cài. Cập nhật: cài đè lên bản cũ. |
 | **iPhone** iOS 17 trở lên | build từ mã nguồn | Xem [ios/README.md](ios/README.md): build bằng Xcode trên Mac, hoặc bằng xtool trên Windows. |
 
