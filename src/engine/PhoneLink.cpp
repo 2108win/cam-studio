@@ -153,7 +153,12 @@ void SavePairKey(const std::string& deviceId, const crypto::Bytes& key)
 
 bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error)
 {
-    return ConnectImpl(endpoint, onPairing, confirm, true, false, error);
+    if (ConnectImpl(endpoint, onPairing, confirm, true, false, error)) return true;
+    // Both sides have a key for each other, but not the same one (the phone app was
+    // reinstalled, or one side was paired again elsewhere): the phone refused our auth. The
+    // user picked this phone, so pair again now, with the 6-digit code on both sides.
+    if (m_errorCode != "pair" || m_aborted) return false;
+    return ConnectImpl(endpoint, onPairing, confirm, true, false, error, true);
 }
 
 bool PhoneLink::ConnectAuto(const Endpoint& endpoint, std::string& error)
@@ -189,7 +194,7 @@ bool PhoneLink::Reconnect(std::string& error)
 }
 
 bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
-                            bool allowPairing, bool automatic, std::string& error)
+                            bool allowPairing, bool automatic, std::string& error, bool repair)
 {
     static WinsockInit winsock;
     Close();
@@ -271,7 +276,7 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     // 3. pairing (3.2) or straight to authentication (3.3)
     crypto::Bytes kPair = LoadPairKey(deviceId);
     bool newPairing = false;
-    if (kPair.empty() || !hello["paired"].Bool())
+    if (kPair.empty() || !hello["paired"].Bool() || repair)
     {
         if (!allowPairing)
         {
@@ -303,7 +308,18 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         return fail("Mất kết nối với điện thoại");
     json::Value auth;
     if (!ReadHandshake(auth, 8000) || auth["type"].Str() != "auth")
-        return fail(newPairing ? "Ghép đôi thất bại" : "Điện thoại không nhận ra máy tính này. Hãy ghép đôi lại.");
+    {
+        if (newPairing) return fail("Ghép đôi thất bại");
+        // The phone has a key for this PC too, but another one: it closed on our MAC
+        // (docs/protocol.md 3.3). Only a new pairing can mend that, so the list says
+        // "Cần ghép đôi" and picking the phone pairs again (Connect retries with repair).
+        m_errorCode = "pair";
+        {
+            std::lock_guard lk(m_infoLock);
+            m_caps.clear();
+        }
+        return fail("Điện thoại không nhận ra máy tính này. Chọn điện thoại để ghép đôi lại.");
+    }
     if (!crypto::ConstantTimeEqual(crypto::FromBase64(auth["mac"].Str()), crypto::PhoneMac(kPair, t)))
         return fail("Điện thoại xác thực sai: có thể không phải thiết bị đã ghép đôi");
     if (newPairing) SavePairKey(deviceId, kPair);

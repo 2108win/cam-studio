@@ -119,8 +119,9 @@ private:
     bool SendHandshake(const json::Value& v);
     bool ReadHandshake(json::Value& v, int timeoutMs);
 
+    // repair: pair again although both sides have a key (they no longer match).
     bool ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
-                     bool allowPairing, bool automatic, std::string& error);
+                     bool allowPairing, bool automatic, std::string& error, bool repair = false);
 
     std::atomic<uintptr_t> m_socket{ kInvalid };
     std::atomic<bool> m_aborted{ false };

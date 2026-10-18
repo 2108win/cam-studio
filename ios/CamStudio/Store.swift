@@ -68,9 +68,14 @@ final class Store {
         var items: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &items) == errSecSuccess, let list = items as? [[String: Any]] else { return }
         for item in list where item[kSecAttrAccessGroup as String] as? String != group {
-            guard let clientId = item[kSecAttrAccount as String] as? String, let key = item[kSecValueData as String] as? Data,
-                  Store.read(Store.pairingService, clientId, group: group) == nil else { continue }
-            Store.save(Store.pairingService, clientId, key)
+            guard let clientId = item[kSecAttrAccount as String] as? String, let key = item[kSecValueData as String] as? Data else { continue }
+            if Store.read(Store.pairingService, clientId, group: group) == nil { Store.save(Store.pairingService, clientId, key) }
+            // The old copy goes: a read that misses the shared group for a moment (the Keychain
+            // does that now and then) must not fall back to a key from before a later pairing.
+            // The PC then saw "paired" and a wrong MAC, and could only pair again.
+            if let old = item[kSecAttrAccessGroup as String] as? String {
+                SecItemDelete(Store.baseQuery(Store.pairingService, clientId, group: old) as CFDictionary)
+            }
         }
     }
 
@@ -93,7 +98,10 @@ final class Store {
 
     private static func save(_ service: String, _ account: String, _ data: Data) {
         let group = sharedGroup
-        SecItemDelete(baseQuery(service, account, group: group) as CFDictionary)
+        // Every copy this app can reach (no group: all its access groups), so a stale one in
+        // another group can never shadow the new key.
+        SecItemDelete(baseQuery(service, account, group: nil) as CFDictionary)
+        if group != nil { SecItemDelete(baseQuery(service, account, group: group) as CFDictionary) }
         var add = baseQuery(service, account, group: group)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

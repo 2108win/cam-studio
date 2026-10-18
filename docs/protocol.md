@@ -244,6 +244,10 @@ PC → ĐT  {"type":"auth","mac":"<base64 HMAC(K_pair, "pc" || T)>"}
 
 - **Ghép chuỗi:** dấu `||` ở đây là ghép byte thường; `"pc"` và `"phone"` là các byte ASCII.
 - **Sai MAC:** bên nhận đóng kết nối ngay.
+- **Hai bên đều có khóa nhưng khác nhau** (app trên điện thoại cài lại, hoặc một bên đã ghép đôi lại ở nơi khác):
+  điện thoại đóng kết nối sau `auth` của PC. PC đang tự kết nối (`auto`) thì ghi "Cần ghép đôi"; khi người dùng
+  chọn điện thoại, PC kết nối lại và gửi `pairStart` dù `paired == true` (bước 3.2). Điện thoại luôn nhận `pairStart`,
+  kể cả khi đang có khóa; khóa mới chỉ thay khóa cũ khi ghép đôi xong.
 - **PC có khóa nhưng điện thoại báo `paired == false`:**
   - **Không xóa khóa cũ**, vì thông điệp này chưa được xác thực: bất kỳ ai trong mạng cũng có thể gửi nó để phá việc ghép đôi.
   - PC báo "Điện thoại yêu cầu ghép đôi lại" rồi làm bước 3.2.
