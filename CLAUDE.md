@@ -25,6 +25,7 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 | Verify tool, protocol test, fake phone | `src/verify`, `tools/` | Windows only | `scripts\build.ps1` |
 | Fake PC (tests a phone app end to end: pair, caps, stream, decode, PNGs) | `tools/fake_pc.swift` | **macOS** | `scripts/fake-pc.sh --lens all` (`--usb`: iPhone over the cable) |
 | USB transport check (lists phones on a cable, opens a tunnel, exchanges `hello`, probes a port) | `tools/usb_check.cpp` + `src/engine/UsbTransport.cpp` | Windows, **macOS** | Windows: `camstudio-usb-check`; Mac: `clang++ -std=c++20 -o build/usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp` |
+| Picture check (camera size rule, fit with black bars, BGRA ⇄ NV12) | `tools/frame_check.cpp` (headers only: `ImageSettings.h`, `Nv12.h`) | Windows, **macOS** | Windows: `camstudio-frame-check`; Mac (SSE2, so x86_64 under Rosetta): `clang++ -std=c++20 -arch x86_64 -O1 -Wall -Wextra -o build/frame-check tools/frame_check.cpp && build/frame-check` |
 | Android app (Kotlin, Camera2 + MediaCodec) | `android/` | Windows, **macOS**, Linux | `cd android && ./gradlew assembleRelease` (JDK 17, Android SDK 36) |
 | iPhone app (Swift, AVFoundation + VideoToolbox + Network.framework) | `ios/` | **macOS** (Xcode via XcodeGen), or Linux/WSL via xtool (no screen sharing) | `scripts/ios-run.sh` (tests, build, install, launch); `scripts/ios-archive.sh` (TestFlight); see [ios/README.md](ios/README.md) |
 | iPhone screen sharing (ReplayKit broadcast upload extension) | `ios/CamStudioScreen` | **macOS** (Xcode only) | built and embedded with the app |
@@ -100,6 +101,20 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   - **Not compiled:** the PC side ("· Màn hình (USB)" entries, port-aware errors) and the Android
     change (no JDK on the Mac).
 
+### PC: many sources, screen window, window source, camera always on (2026-10-18)
+
+Written on the Mac on branch `claude/nifty-hawking-2631de` (plan steps 3–5, plus the user's
+"camera always there" request). **Only the portable picture code is compiled and tested:**
+`tools/frame_check.cpp`, 307 checks passing with clang `-arch x86_64`, also under ASan/UBSan
+(`PlanOutput`, `ComputeLayout` fit, `Nv12FillBars`, `Nv12CropScaleBilinearTo`,
+`Nv12AdjustPlanes`, `BgraToNv12`, `Nv12ToBgra`). **Everything else is not compiled:**
+- Engine: `Connector.*`, `ScreenViewer.*`, `WindowSource.*` (C++/WinRT), and the changes to
+  `CaptureEngine`, `PhoneLink`, `Discovery`, `EngineApi`, `FrameWriter`, `MfDevices.h`, CMake.
+- App: `MainWindow.Sources.cs`, `ScreenWindow.cs`, and the changes to `MainWindow.xaml(.cs)`,
+  `Native/Engine.cs`, `AppSettings.cs`. `CsStatus` gained `pictureWidth`, `pictureHeight`,
+  `sourceId`, `noSource` (C++ and C# must stay field for field).
+- What it does is in "Things learned" (PC subsection) and docs/protocol.md 3.1, 3.5, 4.1.
+
 ## Things learned the hard way
 
 - **MIUI hidden cameras:** the ultra-wide and macro aren't in `cameraIdList`, but they open by id.
@@ -117,7 +132,9 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   - The engine enters state `Waiting` (4) and retries every 2 s. For a phone, `PhoneLink::Reconnect()`
     reconnects silently: never pairing, and re-resolved by device id.
   - Meanwhile the DLL shows its "no signal" picture.
-  - Errors before the camera first starts still fail at once. The lens-switch revert relies on that.
+  - Since 2026-10-18 (not compiled yet) the camera lives as long as the app, so there is no
+    "fail at once" any more: a source that fails before the camera was published publishes it and
+    waits. The lens-switch revert works from `Waiting` (switching back). See the PC subsection below.
   - Tested on 2026-10-17 by killing and restarting `camstudio-fake-phone` while Discord was using the camera.
 - **`E_ACCESSDENIED` (0x80070005) from `IMFVirtualCamera::Start`:**
   - Cause: a **DirectShow** app (Discord loads `ksproxy`/`quartz`) keeps its graph on the old virtual camera
@@ -269,6 +286,55 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
 - **Any `error` ends the PC's stream** (`CaptureEngine::RunPhone`). So a `set` the phone cannot apply
   (e.g. cinematic on a lens without it) is reported through `state`, not `error`.
 
+### PC: how many sources work (2026-10-18, not compiled)
+
+- **The virtual camera lives as long as the app.** The app registers it at launch with no source
+  (`cs_switch_none`, at the last size it had: `LastWidth/LastHeight` in the registry) and never
+  removes it until exit. No source, or the toggle off ("Tạm dừng hình"): apps see "no signal".
+  A source that fails keeps the camera (`Waiting`); a source that fails for good (`Fatal`:
+  lens refused, no HEVC decoder, window closed) waits there until another one is picked. Only a
+  failed registration ends the session; the app tries again every 30 s.
+- **Switching keeps the camera:** `CaptureEngine::Switch` sets `m_switch`; every source loop checks
+  `Interrupted()` and returns `Outcome::Switch`; `Run` keeps the `Pipeline`. Until the new source's
+  first frame the last picture is **held**: `FrameWriter::HoldFor` moves the latest slot's
+  `writeTime100ns` ahead of now (the reader's age check is a signed difference), nothing copied.
+  Refreshed while the new source opens; `ReleaseHold` when it is lost.
+- **Size rule** (`PlanOutput`, applied in `Pipeline::Relayout` on every frame when something
+  changed, and once a second): an app using the camera (or within 5 s: apps restart their stream
+  to change mode) keeps its size and other pictures are fitted with black bars; otherwise the
+  camera is rebuilt at the picture's own size. Fixed sizes (4K/1080p/720p) fit everything. A
+  rebuild refused with `E_ACCESSDENIED` re-registers the old size and stays fitted for 30 s.
+  Phone rotation and `SetImage` follow the same rule (no more restarts). The preview shows the
+  picture without the bars; `CsStatus.pictureWidth/Height` is its size (tap-to-focus, panning).
+- **Background connector** (`Connector`, one thread, every 3 s and on mDNS changes): hello
+  `auto`, caps once, drains and pings idle links every 15 s. Waits 30 s after a failure or
+  `busy`, 30 s doubling to 8 min after a dropped idle link (old phone apps hand themselves to
+  every connection, two PCs would fight), retries at once when the phone reappears. One link per
+  phone server (deviceId + camera/screen), the cable preferred; a link in use is never taken.
+  Started with Windows (`--tray`): discovery and the connector start after 20 s (`cs_init_delayed`).
+- **Lease:** one reader per `PhoneLink` (capture thread, screen window, `cs_load_formats` pairing,
+  or the connector). `Lease()` aborts a connector *connect attempt* (`SetAttempting`) but waits for
+  a quick idle drain. `Abort()` (any thread) only `shutdown`s the socket; the lease holder closes
+  it, so `Close()` no longer races `Receive()`. `SendControl` failing aborts instead of closing.
+- **A kept idle link may be dead** (phones don't answer `ping`): TCP keepalive on Wi‑Fi, and
+  `RunPhone` reconnects once if nothing at all arrives 4 s after `start`.
+- **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
+  `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
+  The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Automatic pick** (app, `MainWindow.Sources.cs`): the source picked last, else connected
+  phones (cable, then Wi‑Fi), USB webcams, the built-in camera (`EnclosureLocation.Panel`). A
+  better one replaces an automatic pick only while no app uses the camera; a source lost for
+  10 s is replaced even in a call; a user's pick is never replaced.
+- **Phone screen in its own window:** `ScreenViewer` leases the screen's link; one connection per
+  screen, so it cannot be the camera and a window at once ("Dùng làm camera ảo" closes the
+  window). `ScreenWindow` keeps the aspect with `WM_SIZING` (subclassed with `SetWindowLongPtrW`:
+  the manifest has no common controls v6).
+- **Window source:** Windows.Graphics.Capture, free-threaded frame pool (the capture thread has no
+  dispatcher). Frames are read back from the GPU only when they go somewhere. A resized window
+  is fitted into its first size until its new size is steady for 1 s. A still window sends no
+  frames: the last one is held. `GraphicsCaptureAccess`/`IsBorderRequired` need a Windows SDK of
+  10.0.20348 or newer to compile.
+
 ## Open work (roughly in priority order)
 
 1. Run the iPhone against the real Windows PC app: virtual camera, lens chips, the phone control panel,
@@ -294,3 +360,22 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
    compiled), then `camstudio-usb-check probe <serial> 47321 close|junk|silent` during a stream.
 5. Ideas: AI background blur on the PC; check HEVC decoding end to end; let the virtual camera write at
    the consumer's fps (needs a vcam change plus `register.ps1` again).
+
+### PC work of 2026-10-18 to build and test on Windows
+
+Build (`scripts\build.ps1`) and fix whatever does not compile, then:
+- `camstudio-frame-check` passes; `camstudio-protocol-test` still passes.
+- `camstudio-verify --hold 120` (and Discord) while switching webcam ↔ phone ↔ window ↔ phone
+  lens: never "camera lost", the frozen picture under a second, bars while the call holds a
+  different size, back to native after the call.
+- Discord keeps the camera while the phone turns (fitted, no rebuild) and when the toggle pauses.
+- Launch with nothing plugged: "Cam Studio" is listed with "no signal"; plug a webcam or open the
+  phone app: the picture comes by itself. Started with Windows: the phone connects after ~20 s.
+- Menu states (Đã kết nối / Đang kết nối / Cần ghép đôi / Bận với PC khác), the source row,
+  Ctrl+1…9, the tray items; the mode remembered per source.
+- Two PCs paired with one phone (new phone apps): the second gets "Bận với PC khác", no kicking.
+- The screen window next to the virtual camera, picked in Discord's window share; rotation,
+  resizing, always on top, close and reopen; "Dùng làm camera ảo".
+- "Cửa sổ trên máy tính ›": a browser window as the camera, resizing it, closing it; the yellow
+  border gone on Windows 11.
+- Standby is still as light as on 2026-10-17 (0.1–0.3 % CPU, ~45 MB) with phones connected idle.

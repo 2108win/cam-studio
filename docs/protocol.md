@@ -190,7 +190,7 @@ VIDEO_CONFIG có thể kèm NAL khác ngoài VPS/SPS/PPS. Ví dụ, HEVC 10‑bi
 
 ```
 PC → ĐT  {"type":"hello","v":1,"clientId":"<uuid PC>","clientName":"<tên PC>",
-          "commit":"<base64 SHA256(pcPub)>"}
+          "commit":"<base64 SHA256(pcPub)>","auto":true}       // "auto" chỉ khi PC tự kết nối
 ĐT → PC  {"type":"hello","v":1,"deviceId":"<uuid ĐT>","name":"…","model":"…","os":"ios|android",
           "pub":"<base64 phonePub>","paired":true|false}
 PC → ĐT  {"type":"reveal","pub":"<base64 pcPub>"}
@@ -203,6 +203,15 @@ PC → ĐT  {"type":"reveal","pub":"<base64 pcPub>"}
 - **Mỗi lúc một PC:** điện thoại chỉ phục vụ một PC. Kết nối mới chỉ thay phiên đang chạy **sau khi đã gửi `hello` hợp lệ**:
   - "hợp lệ" là đúng `type`, `v = 1`, có `clientId` và `commit` base64;
   - phiên cũ đóng ngay trước khi điện thoại trả `hello`, kể cả khi bắt tay sau đó thất bại (ví dụ `notPaired`).
+- **PC tự kết nối (`"auto": true`):** PC kết nối sẵn mọi điện thoại đã ghép đôi ở chế độ nền (mục 3.5) mà người dùng không bấm chọn. Kết nối như vậy **không được lấy điện thoại khỏi PC khác**:
+  - Điện thoại đang có phiên **và** `clientId` của phiên đó **khác** `clientId` trong `hello` này → điện thoại không gửi `hello` của mình mà gửi **một** bản ghi HANDSHAKE (`0x01`, không mã hóa) rồi đóng kết nối này; phiên đang có giữ nguyên:
+    ```
+    ĐT → PC  {"type":"error","code":"busy","message":"Điện thoại đang kết nối với <tên PC kia>"}
+    ```
+  - **Cùng `clientId`** (chính PC đó kết nối lại, ví dụ kết nối cũ đã chết sau khi Wi‑Fi chập chờn hoặc PC ngủ dậy mà điện thoại chưa biết): thay phiên cũ như kết nối thường. Nếu không, PC sẽ "bận với chính mình" cho tới khi phiên cũ hết hạn.
+  - Không có phiên nào: nhận như thường.
+  - Không có `auto` (người dùng chọn điện thoại, hoặc PC nối lại nguồn đang phát): thay phiên đang có như trước.
+  - Quy tắc này áp dụng cho cả máy chủ camera (47321) lẫn máy chủ màn hình (47322).
 - **Kết nối không phải PC:** đóng trước khi gửi `hello`, gửi thứ khác, hoặc im lặng quá **10 giây**. Điện thoại đóng kết nối đó, còn phiên đang phát và dòng trạng thái trên app giữ nguyên. Vì vậy dò xem cổng có mở không (ví dụ qua cáp USB) không làm rớt hình.
 - **App cũ:** các bản build trước thay đổi này (ngày 2026‑10‑18) bỏ phiên ngay khi nhận kết nối: mọi APK Android trước đó, và iOS TestFlight tới build 20261018.0743. Số phiên bản chưa đổi (Android 0.1.3, iOS 0.1.0), nên không dựa vào nó để phân biệt. Vì thế PC không dò cổng (mục 1.2).
 
@@ -251,6 +260,17 @@ K_down = HKDF(ikm = Z || K_pair, salt = T, info = "camstudio phone->pc", 32)
 - **Khóa tạm cho mỗi lần kết nối:** mỗi kết nối dùng một cặp khóa ECDH mới, nên lộ `K_pair` cũng không giải mã được các phiên cũ.
 - **Sau bước này:** mọi bản ghi đều là SEALED (`type = 0x02`).
 
+### 3.5 PC kết nối sẵn ở chế độ nền
+
+Để chuyển nguồn tức thì, PC giữ sẵn kết nối tới các điện thoại (không phát hình):
+- **Điện thoại nào:** điện thoại Wi‑Fi mà PC đã có khóa ghép đôi (tra theo TXT `id`, bỏ đuôi `:screen`), và mọi điện thoại cắm cáp. Không bao giờ ghép đôi ở chế độ này.
+- **Cách kết nối:** `hello` có `"auto": true`, rồi `getCaps` một lần. PC lưu `caps` để khi người dùng chọn điện thoại thì có ngay danh sách chế độ.
+- **Kết nối rảnh:** PC đọc những gì điện thoại gửi (ví dụ `caps` mới) và gửi `ping` mỗi 15 giây (mục 4.1).
+- **Khi thất bại:** nhận `busy` hoặc lỗi thì 30 giây sau mới thử lại. Kết nối rảnh bị đóng thì chờ 30 giây, mỗi lần tiếp theo gấp đôi (tối đa 8 phút): app điện thoại cũ (trước `auto`) nhận mọi kết nối mới, nên hai PC sẽ giành nhau liên tục nếu thử lại ngay. Khi điện thoại xuất hiện lại (mDNS quảng bá lại, cắm cáp, cho phép gỡ lỗi USB) thì thử lại ngay.
+- **Một điện thoại, hai đường:** cùng một máy chủ (cùng `deviceId` và cùng cổng camera/màn hình) qua Wi‑Fi và qua cáp chỉ được giữ một kết nối, ưu tiên cáp. Kết nối đang dùng (đang phát, cửa sổ màn hình) không bao giờ bị lấy.
+- **Khi phát:** chính kết nối đó được dùng để phát (`start`), không phải bắt tay lại. Nếu kết nối rảnh đã chết mà PC chưa biết (không có gì trả lời 4 giây sau `start`), PC mở kết nối mới một lần.
+- **TCP keepalive:** PC bật keepalive (10 giây im lặng, rồi mỗi 2 giây) trên kết nối Wi‑Fi, để biết điện thoại đã rời mạng.
+
 ---
 
 ## 4. Thông điệp điều khiển (CONTROL, JSON)
@@ -268,6 +288,7 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | `keyframe` | | Xin một khung khóa (sau khi mất gói, hoặc khi bộ giải mã cần khởi tạo lại) |
 | `stats` | `recvFps`, `decodeMs`, `queueMs`, `lost` | Gửi mỗi giây để điện thoại tự chỉnh bitrate |
 | `showSystemEffects` | | Chỉ iOS: mở bảng hiệu ứng video của hệ thống (Xóa phông, Ánh sáng studio, Center Stage…) |
+| `ping` | | Mỗi 15 giây trên kết nối rảnh (không phát hình). Điện thoại **không trả lời**. Điện thoại nào đã nhận một `ping` thì đóng phiên khi **45 giây** không nhận được bản ghi nào từ PC (bất kỳ bản ghi nào cũng tính). PC cũ không gửi `ping` nên không bị ảnh hưởng. Áp dụng cho cả cổng 47321 và 47322 |
 
 ### 4.2 Điện thoại → PC
 
@@ -389,8 +410,8 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | code | Khi nào |
 |---|---|
 | `permission` | Chưa có quyền Camera, hoặc quyền Mạng cục bộ trên iOS |
-| `background` | App bị ẩn: hệ điều hành chặn dùng camera khi app chạy nền |
-| `busy` | App khác đang dùng camera |
+| `background` | App bị ẩn: hệ điều hành chặn dùng camera khi app chạy nền, hoặc PC xin ghép đôi khi app không hiện trên màn hình (chỉ hỏi ghép đôi khi app đang hiện) |
+| `busy` | Khi đang phát: app khác đang dùng camera. Trong bắt tay (thay cho `hello`): điện thoại đang kết nối với PC khác và `hello` này có `auto` (mục 3.1) |
 | `unsupported` | Thông số yêu cầu không có trong `caps` |
 | `thermal` | Máy quá nóng nên đã giảm chất lượng hoặc dừng |
 | `encoder` | Bộ mã hóa phần cứng bị lỗi |

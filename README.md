@@ -28,7 +28,9 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
   - góc rộng, siêu rộng 0.6×, tele, macro, camera trước;
   - kể cả những ống kính mà Xiaomi/Redmi giấu đi với ứng dụng khác.
 - **Hoặc cắm cáp USB:** Android và iPhone dùng được qua cáp, không cần Wi‑Fi. Hình ổn định hơn, điện thoại vừa được sạc.
-- **Chia sẻ màn hình điện thoại:** màn hình Android hoặc iPhone hiện trên PC như một camera. Hình luôn đúng chiều khi xoay máy.
+- **Chia sẻ màn hình điện thoại:** màn hình Android hoặc iPhone hiện trên PC trong một cửa sổ riêng, để chia sẻ đúng cửa sổ đó trong Discord, Zoom, Meet. Hoặc dùng nó làm camera. Hình luôn đúng chiều khi xoay máy.
+- **Nhiều nguồn cùng lúc, chuyển liền mạch:** PC kết nối sẵn mọi điện thoại đã ghép đôi. Đổi từ webcam sang điện thoại (hay ngược lại) giữa cuộc gọi, Discord không rớt camera, chỉ đứng hình một chút.
+- **Một cửa sổ trên PC làm camera:** chọn bất kỳ cửa sổ nào (trình chiếu, trình duyệt…) làm nguồn cho camera "Cam Studio".
 - **Điều khiển ngay trên khung hình:**
   - đổi ống kính, zoom, đèn flash, bù sáng, chạm để lấy nét;
   - chỉnh tay ISO, tốc độ màn trập, cân bằng trắng.
@@ -57,8 +59,9 @@ Gỡ cài đặt trong **Settings › Apps › Installed apps › Cam Studio**.
 
 **Webcam USB hoặc capture card**
 1. Mở **Cam Studio**, chọn camera ở góc trên bên trái.
-2. Bật công tắc **Camera ảo**.
-3. Trong Discord, Zoom, OBS…: chọn camera **Cam Studio**.
+2. Trong Discord, Zoom, OBS…: chọn camera **Cam Studio**.
+
+Camera **"Cam Studio"** luôn có trong các ứng dụng khi Cam Studio đang chạy (kể cả khi ẩn ở khay). Chưa có nguồn thì ứng dụng thấy "không có tín hiệu"; có nguồn là hình hiện ngay. Công tắc **Camera ảo** chỉ để tạm dừng hình, camera vẫn còn.
 
 Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự quay lại khi cắm lại (cổng USB khác cũng được).
 
@@ -66,7 +69,7 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 1. Cài app lên điện thoại. Điện thoại và máy tính phải dùng chung một mạng Wi‑Fi.
 2. Mở app trên điện thoại. Trên PC, chọn tên điện thoại trong danh sách camera.
 3. Lần đầu, hai máy hiện cùng một mã 6 số: bấm **Đồng ý** ở cả hai bên.
-4. Bật **Camera ảo**. Đổi ống kính và zoom ngay trên khung hình.
+4. Đổi ống kính và zoom ngay trên khung hình. Lần sau, điện thoại tự kết nối khi app trên điện thoại đang mở: chọn nó là có hình ngay.
 
 **Điện thoại qua cáp USB** (không cần Wi‑Fi)
 1. **Android:** bật **Gỡ lỗi USB** một lần:
@@ -84,8 +87,25 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 **Chia sẻ màn hình điện thoại**
 1. **Android:** trong app, bấm **Chia sẻ màn hình sang máy tính**, rồi bấm **Bắt đầu ngay**.
    **iPhone:** bấm nút chia sẻ màn hình trong app.
-2. Trên PC, chọn nguồn **"<tên máy> · Màn hình"** (qua cáp: **"<tên máy> · Màn hình (USB)"**).
-3. Bạn cứ dùng điện thoại bình thường, màn hình vẫn được chia sẻ. Bấm **Dừng** trong thông báo để tắt.
+2. Trên PC, mở danh sách camera, mục **Màn hình điện thoại**, chọn **"<tên máy> · Màn hình"** (qua cáp: **"… · Màn hình (USB)"**). Màn hình điện thoại hiện trong một cửa sổ riêng:
+   - kéo cỡ thoải mái, cửa sổ giữ đúng tỉ lệ màn hình;
+   - chuột phải vào cửa sổ: **Luôn nằm trên cùng**;
+   - trong Discord, Zoom, Meet: **chia sẻ cửa sổ** "<tên máy> · Màn hình".
+3. Muốn màn hình điện thoại làm camera thay vì cửa sổ: chọn **Dùng làm camera ảo** ngay dưới tên nó.
+4. Bạn cứ dùng điện thoại bình thường, màn hình vẫn được chia sẻ. Bấm **Dừng** trong thông báo để tắt.
+
+**Chuyển nguồn nhanh**
+- Các nguồn đang sẵn sàng hiện thành một hàng nút cạnh danh sách camera. Bấm để chuyển, hoặc dùng **Ctrl+1** … **Ctrl+9**, hoặc chuột phải biểu tượng ở khay.
+- Danh sách camera ghi trạng thái từng điện thoại: **Đã kết nối**, **Đang kết nối**, **Cần ghép đôi**, **Bận với PC khác**.
+- Mỗi nguồn nhớ chế độ (độ phân giải, ống kính) đã chọn lần trước.
+- **Cửa sổ trên máy tính ›** trong danh sách camera: chọn một cửa sổ đang mở làm nguồn cho camera ảo.
+- **Cài đặt › Kích thước camera ảo:**
+  - **Tự động (nét nhất):** theo cỡ gốc của nguồn. Đang có cuộc gọi mà đổi nguồn khác cỡ thì camera giữ nguyên cỡ (để không rớt camera), hình mới được co vừa và thêm viền đen; gọi xong tự về cỡ gốc.
+  - **4K**, **1080p**, **720p:** cỡ cố định cho mọi nguồn.
+- Khi mở máy (chạy cùng Windows), Cam Studio chọn nguồn theo thứ tự: nguồn bạn chọn lần trước, điện thoại qua cáp, điện thoại qua Wi‑Fi, webcam USB, rồi camera có sẵn của máy. Nguồn tốt hơn xuất hiện sau thì tự chuyển, nhưng không bao giờ chuyển giữa cuộc gọi.
+
+> [!NOTE]
+> Nhiều nguồn cùng lúc, cửa sổ màn hình điện thoại, cửa sổ trên máy tính và camera luôn có là tính năng mới, **chưa được kiểm tra trên Windows**.
 
 > [!TIP]
 > - **Không thấy điện thoại?** Chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại. Hoặc cắm cáp USB.
@@ -95,7 +115,7 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 
 ## Nhẹ và tiết kiệm
 
-Bật **Camera ảo** một lần là xong. Bạn không cần tự bật hay tắt:
+Camera ảo luôn có khi Cam Studio chạy. Bạn không cần tự bật hay tắt:
 
 - **Không có ứng dụng nào dùng camera và cửa sổ Cam Studio đang ẩn:**
   - nguồn hình đóng hẳn: webcam tắt đèn, điện thoại ngừng mã hóa và gửi hình;
@@ -103,6 +123,8 @@ Bật **Camera ảo** một lần là xong. Bạn không cần tự bật hay t�
 - **Khi Discord, Zoom… mở camera:** nguồn tự bật lại sau khoảng 0,5–2 giây.
 - **Khi ứng dụng đó tắt camera:** 5 giây sau nguồn tự đóng.
 - **Khi thu xuống khay:** bộ nhớ được trả lại cho Windows.
+- **Điện thoại kết nối sẵn:** khi chưa phát, kết nối gần như không tốn gì (một tin nhắn nhỏ mỗi 15 giây), điện thoại không bật camera.
+- **Khi chạy cùng Windows:** Cam Studio đợi 20 giây rồi mới tìm điện thoại, để máy khởi động xong trước.
 
 Đo trên PC thật, webcam 1920×1080 @ 100 fps:
 
@@ -121,7 +143,7 @@ Nếu muốn Cam Studio luôn sẵn sàng: bật **Chạy cùng Windows** khi c�
 <details>
 <summary><b>Discord, Zoom không thấy camera "Cam Studio"</b></summary>
 
-Mở Cam Studio và bật **Camera ảo**. Sau đó chọn lại camera trong Discord hoặc Zoom (có ứng dụng phải tắt camera rồi bật lại mới thấy camera mới).
+Mở Cam Studio (camera chỉ có khi Cam Studio đang chạy; bật **Chạy cùng Windows** để luôn có). Sau đó chọn lại camera trong Discord hoặc Zoom (có ứng dụng phải tắt camera rồi bật lại mới thấy camera mới).
 </details>
 
 <details>
@@ -219,6 +241,7 @@ build\Release\camstudio-fake-phone.exe                           # điện tho�
 build\Release\camstudio-dshow-consumer.exe                       # mở camera qua DirectShow như Discord
 build\Release\camstudio-usb-check.exe list                       # điện thoại trên cáp USB (adb, Apple), tên máy
 build\Release\camstudio-usb-check.exe hello <serial|UDID>        # mở đường ống qua cáp tới app, đổi "hello"
+build\Release\camstudio-frame-check.exe                          # quy tắc kích thước camera ảo, co vừa có viền, BGRA ⇄ NV12
 ```
 - **Android:** `gradlew testDebugUnitTest`
 - **iOS:** scheme `CryptoTestsMac`
