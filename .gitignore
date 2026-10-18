@@ -14,7 +14,6 @@ android/local.properties
 *.jks
 
 # iOS (Xcode via XcodeGen, SwiftPM/xtool)
-ios/CamStudio.xcodeproj/
 ios/.build/
 ios/.bsp/
 ios/.swiftpm/
