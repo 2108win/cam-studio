@@ -1240,6 +1240,8 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
     ULONGLONG idleSince = 0;
     ULONGLONG lastFrame = GetTickCount64();
     ULONGLONG lastTaken = 0;
+    ULONGLONG lastRepeat = 0;
+    bool haveLast = false; // `frame` holds the window's newest picture
     int64_t ts = 0;
     Outcome outcome = Outcome::Quit;
     hr = S_OK;
@@ -1283,6 +1285,7 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
                 uv + static_cast<size_t>(l.destY / 2) * srcW + l.destX,
                 static_cast<long>(srcW), l.destWidth, l.destHeight);
         }
+        haveLast = true;
         pipeline.Frame(frame.data(), static_cast<long>(srcW), ts);
     };
 
@@ -1290,6 +1293,14 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
     {
         // Nobody needs the picture any more: stop capturing (back to standby).
         if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
+        // The capture item's Closed event does not always come (seen on Windows 11 with a
+        // WinForms window): ask Windows directly.
+        if (!IsWindow(cam.window))
+        {
+            why = L"Cửa sổ đã đóng. Hãy chọn nguồn khác";
+            outcome = Outcome::Fatal;
+            break;
+        }
         ULONGLONG now = GetTickCount64();
         // A window sends frames only when it changes, up to the screen's rate: take at most 30 a
         // second (waiting rather than dropping, so the newest frame of a burst is the one kept),
@@ -1327,15 +1338,26 @@ CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const Camera
             ts += kInterval100ns;
             if (!read && srcW)
             {
+                haveLast = false;
                 pipeline.Count(ts); // counted, not converted: nobody watches
                 pipeline.Tick();
             }
         }
         else if (srcW && now - lastFrame >= 500)
         {
-            // A still window: the camera keeps showing its last picture.
-            pipeline.Hold();
-            pipeline.Tick();
+            // A still window: the camera keeps showing its last picture. Written again once a
+            // second when we have it: a camera rebuilt meanwhile (an app left) has none to hold.
+            if (haveLast && now - lastRepeat >= 1000)
+            {
+                lastRepeat = now;
+                ts += kInterval100ns;
+                pipeline.Frame(frame.data(), static_cast<long>(srcW), ts);
+            }
+            else
+            {
+                pipeline.Hold();
+                pipeline.Tick();
+            }
         }
         if (pipeline.Broken()) { why = pipeline.Failure(); outcome = Outcome::Fatal; break; }
     }
