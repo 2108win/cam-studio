@@ -1,7 +1,7 @@
 # Cam Studio — notes for Claude Code
 
 > **Unfinished work (2026-10-18): read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It says what is
-> not compiled or tested yet, the user's decisions, and the next steps.
+> not tested yet, the user's decisions, and the next steps.
 
 A Camo Studio–like app: external cameras (USB webcams, Android phones, iPhones) published as a Windows 11
 virtual camera **"Cam Studio"** at each source's **native resolution**. User-facing docs: [README.md](README.md)
@@ -91,10 +91,8 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   name from lockdownd, a tunnel to 47321 and `hello` from the unchanged iOS app.
 - `fake-pc --usb`: all four lenses at 1080p30 and 4K30 HEVC at 25 Mbps, every frame decoded. It reused
   the Wi‑Fi pairing key: no new pairing.
-- **Not compiled on Windows yet:** the engine side (`Discovery` USB list, `PhoneLink` `Dial`/`Reconnect`,
-  names "<name> (USB)", webcam re-find after replug), the adb start/stop, `package-release.ps1` copying adb,
-  the installer's `adb kill-server`. **Android over adb is untested anywhere**, and so is the Apple
-  Mobile Device Service on Windows.
+- Windows side: compiled and tested on 2026-10-18 (see the next subsection). Still untested: the
+  Apple Mobile Device Service on Windows, the webcam re-find after replug.
 - **Screen over USB and probe-safe phone servers** (later the same day):
   - iPhone 14 over the cable, new app: `fake-pc --usb` streamed 40 s without a break (1194 frames,
     30 fps, 0 decode errors) while `usb-check probe <udid> 47321 close|junk|silent` ran. The phone
@@ -108,22 +106,44 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
     - a valid hello replaces the session;
     - the session ending sets "Đang chờ…" once;
     - `stop()` closes waiting connections.
-  - **Not compiled:** the PC side ("· Màn hình (USB)" entries, port-aware errors) and the Android
-    change (no JDK on the Mac).
+  - The PC side and the Android change: compiled and tested on Windows, 2026-10-18 (below).
 
-### PC: many sources, screen window, window source, camera always on (2026-10-18)
+### Windows build and the Redmi over USB (2026-10-18, on the user's PC)
 
-Written on the Mac (plan steps 3–5, plus the user's
-"camera always there" request). **Only the portable picture code is compiled and tested:**
-`tools/frame_check.cpp`, 307 checks passing with clang `-arch x86_64`, also under ASan/UBSan
-(`PlanOutput`, `ComputeLayout` fit, `Nv12FillBars`, `Nv12CropScaleBilinearTo`,
-`Nv12AdjustPlanes`, `BgraToNv12`, `Nv12ToBgra`). **Everything else is not compiled:**
-- Engine: `Connector.*`, `ScreenViewer.*`, `WindowSource.*` (C++/WinRT), and the changes to
-  `CaptureEngine`, `PhoneLink`, `Discovery`, `EngineApi`, `FrameWriter`, `MfDevices.h`, CMake.
-- App: `MainWindow.Sources.cs`, `ScreenWindow.cs`, and the changes to `MainWindow.xaml(.cs)`,
-  `Native/Engine.cs`, `AppSettings.cs`. `CsStatus` gained `pictureWidth`, `pictureHeight`,
-  `sourceId`, `noSource` (C++ and C# must stay field for field).
-- What it does is in "Things learned" (PC subsection) and docs/protocol.md 3.1, 3.5, 4.1.
+Everything written on the Mac compiles with MSVC and `dotnet build`, no warnings.
+`camstudio-protocol-test` ALL PASS, `camstudio-frame-check` 307/0, Android `testDebugUnitTest`
+passes. The Android app (0.1.3) is installed on the Redmi. Verified with `camstudio-verify --hold`:
+- **Redmi over adb:** "Redmi 9T (USB)", 1080p30, lens chips 0.6×/1×/Macro, the Wi‑Fi pairing key
+  reused. Switching Redmi ↔ lenses ↔ OBSBOT under a reader: 7999 frames, 0 no-signal, 0 size errors,
+  longest gap 16 ms; Macro (1440×1080) fitted with bars while the reader held 1920×1080.
+- **Camera keeps running on the phone** with the app hidden, then the screen off and locked:
+  30 fps, frames change. `usb-check probe close|junk|silent` during the stream: closed at once /
+  at once / after 10.0 s, stream unharmed.
+- **Phone app killed:** the camera stays (no-signal), back ~3 s after the app is opened again.
+- Wi‑Fi → USB switch of the same phone: 0 no-signal. Pause toggle: no-signal, back in ~1 s.
+- **adb:** the engine starts adb when none runs and stops it on exit; a server started by
+  someone else survives the app's exit.
+- `--tray` with an app opening the camera at once: the phone's picture in ~4 s.
+- **Window source** (a test window): picture, resize, close ("Cửa sổ đã đóng…"), still window.
+- Standby with the phone connected idle: 0.10 % CPU of one core, 47 MB working set.
+- `package-release.ps1` builds `CamStudio-Setup-0.1.3.exe` with adb (not installed).
+
+Fixed while testing:
+- native stays native across lens switches;
+- the cable phone picked last takes over from Wi‑Fi;
+- a closed window is noticed; a still window survives a camera rebuild;
+- the installer stops only its own adb; `build.ps1 -Target app`.
+
+Not tested (needs someone at the phone or the PC):
+- phone screen over USB, the screen window, "Dùng làm camera ảo" (the phone asks for a PIN and
+  for screen-capture consent);
+- unplugging the cable/OBSBOT during a call, rotation, two PCs ("Bận với PC khác"), the iPhone,
+  a real Discord call.
+
+Gotchas:
+- The computer-use tool minimizes windows of apps it is not allowed to control, and Windows
+  sends no frames for a minimized window: test the window source with a window you may control.
+- With the window source, "Lật ngang" (a global setting) mirrors the window's text too.
 
 ## Things learned the hard way
 
@@ -142,7 +162,7 @@ Written on the Mac (plan steps 3–5, plus the user's
   - The engine enters state `Waiting` (4) and retries every 2 s. For a phone, `PhoneLink::Reconnect()`
     reconnects silently: never pairing, and re-resolved by device id.
   - Meanwhile the DLL shows its "no signal" picture.
-  - Since 2026-10-18 (not compiled yet) the camera lives as long as the app, so there is no
+  - Since 2026-10-18 the camera lives as long as the app, so there is no
     "fail at once" any more: a source that fails before the camera was published publishes it and
     waits. The lens-switch revert works from `Waiting` (switching back). See the PC subsection below.
   - Tested on 2026-10-17 by killing and restarting `camstudio-fake-phone` while Discord was using the camera.
@@ -210,7 +230,7 @@ Written on the Mac (plan steps 3–5, plus the user's
   - **Identity on the PC:** the screen advertises TXT `id=<deviceId>:screen` so the PC (which keys
     sources by host:port) treats it as a separate source, while `hello` keeps the real deviceId for
     the pairing key. `PhoneLink::Reconnect` therefore looks a link up again by the TXT id it was
-    found under, not the hello id; that change was written on the Mac and is **not compiled yet**.
+    found under, not the hello id; that change compiles; not yet tested with the iPhone screen.
   - **Orientation:** `RPVideoSampleOrientationKey` is the opposite of its EXIF meaning (`.right`
     needs 270°), as measured.
   - **ReplayKit buffers:** 888×1920 on the iPhone 14, and a frame only when the screen changes.
@@ -296,7 +316,7 @@ Written on the Mac (plan steps 3–5, plus the user's
 - **Any `error` ends the PC's stream** (`CaptureEngine::RunPhone`). So a `set` the phone cannot apply
   (e.g. cinematic on a lens without it) is reported through `state`, not `error`.
 
-### PC: how many sources work (2026-10-18, not compiled)
+### PC: how many sources work (2026-10-18)
 
 - **The virtual camera lives as long as the app.** The app registers it at launch with no source
   (`cs_switch_none`, at the last size it had: `LastWidth/LastHeight` in the registry) and never
@@ -361,31 +381,19 @@ Written on the Mac (plan steps 3–5, plus the user's
    says version 1.0; the build says 0.1.0. Next: test the TestFlight install on the iPhone.
    Export compliance: `ITSAppUsesNonExemptEncryption = NO` in `ios/Info.plist` (the user's choice:
    all crypto is CryptoKit), so builds after 0743 skip the question; `ios-archive.sh` checks the key.
-4. USB transport (written, docs/protocol.md 1.2): build it on Windows, then test the Redmi over adb and
-   the iPhone through Apple Devices/iTunes, including unplugging while Discord uses the camera.
-   Also check the webcam re-find: unplug the OBSBOT while streaming, plug it into another port.
-   Then the screen over USB: "<name> · Màn hình (USB)" with and without a broadcast running, stop and
-   start the broadcast while Discord uses the camera (Waiting, then back).
-   Build and install the probe-safe Android app on the Redmi (written on the Mac, no JDK there: not
-   compiled), then `camstudio-usb-check probe <serial> 47321 close|junk|silent` during a stream.
+4. USB transport (docs/protocol.md 1.2): the Redmi over adb works (2026-10-18). Left: the iPhone
+   through Apple Devices/iTunes; unplugging while Discord uses the camera; the webcam re-find (unplug
+   the OBSBOT while streaming, plug it into another port); the screen over USB ("<name> · Màn hình
+   (USB)" with and without sharing, stop and start sharing while Discord uses the camera).
 5. Ideas: AI background blur on the PC; check HEVC decoding end to end; let the virtual camera write at
    the consumer's fps (needs a vcam change plus `register.ps1` again).
 
-### PC work of 2026-10-18 to build and test on Windows
+### PC work of 2026-10-18 still to test on Windows
 
-Build (`scripts\build.ps1`) and fix whatever does not compile, then:
-- `camstudio-frame-check` passes; `camstudio-protocol-test` still passes.
-- `camstudio-verify --hold 120` (and Discord) while switching webcam ↔ phone ↔ window ↔ phone
-  lens: never "camera lost", the frozen picture under a second, bars while the call holds a
-  different size, back to native after the call.
-- Discord keeps the camera while the phone turns (fitted, no rebuild) and when the toggle pauses.
-- Launch with nothing plugged: "Cam Studio" is listed with "no signal"; plug a webcam or open the
-  phone app: the picture comes by itself. Started with Windows: the phone connects after ~20 s.
-- Menu states (Đã kết nối / Đang kết nối / Cần ghép đôi / Bận với PC khác), the source row,
-  Ctrl+1…9, the tray items; the mode remembered per source.
-- Two PCs paired with one phone (new phone apps): the second gets "Bận với PC khác", no kicking.
-- The screen window next to the virtual camera, picked in Discord's window share; rotation,
-  resizing, always on top, close and reopen; "Dùng làm camera ảo".
-- "Cửa sổ trên máy tính ›": a browser window as the camera, resizing it, closing it; the yellow
-  border gone on Windows 11.
-- Standby is still as light as on 2026-10-17 (0.1–0.3 % CPU, ~45 MB) with phones connected idle.
+Built and mostly tested (see "Windows build and the Redmi over USB"). Left:
+- Discord in a real call: the phone turning (fitted, no rebuild), switching sources.
+- Launch with nothing plugged, then plug a webcam: the picture comes by itself.
+- Ctrl+1…9, the tray items; "Bận với PC khác" with two PCs.
+- The phone screen window (rotation, resizing, always on top, close/reopen, Discord's window share)
+  and "Dùng làm camera ảo".
+- The yellow capture border on Windows 11 (the test window could not be seen in screenshots).

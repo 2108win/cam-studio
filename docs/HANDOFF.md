@@ -1,35 +1,30 @@
 # Handoff: unfinished work
 
-> **Tóm tắt:** việc ngày 2026-10-18 đã gộp hết vào `main`. Phần lớn **chưa biên dịch trên Windows**
-> và **chưa thử trên máy thật**. Việc tiếp theo ở mục 3.
+> **Tóm tắt:** ngày 2026-10-18 phần PC đã build và chạy trên Windows, Redmi qua cáp USB chạy tốt.
+> Còn lại là những bài thử cần người cầm điện thoại (mục 3).
 
-For AI agents picking the work up on any machine. Read CLAUDE.md first.
-
-When you finish a step, update this file in the same commit. Delete it once everything is built
-and tested.
+For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
+Redmi over USB" says what was verified). Update this file in the same commit as each step; delete
+it once everything is tested.
 
 ## 1. What is not verified yet
 
-All of it is on `main`. Details are in CLAUDE.md and the commit messages.
-The uncompiled PC code was reviewed by reading (engine and app); the bugs found are fixed in
-8357bd0 and 3a25aa9. No compile errors were spotted, but nothing replaces a Windows build.
-
 | Piece | Built | Tested on a device |
 |---|---|---|
-| USB transport, adb and usbmux (`src/engine/UsbTransport.*`) | the portable part with clang on the Mac; engine side no | iPhone over the cable from the Mac: yes. Android/adb: never. Windows Apple service: never |
-| adb in the installer, started and stopped by the engine | no | no |
-| Webcam found again after unplug/replug | no | no |
-| Phone servers replace a session only after `hello` (probe-safe) | iOS yes, Android no | iPhone yes |
-| Screen over USB ("… · Màn hình (USB)") | PC no | partly (`usb-check`) |
-| iPhone camera in Picture in Picture after leaving the app (`BackgroundCamera.swift`, voip mode) | yes | **no** |
-| iPhone and Android UI split into Camera / Màn hình | iOS yes, Android no | no |
-| Android `CameraService` (camera keeps running in the background) | **no** | no |
-| auto/busy/ping (both phones, PC) | iOS yes, others no | no |
-| PC size rule, fit with bars, BGRA⇄NV12 (`tools/frame_check.cpp`) | yes, 307 checks on the Mac | — |
-| PC connector (auto-connect), seamless switch, size "Tự động" | no | no |
-| PC phone screen in its own window | no | no |
-| PC app window as the camera source | no | no |
-| PC virtual camera always on while the app runs, automatic source pick | no | no |
+| USB: Redmi over adb, engine starts/stops adb | yes | yes |
+| USB: iPhone through the Apple service on Windows | yes | **no** |
+| Webcam found again after unplug/replug | yes | **no** |
+| Probe-safe phone servers | yes | iPhone yes, Redmi yes |
+| Screen over USB ("… · Màn hình (USB)") | yes | **no** (the Redmi needs PIN + consent) |
+| PC phone screen in its own window, "Dùng làm camera ảo" | yes | **no** |
+| Android `CameraService` (camera runs in the background) | yes | yes (screen off, locked) |
+| Android UI split Camera / Màn hình | yes | camera part only |
+| auto/busy/ping | yes | auto yes; busy (two PCs) **no** |
+| PC connector, seamless switch, size "Tự động" | yes | yes (with `camstudio-verify`, not Discord) |
+| PC window as the camera source | yes | yes (test window) |
+| PC camera always on, automatic source pick | yes | yes |
+| iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
+| Installer with adb | yes | built, **not installed** |
 
 ## 2. The user's decisions (do not ask again)
 
@@ -46,34 +41,25 @@ The uncompiled PC code was reviewed by reading (engine and app); the bugs found 
 - iPhone screen sharing stays on ReplayKit broadcast. No AirPlay receiver (clean-room rule).
 - Git: only `main` (see CLAUDE.md, Ground rules).
 
-## 3. Next steps
+## 3. Next steps (need someone at the phone or PC)
 
-1. **Windows:**
-   - Build with `scripts\build.ps1` and fix what does not compile.
-   - Run `camstudio-protocol-test`, `camstudio-frame-check`, `camstudio-usb-check list`.
-   - Then the test list in CLAUDE.md, section "PC work of 2026-10-18 to build and test on Windows".
-   - Also test USB (a Redmi via adb, the iPhone via Apple Devices/iTunes) and unplugging the OBSBOT.
-2. **Android:**
-   - Build with `scripts\build-android.ps1` on Windows, or install JDK 17 and Android SDK on the
-     Mac (ask first).
-   - On the Redmi: the camera keeps streaming with the app hidden; two PCs give "busy".
-3. **iPhone:**
-   - `scripts/ios-run.sh`. **Ask first:** it replaces the TestFlight install (same bundle id).
-   - While `fake-pc --usb` streams, leaving the app must show the PiP window with frames still
-     coming.
-   - If it does not work, remove the voip mode.
-4. **Docs:** update CLAUDE.md "Status" with what was verified, then shrink or delete this file.
+1. **Redmi, unlocked:** "Chia sẻ màn hình" → on the PC: "Redmi 9T · Màn hình (USB)", the screen
+   window, "Dùng làm camera ảo"; stop/start sharing while an app holds the camera.
+2. **Unplug tests** while Discord (or `camstudio-verify --hold`) holds the camera: the phone cable,
+   the OBSBOT (replug into another port).
+3. **Discord call:** turn the phone, switch sources, pause.
+4. **Two PCs** with one phone: the second shows "Bận với PC khác".
+5. **iPhone:** Apple Devices on Windows; `scripts/ios-run.sh` on the Mac for PiP (ask first: it
+   replaces the TestFlight install).
+6. Install `build\dist\CamStudio-Setup-0.1.3.exe` (UAC; replaces the installed 0.1.2/0.1.3).
+7. Ask the user: should "Lật ngang" apply to a window source (it mirrors the text)?
 
 ## 4. Pitfalls
 
-- The PC side builds only on Windows. On the Mac only the portable C++ compiles
-  (`UsbTransport.cpp`, `tools/frame_check.cpp`). The Mac has no JDK or Android SDK.
-- iOS signing:
-  - `ios/Signing.local.xcconfig` is git-ignored: team `2TLZSD8YW7` (the user's own),
-    bundle id `vn.camstudio.phonewl`.
-  - Never sign a new bundle id with team `8VVXM8DN6B` (the employer).
-- One PC per phone. A test from the Mac drops the user's Windows PC. Ask first.
-- The iPhone is the user's own phone and they may be using it. Ask before launching apps on it or
-  installing a build.
-- `docs/camo-gap-analysis.md` may exist untracked, from another session. Keep the clean-room rule
-  in mind before using it.
+- iOS signing: `ios/Signing.local.xcconfig` is git-ignored (team `2TLZSD8YW7`, bundle id
+  `vn.camstudio.phonewl`). Never sign a new bundle id with team `8VVXM8DN6B` (the employer).
+- One PC per phone: a test from the Mac drops the user's Windows PC. Ask first.
+- The iPhone is the user's own phone. Ask before launching apps on it or installing a build.
+- The Redmi locks with a PIN after a while: never enter it, never change its screen settings.
+- Don't run `usb-check hello` while the PC streams: a valid hello replaces the PC's session.
+- `docs/camo-gap-analysis.md`: keep the clean-room rule in mind before using it.
