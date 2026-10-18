@@ -38,6 +38,9 @@ target_link_libraries(camstudio-fake-phone PRIVATE mfplat mfuuid ole32 ws2_32 bc
 add_executable(camstudio-usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp)
 target_link_libraries(camstudio-usb-check PRIVATE ws2_32 cfgmgr32)
 
+# Picture code: the virtual camera size rule, fit with black bars, BGRA <-> NV12 (also builds on a Mac).
+add_executable(camstudio-frame-check tools/frame_check.cpp)
+
 # Protocol crypto against docs/protocol-vectors.json.
 add_executable(camstudio-protocol-test src/verify/protocol_test.cpp src/engine/Crypto.cpp)
 

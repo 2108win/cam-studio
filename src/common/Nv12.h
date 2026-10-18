@@ -52,10 +52,11 @@ inline void AdjustRows(const uint8_t* src, long srcPitch, uint8_t* dst, long dst
 }
 } // namespace nv12detail
 
-// Applies colour adjustments from src (pitch srcPitch) into a contiguous dst
-// of the same size. src == dst (with srcPitch == w) adjusts in place.
-inline void Nv12Adjust(const uint8_t* src, long srcPitch, uint8_t* dst, uint32_t w, uint32_t h,
-                       const Nv12ColorAdjust& c)
+// Applies colour adjustments to a w x h picture whose planes may sit anywhere
+// (e.g. a rectangle inside a bigger frame). src == dst adjusts in place.
+inline void Nv12AdjustPlanes(const uint8_t* srcY, const uint8_t* srcUv, long srcPitch,
+                             uint8_t* dstY, uint8_t* dstUv, long dstPitch, uint32_t w, uint32_t h,
+                             const Nv12ColorAdjust& c)
 {
     // Multipliers are 1.7 fixed point (128 = 1.0) so (x-128)*mul fits int16.
     const int16_t contrast = static_cast<int16_t>(128 + c.contrast * 102 / 100);    // 0.2x .. 1.8x
@@ -64,12 +65,20 @@ inline void Nv12Adjust(const uint8_t* src, long srcPitch, uint8_t* dst, uint32_t
     const int16_t warm = static_cast<int16_t>(c.temperature * 30 / 100);              // chroma shift
 
     const int16_t lumaAdd[2] = { static_cast<int16_t>(128 + brightness), static_cast<int16_t>(128 + brightness) };
-    nv12detail::AdjustRows(src, srcPitch, dst, static_cast<long>(w), w, h, contrast, lumaAdd);
+    nv12detail::AdjustRows(srcY, srcPitch, dstY, dstPitch, w, h, contrast, lumaAdd);
 
     // Warmer = less blue (U down), more red (V up).
     const int16_t chromaAdd[2] = { static_cast<int16_t>(128 - warm), static_cast<int16_t>(128 + warm) };
-    nv12detail::AdjustRows(src + static_cast<size_t>(srcPitch) * h, srcPitch,
-                           dst + static_cast<size_t>(w) * h, static_cast<long>(w), w, h / 2, saturation, chromaAdd);
+    nv12detail::AdjustRows(srcUv, srcPitch, dstUv, dstPitch, w, h / 2, saturation, chromaAdd);
+}
+
+// Applies colour adjustments from src (pitch srcPitch) into a contiguous dst
+// of the same size. src == dst (with srcPitch == w) adjusts in place.
+inline void Nv12Adjust(const uint8_t* src, long srcPitch, uint8_t* dst, uint32_t w, uint32_t h,
+                       const Nv12ColorAdjust& c)
+{
+    Nv12AdjustPlanes(src, src + static_cast<size_t>(srcPitch) * h, srcPitch,
+                     dst, dst + static_cast<size_t>(w) * h, static_cast<long>(w), w, h, c);
 }
 
 // Orientation applied by the host before frames reach the virtual camera.
@@ -142,10 +151,13 @@ struct Nv12Rect
     double x = 0, y = 0, w = 0, h = 0;
 };
 
-// Bilinear-scales the `r` region of src (sw x sh) into a contiguous dst of
-// dw x dh. Used for digital zoom; 8-bit fixed-point weights.
-inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
-                                  const Nv12Rect& r, uint8_t* dst, uint32_t dw, uint32_t dh)
+// Bilinear-scales the `r` region of src (sw x sh, contiguous planes) into a
+// dw x dh picture whose planes start at dstY / dstUv with dstPitch bytes per
+// row: a whole frame, or a rectangle inside a bigger one (fit with bars).
+// Used for digital zoom and fitting; 8-bit fixed-point weights.
+inline void Nv12CropScaleBilinearTo(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
+                                    const Nv12Rect& r, uint8_t* dstY, uint8_t* dstUv, long dstPitch,
+                                    uint32_t dw, uint32_t dh)
 {
     struct Tap { uint32_t i0, i1; uint32_t w1; }; // w1 in 0..256
     auto taps = [](std::vector<Tap>& out, uint32_t n, double start, double len, uint32_t limit) {
@@ -171,7 +183,7 @@ inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw
         const uint8_t* a = src + static_cast<size_t>(ys[y].i0) * srcPitch;
         const uint8_t* b = src + static_cast<size_t>(ys[y].i1) * srcPitch;
         const uint32_t wy = ys[y].w1;
-        uint8_t* d = dst + static_cast<size_t>(y) * dw;
+        uint8_t* d = dstY + static_cast<size_t>(y) * dstPitch;
         for (uint32_t x = 0; x < dw; ++x)
         {
             const Tap& t = xs[x];
@@ -183,7 +195,6 @@ inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw
 
     // Chroma (interleaved UV at half resolution).
     const uint8_t* srcUv = src + static_cast<size_t>(srcPitch) * sh;
-    uint8_t* dstUv = dst + static_cast<size_t>(dw) * dh;
     taps(xs, dw / 2, r.x / 2, r.w / 2, sw / 2);
     taps(ys, dh / 2, r.y / 2, r.h / 2, sh / 2);
     for (uint32_t y = 0; y < dh / 2; ++y)
@@ -191,7 +202,7 @@ inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw
         const uint8_t* a = srcUv + static_cast<size_t>(ys[y].i0) * srcPitch;
         const uint8_t* b = srcUv + static_cast<size_t>(ys[y].i1) * srcPitch;
         const uint32_t wy = ys[y].w1;
-        uint8_t* d = dstUv + static_cast<size_t>(y) * dw;
+        uint8_t* d = dstUv + static_cast<size_t>(y) * dstPitch;
         for (uint32_t x = 0; x < dw / 2; ++x)
         {
             const Tap& t = xs[x];
@@ -201,6 +212,105 @@ inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw
                 const uint32_t bot = b[t.i0 * 2 + c] * (256 - t.w1) + b[t.i1 * 2 + c] * t.w1;
                 d[x * 2 + c] = static_cast<uint8_t>((top * (256 - wy) + bot * wy + 32768) >> 16);
             }
+        }
+    }
+}
+
+// Same into a contiguous dw x dh frame.
+inline void Nv12CropScaleBilinear(const uint8_t* src, long srcPitch, uint32_t sw, uint32_t sh,
+                                  const Nv12Rect& r, uint8_t* dst, uint32_t dw, uint32_t dh)
+{
+    Nv12CropScaleBilinearTo(src, srcPitch, sw, sh, r, dst, dst + static_cast<size_t>(dw) * dh,
+                            static_cast<long>(dw), dw, dh);
+}
+
+// Black in limited-range video (what the virtual camera and the preview assume).
+constexpr uint8_t kNv12BlackY = 16;
+constexpr uint8_t kNv12BlackUv = 128;
+
+// Paints everything of a contiguous w x h frame outside the rectangle
+// (rx, ry, rw, rh) black: the bars around a picture fitted inside the frame.
+// The rectangle's position and size are even. The picture inside is left alone.
+inline void Nv12FillBars(uint8_t* frame, uint32_t w, uint32_t h, uint32_t rx, uint32_t ry, uint32_t rw, uint32_t rh)
+{
+    auto plane = [](uint8_t* p, uint32_t rowBytes, uint32_t rows, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint8_t v) {
+        for (uint32_t y = 0; y < rows; ++y)
+        {
+            uint8_t* row = p + static_cast<size_t>(y) * rowBytes;
+            if (y < y0 || y >= y1)
+            {
+                memset(row, v, rowBytes);
+                continue;
+            }
+            memset(row, v, x0);
+            memset(row + x1, v, rowBytes - x1);
+        }
+    };
+    plane(frame, w, h, rx, ry, rx + rw, ry + rh, kNv12BlackY);
+    // UV rows are w bytes too (interleaved pairs at half the height).
+    plane(frame + static_cast<size_t>(w) * h, w, h / 2, rx, ry / 2, rx + rw, (ry + rh) / 2, kNv12BlackUv);
+}
+
+// BGRA (8 bits per channel, top-down, pitch bytes per row) -> NV12, BT.601
+// limited range like the rest of the pipeline. w and h are even; chroma is the
+// average of each 2x2 block.
+inline void BgraToNv12(const uint8_t* bgra, size_t pitch, uint32_t w, uint32_t h,
+                       uint8_t* dstY, uint8_t* dstUv, size_t dstPitch)
+{
+    for (uint32_t y = 0; y < h; y += 2)
+    {
+        const uint8_t* r0 = bgra + static_cast<size_t>(y) * pitch;
+        const uint8_t* r1 = r0 + pitch;
+        uint8_t* y0 = dstY + static_cast<size_t>(y) * dstPitch;
+        uint8_t* y1 = y0 + dstPitch;
+        uint8_t* uv = dstUv + static_cast<size_t>(y / 2) * dstPitch;
+        for (uint32_t x = 0; x < w; x += 2)
+        {
+            const uint8_t* p[4] = { r0 + x * 4, r0 + x * 4 + 4, r1 + x * 4, r1 + x * 4 + 4 };
+            int sb = 0, sg = 0, sr = 0;
+            for (int i = 0; i < 4; ++i)
+            {
+                const int b = p[i][0], g = p[i][1], r = p[i][2];
+                sb += b;
+                sg += g;
+                sr += r;
+                const uint8_t luma = static_cast<uint8_t>(((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
+                (i < 2 ? y0 : y1)[x + (i & 1)] = luma;
+            }
+            // Averages with rounding; the sums of four fit easily in int.
+            const int b = (sb + 2) >> 2, g = (sg + 2) >> 2, r = (sr + 2) >> 2;
+            uv[x] = static_cast<uint8_t>(((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128);
+            uv[x + 1] = static_cast<uint8_t>(((112 * r - 94 * g - 18 * b + 128) >> 8) + 128);
+        }
+    }
+}
+
+// NV12 (w x h, planes at y / uv with pitch bytes per row) -> BGRA of pw x ph,
+// nearest-neighbour (pw == w and ph == h converts 1:1). BT.601 limited range.
+// Used for on-screen pictures (the preview, a phone screen's window).
+inline void Nv12ToBgra(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch, uint32_t w, uint32_t h,
+                       uint32_t* out, uint32_t pw, uint32_t ph)
+{
+    auto clamp = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : v > 255 ? 255 : v); };
+    thread_local std::vector<uint32_t> columns;
+    columns.resize(pw);
+    for (uint32_t x = 0; x < pw; ++x) columns[x] = static_cast<uint32_t>(static_cast<uint64_t>(x) * w / pw);
+    for (uint32_t y = 0; y < ph; ++y)
+    {
+        const uint32_t sy = static_cast<uint32_t>(static_cast<uint64_t>(y) * h / ph);
+        const uint8_t* row = yPlane + static_cast<size_t>(sy) * pitch;
+        const uint8_t* uv = uvPlane + static_cast<size_t>(sy / 2) * pitch;
+        uint32_t* o = out + static_cast<size_t>(y) * pw;
+        for (uint32_t x = 0; x < pw; ++x)
+        {
+            const uint32_t sx = columns[x];
+            const int c = row[sx] - 16;
+            const int d = uv[sx & ~1u] - 128;
+            const int e = uv[(sx & ~1u) + 1] - 128;
+            const uint32_t r = clamp((298 * c + 409 * e + 128) >> 8);
+            const uint32_t g = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
+            const uint32_t b = clamp((298 * c + 516 * d + 128) >> 8);
+            o[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
         }
     }
 }
