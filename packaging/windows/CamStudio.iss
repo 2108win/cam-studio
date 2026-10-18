@@ -91,10 +91,13 @@ var
   Adb: String;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM CamStudio.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  // The adb server the app starts for Android phones on a cable runs from App\adb.
+  // The adb server the app starts for Android phones on a cable runs from App\adb. Stop only
+  // that one: "adb kill-server" would stop any server on the port (Android Studio's too).
   Adb := ExpandConstant('{app}\App\adb\adb.exe');
   if FileExists(Adb) then
-    Exec(Adb, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -NonInteractive -Command "Get-Process adb -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq ''' + Adb + ''' } | Stop-Process -Force"',
+      '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop FrameServerMonitor', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop FrameServer', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Sleep(1500);
