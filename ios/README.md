@@ -45,7 +45,7 @@ Cần **tài khoản Apple Developer Program trả phí**. Personal Team (tài k
    DEVELOPMENT_TEAM = ABCDE12345
    CAMSTUDIO_BUNDLE_ID = com.tenban.camstudio
    ```
-   - **Đổi team và bundle id cùng một lần sửa.** Xcode tự đăng ký bundle id trên team đang ký, và id đã đăng ký thì không chuyển sang tài khoản khác được. Ghi id mới mà team vẫn là team cũ, chỉ cần chạy một script là id đó thuộc về team cũ. `vn.camstudio.phone` đã mất theo cách này. Lần đầu build một id trên một team, cả hai script hiện tên team và hỏi lại trước khi đăng ký.
+   - **Đổi team và bundle id cùng một lần sửa.** Xcode tự đăng ký bundle id trên team đang ký, và id đã đăng ký thì không chuyển sang tài khoản khác được. Ghi id mới mà team vẫn là team cũ, chỉ cần chạy một script là id đó thuộc về team cũ. `vn.camstudio.phone` đã mất theo cách này. Lần đầu build một id trên một team, cả hai script hiện tên team và hỏi lại trước khi đăng ký. Trả lời `y` thì script ghi dòng `// confirmed: <team> <bundle id>` vào file này và không hỏi lại nữa.
    - Bundle id mặc định `vn.camstudio.phone` chỉ dùng để build vào máy. Tiện ích chia sẻ màn hình tự lấy id `<bundle id>.screen`.
    - Đổi team hay bundle id thì iPhone coi đây là app mới: PC phải ghép đôi lại.
    - `scripts/ios-run.sh` cũng đọc file này, nên bản build vào máy dùng luôn id mới.
@@ -59,7 +59,9 @@ Cần **tài khoản Apple Developer Program trả phí**. Personal Team (tài k
    - Muốn kiểm tra bản Release biên dịch được mà chưa có tài khoản: `scripts/ios-archive.sh --unsigned`. Bản này không upload được.
 4. Trên [App Store Connect](https://appstoreconnect.apple.com), vào **Apps › +  › New App** và chọn bundle id ở bước 2. Tên app phải chưa ai dùng trên App Store.
 5. Trong Organizer, chọn bản archive, bấm **Distribute App › TestFlight & App Store** rồi **Upload**. Xcode tự lo chứng chỉ phân phối.
-6. **Mã hóa:** sau khi xử lý xong, App Store Connect hỏi về mã hóa (export compliance) cho từng bản build. App có tự mã hóa kết nối tới PC (ECDH, AES‑GCM qua CryptoKit). Chưa trả lời thì bản build chưa mời người thử được.
+
+   Cách nhanh hơn: `scripts/ios-archive.sh --upload` archive xong là upload luôn, bằng tài khoản đang đăng nhập trong Xcode. Chứng chỉ phân phối do Apple quản lý trên cloud, máy Mac không cần có sẵn.
+6. **Mã hóa:** [Info.plist](Info.plist) có `ITSAppUsesNonExemptEncryption = NO`, nên App Store Connect không hỏi về mã hóa (export compliance / App Encryption Documentation) cho từng bản build nữa. Khóa này nghĩa là app chỉ dùng mã hóa có sẵn của iOS: kết nối tới PC được mã hóa hoàn toàn bằng CryptoKit (ECDH P‑256, AES‑GCM, SHA‑256/HMAC; HKDF viết trên HMAC của CryptoKit). Nếu sau này app tự cài một thuật toán mã hóa riêng thì phải sửa lại khóa này.
 
 App có sẵn [Resources/PrivacyInfo.xcprivacy](Resources/PrivacyInfo.xcprivacy) cho cả app và tiện ích:
 - không theo dõi người dùng, không thu thập dữ liệu;

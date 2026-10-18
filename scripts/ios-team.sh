@@ -20,9 +20,11 @@ for teams in plistlib.loads(sys.stdin.buffer.read()).get("IDEProvisioningTeamByI
 
 # With -allowProvisioningUpdates, Xcode registers a new bundle id on the signing team by itself,
 # and an id registered on one account can never move to another (that is how vn.camstudio.phone
-# was lost). So the first build of an id on a team, the one with no profile for it yet, asks first.
+# was lost). So the first build of an id on a team asks first, unless a profile for it exists. The
+# answer is remembered in Signing.local.xcconfig (dev builds may use the team's wildcard profile).
 ios_confirm_team() {
-    local team="$1" bundle="$2" f
+    local team="$1" bundle="$2" mark="// confirmed: $1 $2" f
+    grep -qxF "$mark" Signing.local.xcconfig 2>/dev/null && return 0
     for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*; do
         [[ -f "$f" ]] && security cms -D -i "$f" 2>/dev/null | grep -qF "<string>$team.$bundle</string>" && return 0
     done
@@ -32,4 +34,5 @@ ios_confirm_team() {
     [[ -t 0 ]] || { echo "Chạy lại trong terminal để xác nhận."; exit 1; }
     local answer; read -r -p "Đăng ký trên team này? [y/N] " answer
     [[ "$answer" == [yY]* ]] || exit 1
+    echo "$mark" >> Signing.local.xcconfig
 }

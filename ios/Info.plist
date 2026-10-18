@@ -50,5 +50,10 @@
     </array>
     <key>UIRequiresPersistentWiFi</key>
     <true/>
+    <!-- Export compliance, so App Store Connect does not ask for every build: the link to the PC
+         is encrypted only with Apple's CryptoKit (P-256, AES-GCM, SHA-256/HMAC; HKDF is written
+         on top of CryptoKit's HMAC), no algorithm of our own. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
