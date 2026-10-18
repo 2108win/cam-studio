@@ -13,6 +13,7 @@
 //   build/fake-pc --set '{"zoom":2,"torch":0.5}'    send a "set" part way through each stream
 //   build/fake-pc --effects                         open the iPhone's video-effects panel while streaming
 //   build/fake-pc --screen                          the iPhone's shared screen (TXT src=screen) instead
+//   build/fake-pc --usb [--udid <udid>]             over the USB cable (usbmuxd, docs/protocol.md 1.2), no Wi‑Fi
 //   build/fake-pc --forget                          drop saved pairing keys, pair again
 //
 // The PC side of pairing is accepted automatically; the code is printed so it can be compared
@@ -40,6 +41,8 @@ struct Options {
     var effects = false
     var screen = false
     var forget = false
+    var usb = false
+    var udid: String?
     var out = "build/fake-pc-out"
 
     static func parse() -> Options {
@@ -71,6 +74,8 @@ struct Options {
             case "--effects": o.effects = true
             case "--screen": o.screen = true
             case "--forget": o.forget = true
+            case "--usb": o.usb = true
+            case "--udid": o.usb = true; o.udid = value(a)
             case "--out": o.out = value(a)
             default: fail("unknown option \(a) (see the header of tools/fake_pc.swift)")
             }
@@ -148,6 +153,69 @@ func discover(timeout: TimeInterval, screen: Bool) -> NWEndpoint {
     return endpoint!
 }
 
+// MARK: - USB cable (usbmuxd, docs/protocol.md 1.2)
+
+/// A socket tunnelled by usbmuxd to `port` on the first iPhone on a USB cable (or the one with
+/// `udid`): the same protocol as over Wi‑Fi, just another TCP pipe.
+func usbmuxTunnel(udid: String?, port: UInt16) -> Int32 {
+    func open() -> Int32 {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &addr.sun_path) { p in
+            _ = "/var/run/usbmuxd".withCString { strcpy(p.baseAddress!.assumingMemoryBound(to: CChar.self), $0) }
+        }
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard fd >= 0, ok == 0 else { fail("usbmuxd is not running") }
+        var one: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        return fd
+    }
+    // 16-byte little-endian header (length, version 1, type 8 = plist, tag), then an XML plist.
+    func request(_ fd: Int32, _ message: [String: Any]) -> [String: Any] {
+        var m = message
+        m["ProgName"] = "fake-pc"
+        m["ClientVersionString"] = "fake-pc"
+        m["kLibUSBMuxVersion"] = 3
+        let body = try! PropertyListSerialization.data(fromPropertyList: m, format: .xml, options: 0)
+        let packet = [UInt32(16 + body.count), 1, 8, 1].map { $0.littleEndian }.withUnsafeBytes { Data($0) } + body
+        _ = packet.withUnsafeBytes { send(fd, $0.baseAddress!, packet.count, 0) }
+        func readCount(_ n: Int) -> Data {
+            var d = Data(count: n)
+            var got = 0
+            while got < n {
+                let r = d.withUnsafeMutableBytes { recv(fd, $0.baseAddress! + got, n - got, 0) }
+                if r <= 0 { fail("usbmuxd closed the connection") }
+                got += r
+            }
+            return d
+        }
+        let length = readCount(16).withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).littleEndian }
+        let reply = readCount(Int(length) - 16)
+        return (try? PropertyListSerialization.propertyList(from: reply, format: nil)) as? [String: Any] ?? [:]
+    }
+
+    let list = open()
+    let devices = (request(list, ["MessageType": "ListDevices"])["DeviceList"] as? [[String: Any]] ?? [])
+        .filter { ($0["Properties"] as? [String: Any])?["ConnectionType"] as? String == "USB" }
+    close(list)
+    func serial(_ d: [String: Any]) -> String { (d["Properties"] as? [String: Any])?["SerialNumber"] as? String ?? "?" }
+    devices.forEach { log("usbmux: iPhone \(serial($0)) on USB, DeviceID \($0["DeviceID"] ?? "?")") }
+    guard let device = devices.first(where: { udid == nil || serial($0) == udid }), let id = device["DeviceID"] as? Int else {
+        fail("no iPhone on a USB cable\(udid.map { " with UDID \($0)" } ?? "")")
+    }
+    let fd = open()
+    // PortNumber is in network byte order, read as a little-endian integer.
+    let reply = request(fd, ["MessageType": "Connect", "DeviceID": id, "PortNumber": Int(port.byteSwapped)])
+    guard reply["Number"] as? Int == 0 else {
+        fail("usbmuxd Connect to port \(port) failed: result \(reply["Number"] ?? "?") (3 = refused: is the app open on the iPhone?)")
+    }
+    log("USB tunnel to \(serial(device)) port \(port)")
+    return fd
+}
+
 // MARK: - framing (docs/protocol.md 2)
 
 enum ProtocolError: Error, CustomStringConvertible {
@@ -162,16 +230,29 @@ enum ProtocolError: Error, CustomStringConvertible {
 }
 
 final class Link {
-    let nw: NWConnection
+    private let nw: NWConnection?
+    private let fd: Int32 // a connected socket instead of nw (USB tunnel)
     private let queue = DispatchQueue(label: "link")
 
     init(_ endpoint: NWEndpoint) {
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         nw = NWConnection(to: endpoint, using: NWParameters(tls: nil, tcp: tcp))
+        fd = -1
+    }
+
+    init(fd: Int32) {
+        nw = nil
+        self.fd = fd
+    }
+
+    func close() {
+        nw?.cancel()
+        if fd >= 0 { Darwin.close(fd) }
     }
 
     func connect() throws {
+        guard let nw else { return }
         let ready = DispatchSemaphore(value: 0)
         var failure: Error?
         nw.stateUpdateHandler = { state in
@@ -189,6 +270,16 @@ final class Link {
     }
 
     func read(_ count: Int) throws -> Data {
+        guard let nw else {
+            var data = Data(count: count)
+            var got = 0
+            while got < count {
+                let n = data.withUnsafeMutableBytes { recv(fd, $0.baseAddress! + got, count - got, 0) }
+                if n <= 0 { throw ProtocolError.closed }
+                got += n
+            }
+            return data
+        }
         let done = DispatchSemaphore(value: 0)
         var result: Data?
         nw.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, _, _ in
@@ -201,6 +292,15 @@ final class Link {
     }
 
     func write(_ data: Data) throws {
+        guard let nw else {
+            var sent = 0
+            while sent < data.count {
+                let n = data.withUnsafeBytes { send(fd, $0.baseAddress! + sent, data.count - sent, 0) }
+                if n <= 0 { throw ProtocolError.closed }
+                sent += n
+            }
+            return
+        }
         let done = DispatchSemaphore(value: 0)
         var failed: Error?
         nw.send(content: data, completion: .contentProcessed { e in failed = e; done.signal() })
@@ -618,9 +718,14 @@ struct FakePc {
         let outDir = URL(fileURLWithPath: o.out, isDirectory: true)
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-        let endpoint: NWEndpoint = o.host.map { .hostPort(host: NWEndpoint.Host($0), port: NWEndpoint.Port(rawValue: o.port)!) }
-            ?? discover(timeout: 15, screen: o.screen)
-        let link = Link(endpoint)
+        let link: Link
+        if o.usb {
+            link = Link(fd: usbmuxTunnel(udid: o.udid, port: o.screen ? 47322 : o.port))
+        } else {
+            let endpoint: NWEndpoint = o.host.map { .hostPort(host: NWEndpoint.Host($0), port: NWEndpoint.Port(rawValue: o.port)!) }
+                ?? discover(timeout: 15, screen: o.screen)
+            link = Link(endpoint)
+        }
         do {
             try link.connect()
             let (channel, _) = try handshake(link, state: &state)
@@ -628,7 +733,7 @@ struct FakePc {
         } catch {
             fail("\(error)")
         }
-        link.nw.cancel()
+        link.close()
     }
 
     static func run(_ phone: PhoneLink, o: Options, outDir: URL) {

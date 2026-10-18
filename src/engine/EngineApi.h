@@ -62,8 +62,8 @@ struct CsStatus
 CS_API int32_t cs_init();
 CS_API void cs_shutdown();
 
-// Cameras: webcams, then phones (found on Wi‑Fi or added by IP). Our own
-// virtual camera is excluded. Returns the count.
+// Cameras: webcams, then phones (found on Wi‑Fi, added by IP, or on a USB
+// cable). Our own virtual camera is excluded. Returns the count.
 CS_API int32_t cs_refresh_cameras();
 // Copies the name; returns its length, or -1 for a bad index.
 CS_API int32_t cs_camera_name(int32_t camera, wchar_t* buffer, int32_t capacity);

@@ -1,4 +1,5 @@
 #include "Discovery.h"
+#include "UsbTransport.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -18,12 +19,17 @@ namespace phone
 {
 namespace
 {
+constexpr uint16_t kPhonePort = 47321; // the phone app's fixed port, the only one reachable over USB
+
 std::mutex g_lock;
 std::map<std::wstring, Endpoint> g_found;   // by service instance name
 std::vector<Endpoint> g_manual;
 DNS_SERVICE_CANCEL g_browseCancel{};
 bool g_browsing = false;
 bool g_manualLoaded = false;
+// On the heap: its threads must be joined in StopDiscovery, never by a static destructor
+// while the DLL unloads.
+usb::Watcher* g_usb = nullptr;
 
 std::string Narrow(const wchar_t* w)
 {
@@ -129,13 +135,28 @@ void StartDiscovery()
     req.QueryName = const_cast<PWSTR>(L"_camstudio._tcp.local");
     req.pBrowseCallback = OnBrowse;
     g_browsing = DnsServiceBrowse(&req, &g_browseCancel) == DNS_REQUEST_PENDING;
+    if (!g_usb)
+    {
+        g_usb = new usb::Watcher;
+        g_usb->Start(usb::StartAdbServer, usb::StopIdleAdbServer);
+    }
 }
 
 void StopDiscovery()
 {
-    std::lock_guard lk(g_lock);
-    if (g_browsing) DnsServiceBrowseCancel(&g_browseCancel);
-    g_browsing = false;
+    usb::Watcher* watcher = nullptr;
+    {
+        std::lock_guard lk(g_lock);
+        if (g_browsing) DnsServiceBrowseCancel(&g_browseCancel);
+        g_browsing = false;
+        std::swap(watcher, g_usb);
+    }
+    if (watcher)
+    {
+        watcher->Stop();
+        delete watcher;
+    }
+    usb::StopAdbServer(); // only if we started it
 }
 
 std::vector<Endpoint> KnownPhones()
@@ -152,6 +173,31 @@ std::vector<Endpoint> KnownPhones()
         });
         if (!dup) out.push_back(m);
     }
+
+    // Phones on a USB cable (docs/protocol.md 1.2). They have no TXT record: the name comes from
+    // the phone (Android device_name, the iPhone's name) and the device id from "hello".
+    std::vector<Endpoint> cable;
+    for (const usb::Device& d : g_usb ? g_usb->Devices() : std::vector<usb::Device>())
+    {
+        Endpoint e;
+        e.transport = d.kind == usb::Kind::Adb ? Transport::Adb : Transport::Usbmux;
+        e.serial = d.serial;
+        e.port = kPhonePort;
+        e.os = d.kind == usb::Kind::Adb ? "android" : "ios";
+        e.model = d.model;
+        if (d.state != "device") e.name = "Điện thoại Android – chờ cho phép gỡ lỗi USB";
+        else if (!d.name.empty()) e.name = d.name;
+        else e.name = d.kind == usb::Kind::Adb ? "Điện thoại Android" : "iPhone";
+        cable.push_back(e);
+    }
+    // Two phones with the same name: the app tells cameras apart by name, so add the serial's end.
+    std::vector<bool> twin(cable.size());
+    for (size_t i = 0; i < cable.size(); ++i)
+        for (size_t j = 0; j < cable.size(); ++j)
+            if (i != j && cable[i].name == cable[j].name) twin[i] = true;
+    for (size_t i = 0; i < cable.size(); ++i)
+        if (twin[i]) cable[i].name += " · " + cable[i].serial.substr(cable[i].serial.size() > 4 ? cable[i].serial.size() - 4 : 0);
+    out.insert(out.end(), cable.begin(), cable.end());
     return out;
 }
 

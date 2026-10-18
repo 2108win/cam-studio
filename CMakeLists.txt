@@ -26,12 +26,17 @@ add_library(CamStudioEngine SHARED
     src/engine/VideoDecoder.cpp
     src/engine/PhoneLink.cpp
     src/engine/Discovery.cpp
+    src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)
-target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite mfsensorgroup ole32 ws2_32 dnsapi bcrypt crypt32)
+target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite mfsensorgroup ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32)
 
 # Stand-in phone for testing the PC side of the protocol without a device.
 add_executable(camstudio-fake-phone tools/fake_phone.cpp src/engine/Crypto.cpp)
 target_link_libraries(camstudio-fake-phone PRIVATE mfplat mfuuid ole32 ws2_32 bcrypt crypt32)
+
+# Phones on a USB cable: lists them (adb, usbmuxd) and exchanges "hello" through the tunnel.
+add_executable(camstudio-usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp)
+target_link_libraries(camstudio-usb-check PRIVATE ws2_32 cfgmgr32)
 
 # Protocol crypto against docs/protocol-vectors.json.
 add_executable(camstudio-protocol-test src/verify/protocol_test.cpp src/engine/Crypto.cpp)

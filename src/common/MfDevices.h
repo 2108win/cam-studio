@@ -125,6 +125,20 @@ inline bool IsOurVirtualCamera(const CameraDevice& d)
     return d.name == ours || d.name.rfind(ours + L" (", 0) == 0;
 }
 
+// The same webcam in a fresh enumeration. After it was unplugged and plugged back in, the old
+// IMFActivate may point at a device that is gone: find it again by symbolic link (same USB
+// port), else by name (another port).
+inline bool FindCameraAgain(const CameraDevice& old, CameraDevice& found)
+{
+    std::vector<CameraDevice> all = EnumerateCameras();
+    const std::wstring link = ToLower(old.symbolicLink);
+    for (CameraDevice& c : all)
+        if (!link.empty() && ToLower(c.symbolicLink) == link) { found = std::move(c); return true; }
+    for (CameraDevice& c : all)
+        if (c.name == old.name && !IsOurVirtualCamera(c)) { found = std::move(c); return true; }
+    return false;
+}
+
 // Lists the native formats of the first video stream of a media source.
 inline HRESULT GetNativeFormats(IMFMediaSource* source, std::vector<NativeFormat>& out,
                                 Microsoft::WRL::ComPtr<IMFMediaTypeHandler>* handlerOut = nullptr)

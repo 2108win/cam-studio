@@ -27,17 +27,18 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
 - **Điện thoại làm webcam qua Wi‑Fi:** dùng được mọi ống kính của máy:
   - góc rộng, siêu rộng 0.6×, tele, macro, camera trước;
   - kể cả những ống kính mà Xiaomi/Redmi giấu đi với ứng dụng khác.
+- **Hoặc cắm cáp USB:** Android và iPhone dùng được qua cáp, không cần Wi‑Fi. Hình ổn định hơn, điện thoại vừa được sạc.
 - **Chia sẻ màn hình điện thoại:** màn hình Android hoặc iPhone hiện trên PC như một camera. Hình luôn đúng chiều khi xoay máy.
 - **Điều khiển ngay trên khung hình:**
   - đổi ống kính, zoom, đèn flash, bù sáng, chạm để lấy nét;
   - chỉnh tay ISO, tốc độ màn trập, cân bằng trắng.
 - **Chỉnh hình:** lật, xoay, cắt khung theo tỉ lệ, zoom số, chỉnh sáng, tương phản, độ bão hòa, nhiệt độ màu.
 - **Rất nhẹ:** chỉ bật camera khi có ứng dụng dùng (xem [bên dưới](#nhẹ-và-tiết-kiệm)).
-- **Không bị rớt camera:** khi điện thoại tạm ẩn app hay mất Wi‑Fi, Discord vẫn giữ camera "Cam Studio" và hình tự quay lại khi nguồn sẵn sàng.
+- **Không bị rớt camera:** khi điện thoại tạm ẩn app, mất Wi‑Fi, hay khi rút cáp webcam hoặc điện thoại, Discord vẫn giữ camera "Cam Studio" và hình tự quay lại khi nguồn sẵn sàng.
 - **An toàn:**
   - ghép đôi bằng mã 6 số, so khớp trên cả hai máy;
   - mọi dữ liệu giữa điện thoại và PC đều mã hóa AES‑256‑GCM;
-  - không đi qua máy chủ nào, mọi thứ ở trong mạng nhà bạn.
+  - không đi qua máy chủ nào, mọi thứ ở trong mạng nhà bạn hoặc trên sợi cáp.
 
 ## Tải về và cài đặt
 
@@ -59,11 +60,24 @@ Gỡ cài đặt trong **Settings › Apps › Installed apps › Cam Studio**.
 2. Bật công tắc **Camera ảo**.
 3. Trong Discord, Zoom, OBS…: chọn camera **Cam Studio**.
 
+Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự quay lại khi cắm lại (cổng USB khác cũng được).
+
 **Điện thoại làm camera**
 1. Cài app lên điện thoại. Điện thoại và máy tính phải dùng chung một mạng Wi‑Fi.
 2. Mở app trên điện thoại. Trên PC, chọn tên điện thoại trong danh sách camera.
 3. Lần đầu, hai máy hiện cùng một mã 6 số: bấm **Đồng ý** ở cả hai bên.
 4. Bật **Camera ảo**. Đổi ống kính và zoom ngay trên khung hình.
+
+**Điện thoại qua cáp USB** (không cần Wi‑Fi)
+1. **Android:** bật **Gỡ lỗi USB** một lần:
+   - vào **Cài đặt › Giới thiệu điện thoại**, bấm 7 lần vào **Số bản dựng** (Xiaomi/Redmi: **Phiên bản MIUI**) để mở **Tùy chọn nhà phát triển**;
+   - trong **Tùy chọn nhà phát triển**, bật **Gỡ lỗi USB**;
+   - cắm cáp vào PC, rồi chọn **Cho phép** khi điện thoại hỏi "Cho phép gỡ lỗi USB?".
+
+   **iPhone:** cài app **Apple Devices** (Microsoft Store) hoặc iTunes trên PC. Cắm cáp, mở khóa iPhone, chọn **Tin cậy** nếu iPhone hỏi.
+2. Mở app Cam Studio trên điện thoại. Trên PC, chọn **"<tên máy> (USB)"** trong danh sách camera.
+3. Đã ghép đôi qua Wi‑Fi thì không phải ghép lại. Chưa ghép thì làm như bước 3 ở trên.
+4. Rút cáp giữa chừng: camera ảo vẫn giữ, hình tự quay lại khi cắm lại. Cam Studio không tự chuyển sang Wi‑Fi: muốn dùng Wi‑Fi thì chọn nguồn **"(Wi‑Fi)"**.
 
 <img src="docs/images/android-app.png" width="360" align="right" alt="App Cam Studio trên Android" />
 
@@ -74,7 +88,7 @@ Gỡ cài đặt trong **Settings › Apps › Installed apps › Cam Studio**.
 3. Bạn cứ dùng điện thoại bình thường, màn hình vẫn được chia sẻ. Bấm **Dừng** trong thông báo để tắt.
 
 > [!TIP]
-> - **Không thấy điện thoại?** Chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại.
+> - **Không thấy điện thoại?** Chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại. Hoặc cắm cáp USB.
 > - **Dùng camera điện thoại:** cần để app mở trên màn hình. Android và iOS không cho ứng dụng chạy nền dùng camera. App tự làm tối màn hình để đỡ tốn pin.
 
 <br clear="right" />
@@ -97,6 +111,8 @@ Bật **Camera ảo** một lần là xong. Bạn không cần tự bật hay t�
 | Đang mở cửa sổ, xem trước 100 fps | ~21% | ~165 MB | đang bật |
 | **Ẩn xuống khay, không ứng dụng nào dùng** | **~0,1%** | **~45 MB** | **tắt** |
 | Ẩn, phát màn hình điện thoại, chưa ai dùng | ~0,3% | ~47 MB | điện thoại không mã hóa |
+
+Điện thoại Android qua cáp cần `adb` (có sẵn trong bộ cài). Cam Studio chỉ chạy nó khi có điện thoại bật Gỡ lỗi USB đang cắm vào. Nó tắt khoảng một phút sau khi rút điện thoại, hoặc khi thoát Cam Studio.
 
 Nếu muốn Cam Studio luôn sẵn sàng: bật **Chạy cùng Windows** khi cài, hoặc trong **Cài đặt** của app. App sẽ chạy ẩn ở khay.
 
@@ -128,6 +144,19 @@ Bấm nút **Lật ngang** ở thanh công cụ. Một số ứng dụng (Discor
 </details>
 
 <details>
+<summary><b>Cắm cáp mà không thấy "(USB)" trong danh sách camera</b></summary>
+
+- **Android:**
+  - Bật **Gỡ lỗi USB** (xem [Bắt đầu nhanh](#bắt-đầu-nhanh)) và chọn **Cho phép** trên điện thoại.
+  - Nếu danh sách chỉ hiện "Điện thoại Android – chờ cho phép gỡ lỗi USB": mở khóa điện thoại, rút ra cắm lại để hộp thoại hiện lại.
+  - Đổi sang cáp truyền dữ liệu: cáp chỉ để sạc thì không được.
+  - Một số máy cần driver USB của hãng trên Windows.
+- **iPhone:** cài **Apple Devices** hoặc iTunes, mở khóa iPhone và chọn **Tin cậy**.
+- Rồi bấm **Tìm lại camera và điện thoại**.
+- **Chia sẻ màn hình** hiện chỉ đi qua Wi‑Fi.
+</details>
+
+<details>
 <summary><b>Điện thoại Xiaomi/Redmi thiếu ống kính siêu rộng hoặc macro</b></summary>
 
 Cam Studio tự tìm các ống kính mà MIUI giấu đi. Ống kính nào điện thoại không cho mở thì sẽ không hiện, để tránh lỗi.
@@ -138,8 +167,8 @@ Cam Studio tự tìm các ống kính mà MIUI giấu đi. Ống kính nào đi�
 ```mermaid
 flowchart LR
     W[Webcam USB] --> E
-    A[App Android<br/>Camera2 · MediaProjection] -- "Wi‑Fi, mã hóa<br/>H.264 / HEVC" --> E
-    I[App iPhone<br/>AVFoundation · ReplayKit] -- "Wi‑Fi, mã hóa<br/>H.264 / HEVC" --> E
+    A[App Android<br/>Camera2 · MediaProjection] -- "Wi‑Fi hoặc cáp (adb), mã hóa<br/>H.264 / HEVC" --> E
+    I[App iPhone<br/>AVFoundation · ReplayKit] -- "Wi‑Fi hoặc cáp (usbmux), mã hóa<br/>H.264 / HEVC" --> E
     E[CamStudioEngine.dll<br/>C++ · Media Foundation] -- "bộ nhớ chung NV12" --> V[CamStudioVCam.dll<br/>camera ảo, chạy trong Frame Server]
     U[CamStudio.exe<br/>WinUI 3 · C#] -- C API --> E
     V --> D[Discord · Zoom · OBS…]
@@ -172,7 +201,7 @@ Trên Mac hoặc Linux: `cd android && ./gradlew assembleRelease`.
 
 **iPhone:** xem [ios/README.md](ios/README.md).
 
-**Đóng gói bản phát hành** (cần [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`):
+**Đóng gói bản phát hành** (cần [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`, và Android SDK để lấy `adb` từ platform-tools):
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1  # → build\dist: Setup.exe + APK
 ```
@@ -188,6 +217,8 @@ build\Release\camstudio-verify.exe --expect 1280x720 --mode 1    # đọc ở 30
 build\Release\camstudio-verify.exe --hold 60                     # giữ camera như một cuộc gọi
 build\Release\camstudio-fake-phone.exe                           # điện thoại giả để thử PC không cần máy thật
 build\Release\camstudio-dshow-consumer.exe                       # mở camera qua DirectShow như Discord
+build\Release\camstudio-usb-check.exe list                       # điện thoại trên cáp USB (adb, Apple), tên máy
+build\Release\camstudio-usb-check.exe hello <serial|UDID>        # mở đường ống qua cáp tới app, đổi "hello"
 ```
 - **Android:** `gradlew testDebugUnitTest`
 - **iOS:** scheme `CryptoTestsMac`

@@ -1,4 +1,5 @@
 ﻿#include "PhoneLink.h"
+#include "UsbTransport.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -50,6 +51,45 @@ void PutU32(uint8_t* p, uint32_t v) { p[0] = uint8_t(v >> 24); p[1] = uint8_t(v 
 void PutU64(uint8_t* p, uint64_t v) { for (int i = 0; i < 8; ++i) p[i] = uint8_t(v >> (56 - 8 * i)); }
 uint32_t GetU32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
 uint64_t GetU64(const uint8_t* p) { uint64_t v = 0; for (int i = 0; i < 8; ++i) v = (v << 8) | p[i]; return v; }
+
+// A connected, blocking socket to the phone app, or INVALID_SOCKET and a message for the user.
+SOCKET Dial(const Endpoint& endpoint, std::string& error)
+{
+    // A cable: the adb server or usbmuxd opens a tunnel to the app's port (docs/protocol.md 1.2).
+    if (endpoint.transport == Transport::Adb) return static_cast<SOCKET>(usb::OpenAdb(endpoint.serial, endpoint.port, error));
+    if (endpoint.transport == Transport::Usbmux) return static_cast<SOCKET>(usb::OpenUsbmux(endpoint.serial, endpoint.port, error));
+
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* addr = nullptr;
+    if (getaddrinfo(endpoint.host.c_str(), std::to_string(endpoint.port).c_str(), &hints, &addr) != 0)
+    {
+        error = "Địa chỉ không hợp lệ: " + endpoint.host;
+        return INVALID_SOCKET;
+    }
+    SOCKET s = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+    // Connect with a timeout: unreachable phones should not hang the app.
+    u_long nonBlocking = 1;
+    ioctlsocket(s, FIONBIO, &nonBlocking);
+    connect(s, addr->ai_addr, static_cast<int>(addr->ai_addrlen));
+    freeaddrinfo(addr);
+    fd_set w;
+    FD_ZERO(&w);
+    FD_SET(s, &w);
+    timeval tv{ 4, 0 };
+    int so = 0, len = sizeof(so);
+    if (select(0, nullptr, &w, nullptr, &tv) != 1 || getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len) != 0 || so != 0)
+    {
+        closesocket(s);
+        error = "Không kết nối được tới điện thoại " + endpoint.host + ":" + std::to_string(endpoint.port) +
+                ". Kiểm tra app Cam Studio trên điện thoại đang mở và cùng mạng Wi‑Fi.";
+        return INVALID_SOCKET;
+    }
+    nonBlocking = 0;
+    ioctlsocket(s, FIONBIO, &nonBlocking);
+    return s;
+}
 } // namespace
 
 // ---- identity & pairing store ---------------------------------------------------------
@@ -115,6 +155,10 @@ bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairi
 
 bool PhoneLink::Reconnect(std::string& error)
 {
+    // A cable: the same phone (by serial) on a cable again. While it is unplugged this fails and
+    // the engine keeps waiting; it never moves to Wi‑Fi by itself.
+    if (m_endpoint.Usb()) return ConnectImpl(m_endpoint, nullptr, nullptr, false, error);
+
     Endpoint endpoint = m_endpoint;
     // Find it again by the TXT id it was found under: the iPhone's shared screen advertises
     // "<deviceId>:screen" (docs/protocol.md 1.1) while its hello carries the camera's deviceId,
@@ -137,35 +181,8 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     Close();
     m_endpoint = endpoint;
 
-    addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    addrinfo* addr = nullptr;
-    if (getaddrinfo(endpoint.host.c_str(), std::to_string(endpoint.port).c_str(), &hints, &addr) != 0)
-    {
-        error = "Địa chỉ không hợp lệ: " + endpoint.host;
-        return false;
-    }
-    SOCKET s = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-    // Connect with a timeout: unreachable phones should not hang the app.
-    u_long nonBlocking = 1;
-    ioctlsocket(s, FIONBIO, &nonBlocking);
-    connect(s, addr->ai_addr, static_cast<int>(addr->ai_addrlen));
-    freeaddrinfo(addr);
-    fd_set w;
-    FD_ZERO(&w);
-    FD_SET(s, &w);
-    timeval tv{ 4, 0 };
-    int so = 0, len = sizeof(so);
-    if (select(0, nullptr, &w, nullptr, &tv) != 1 || getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len) != 0 || so != 0)
-    {
-        closesocket(s);
-        error = "Không kết nối được tới điện thoại " + endpoint.host + ":" + std::to_string(endpoint.port) +
-                ". Kiểm tra app Cam Studio trên điện thoại đang mở và cùng mạng Wi‑Fi.";
-        return false;
-    }
-    nonBlocking = 0;
-    ioctlsocket(s, FIONBIO, &nonBlocking);
+    const SOCKET s = Dial(endpoint, error);
+    if (s == INVALID_SOCKET) return false;
     BOOL noDelay = TRUE;
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&noDelay), sizeof(noDelay));
     int rcvbuf = 4 * 1024 * 1024;
@@ -185,7 +202,10 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         return fail("Mất kết nối với điện thoại");
 
     json::Value hello;
-    if (!ReadHandshake(hello, 8000) || hello["type"].Str() != "hello") return fail("Điện thoại không trả lời đúng giao thức");
+    if (!ReadHandshake(hello, 8000) || hello["type"].Str() != "hello")
+        // Over a cable a suspended iPhone app still accepts the connection, then never answers.
+        return fail(endpoint.Usb() ? "Điện thoại không trả lời qua cáp USB. Mở khóa điện thoại và mở app Cam Studio."
+                                   : "Điện thoại không trả lời đúng giao thức");
     if (hello["v"].Int() != 1) return fail("Phiên bản app trên điện thoại không khớp với Cam Studio trên PC");
     m_deviceId = hello["deviceId"].Str();
     m_deviceName = hello["name"].Str(endpoint.name);

@@ -16,7 +16,7 @@ std::mutex g_lock;
 std::unique_ptr<CaptureEngine> g_engine; // created in cs_init, never at DLL load
 std::vector<CameraDevice> g_cameras;
 std::vector<phone::Endpoint> g_endpoints;          // parallel to phone entries in g_cameras
-std::map<std::string, std::shared_ptr<phone::PhoneLink>> g_links; // by host:port, reused
+std::map<std::string, std::shared_ptr<phone::PhoneLink>> g_links; // by EndpointKey, reused
 std::vector<FormatOption> g_formats;
 int32_t g_formatsCamera = -1;
 std::string g_phoneCaps;
@@ -144,7 +144,10 @@ std::vector<FormatOption> PhoneFormats(const json::Value& caps)
     return out;
 }
 
-std::string EndpointKey(const phone::Endpoint& e) { return e.host + ":" + std::to_string(e.port); }
+std::string EndpointKey(const phone::Endpoint& e)
+{
+    return (e.Usb() ? "usb:" + e.serial : e.host) + ":" + std::to_string(e.port);
+}
 } // namespace
 
 CS_API int32_t cs_init()
@@ -195,7 +198,8 @@ CS_API int32_t cs_refresh_cameras()
     for (const phone::Endpoint& e : phone::KnownPhones())
     {
         CameraDevice d;
-        d.name = Widen(e.name.empty() ? e.host : e.name) + (e.manual ? L" (" + Widen(e.host) + L")" : L" (Wi‑Fi)");
+        d.name = Widen(e.name.empty() ? e.host : e.name) +
+                 (e.Usb() ? L" (USB)" : e.manual ? L" (" + Widen(e.host) + L")" : L" (Wi‑Fi)");
         auto& link = g_links[EndpointKey(e)];
         if (!link) link = std::make_shared<phone::PhoneLink>();
         d.phone = link;

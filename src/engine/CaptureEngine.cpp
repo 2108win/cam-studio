@@ -552,6 +552,8 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
     }
     {
         Pipeline pipeline(*this);
+        CameraDevice webcam = cam; // found again after the webcam was unplugged
+        bool lost = false;
         while (!m_quit)
         {
             // Standby: nothing needs a picture (no app on the camera, preview
@@ -578,8 +580,21 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
 
             std::wstring why;
             HRESULT hr = S_OK;
-            const Outcome outcome = cam.IsPhone() ? RunPhone(pipeline, cam, format, why, hr)
-                                                  : RunWebcam(pipeline, cam, format, why, hr);
+            Outcome outcome;
+            if (cam.IsPhone())
+            {
+                outcome = RunPhone(pipeline, cam, format, why, hr);
+            }
+            else if (lost && !FindCameraAgain(cam, webcam))
+            {
+                why = L"Camera đã bị rút ra. Cắm lại cáp để tiếp tục";
+                outcome = Outcome::Lost;
+            }
+            else
+            {
+                outcome = RunWebcam(pipeline, webcam, format, why, hr);
+            }
+            lost = outcome == Outcome::Lost;
             if (outcome == Outcome::Quit || m_quit) break;
             if (outcome == Outcome::Idle) continue; // back to standby
             // Before the virtual camera exists there is nothing to keep alive:

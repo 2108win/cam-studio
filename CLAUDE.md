@@ -23,7 +23,8 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 | Shared PC headers (shared memory, NV12 ops, MF devices) | `src/common` | Windows only | — |
 | PC app (WinUI 3, C#, .NET 10, unpackaged) | `app/` | Windows only | `scripts\build.ps1` |
 | Verify tool, protocol test, fake phone | `src/verify`, `tools/` | Windows only | `scripts\build.ps1` |
-| Fake PC (tests a phone app end to end: pair, caps, stream, decode, PNGs) | `tools/fake_pc.swift` | **macOS** | `scripts/fake-pc.sh --lens all` |
+| Fake PC (tests a phone app end to end: pair, caps, stream, decode, PNGs) | `tools/fake_pc.swift` | **macOS** | `scripts/fake-pc.sh --lens all` (`--usb`: iPhone over the cable) |
+| USB transport check (lists phones on a cable, opens a tunnel, exchanges `hello`) | `tools/usb_check.cpp` + `src/engine/UsbTransport.cpp` | Windows, **macOS** | Windows: `camstudio-usb-check`; Mac: `clang++ -std=c++20 -o build/usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp` |
 | Android app (Kotlin, Camera2 + MediaCodec) | `android/` | Windows, **macOS**, Linux | `cd android && ./gradlew assembleRelease` (JDK 17, Android SDK 36) |
 | iPhone app (Swift, AVFoundation + VideoToolbox + Network.framework) | `ios/` | **macOS** (Xcode via XcodeGen), or Linux/WSL via xtool (no screen sharing) | `scripts/ios-run.sh` (tests, build, install, launch); `scripts/ios-archive.sh` (TestFlight); see [ios/README.md](ios/README.md) |
 | iPhone screen sharing (ReplayKit broadcast upload extension) | `ios/CamStudioScreen` | **macOS** (Xcode only) | built and embedded with the app |
@@ -38,9 +39,10 @@ On this Mac, `xcode-select` points at the command-line tools: use
 ## Protocol in one paragraph
 
 The phone is the server. It advertises `_camstudio._tcp` over mDNS on fixed port 47321 (falls back to a
-random port). Pairing uses ECDH P‑256 with a 6‑digit numeric comparison code that **both** PC and phone
-must accept, then HKDF‑SHA256 (hand-written on every platform, RFC 5869) and AES‑256‑GCM with strict
-per-direction counters. Records: CONTROL (JSON), VIDEO_CONFIG, VIDEO_FRAME (Annex‑B H.264/HEVC).
+random port). Over a USB cable the PC reaches the same port through a tunnel (adb for Android, usbmuxd for
+iPhone; docs/protocol.md 1.2), with the same handshake. Pairing uses ECDH P‑256 with a 6‑digit
+numeric comparison code that **both** PC and phone must accept, then HKDF‑SHA256 (hand-written on every
+platform, RFC 5869) and AES‑256‑GCM with strict per-direction counters. Records: CONTROL (JSON), VIDEO_CONFIG, VIDEO_FRAME (Annex‑B H.264/HEVC).
 The phone sends `caps` (every lens with its controls, every encoder-supported mode). The PC builds its
 UI from caps and sends `set` messages, and the phone streams `state`/`stats`. Bitrate adapts.
 Every crypto implementation must match `docs/protocol-vectors.json` byte for byte:
@@ -72,6 +74,16 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
   and HEVC, other apps in front, both landscape directions, a still screen, the camera alongside.
 - The user's Windows PC paired with the iPhone and streamed 4K from `back-dualWide`. The PC's
   controls and the screen source on the real PC are not yet checked.
+
+USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
+- `src/engine/UsbTransport.cpp` (built with clang): usbmuxd listing, `Listen` watcher, the iPhone's
+  name from lockdownd, a tunnel to 47321 and `hello` from the unchanged iOS app.
+- `fake-pc --usb`: all four lenses at 1080p30 and 4K30 HEVC at 25 Mbps, every frame decoded. It reused
+  the Wi‑Fi pairing key: no new pairing.
+- **Not compiled on Windows yet:** the engine side (`Discovery` USB list, `PhoneLink` `Dial`/`Reconnect`,
+  names "<name> (USB)", webcam re-find after replug), the adb start/stop, `package-release.ps1` copying adb,
+  the installer's `adb kill-server`. **Android over adb is untested anywhere**, and so is the Apple
+  Mobile Device Service on Windows.
 
 ## Things learned the hard way
 
@@ -145,6 +157,11 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
     extension embedded, same version, permission strings present.
   - Automatic signing registers a new id on whatever team signs it, for good. So both scripts
     (`scripts/ios-team.sh`) show the team name and ask before the first build of an id on a team.
+    A yes is remembered as `// confirmed: <team> <id>` in `Signing.local.xcconfig`. Dev builds may
+    sign with the team's wildcard profile, so a missing explicit profile proves nothing.
+  - **Do not pick the team in Xcode's Signing tab:** Xcode writes `DEVELOPMENT_TEAM` into
+    `project.pbxproj` (now tracked in git), at project level too, and that overrides
+    `Signing.local.xcconfig`. `xcodegen` (both scripts run it) puts the file back.
   - **Privacy manifest:** `ios/Resources/PrivacyInfo.xcprivacy`, copied into both targets. It
     declares `UserDefaults` (CA92.1), the only required-reason API in either binary (checked with
     `nm -u`).
@@ -200,6 +217,24 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
     - Redmi screen: 0.3% CPU, and 0 encoders running on the phone. It woke in ~0.5 s.
   - **Memory:** the app calls `EmptyWorkingSet` when hidden.
   - **Status:** shown through `CsStatus.standby`.
+- **USB cable (docs/protocol.md 1.2):** the phone apps are unchanged; the tunnel arrives on loopback.
+  - **Never probe a phone port** to see whether the app is open: any accepted connection replaces the
+    session in progress. USB phones are listed when attached, and only the camera port 47321
+    (screen sharing over USB is not done).
+  - The USB list comes from background watchers (adb `host:track-devices`, usbmuxd `Listen`), never
+    from I/O in `KnownPhones()`: `cs_refresh_cameras` runs on the UI thread.
+  - A phone is listed only once its name is read (adb `settings get global device_name`, lockdownd
+    `DeviceName` without a session), so the name never changes while it is plugged in.
+  - usbmux `Connect` takes the port byte-swapped (47321 → 55736). The DeviceID changes on every plug-in:
+    look it up by UDID each time.
+  - **A suspended iPhone app still accepts a usbmux connection, then never answers** (phone locked, app
+    in the background). Later, once iOS reclaims the listener, `Connect` returns 3. `PhoneLink` waits
+    8 s for `hello`, then says to unlock the phone and open the app.
+  - adb on Windows: started only when no server answers and an ADB interface
+    `{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}` is present. The engine never runs `adb.exe` while a server
+    runs (another version would kill it). It stops only the server it started: after a minute with no
+    phone on adb (adb scans USB every second), or on exit.
+  - A USB link reconnects over the same cable only: unplugged means Waiting, never a silent switch to Wi‑Fi.
 - **The phone serves one PC at a time:** a new connection replaces the old one. A test from the
   fake PC on the Mac kicks the user's real Windows PC off (and the PC's reconnect kicks the fake
   PC). Ask before testing while the user's PC may be streaming.
@@ -217,10 +252,15 @@ iOS app, verified on an iPhone 14 (iOS 27.2, Xcode 27) against `tools/fake_pc.sw
    - tap-to-focus;
    - the advanced phone control panel (focus, exposure, white balance, stabilization);
    - landscape rotation switching.
-3. TestFlight: `scripts/ios-archive.sh` and the privacy manifest are ready, and `--unsigned` archives.
-   Waiting on the user's own paid Apple account: not yet signed for distribution or uploaded.
-   App Store Connect will ask the encryption (export compliance) question for each build; that
-   answer is the user's.
-4. USB transport over the same protocol: adb port-forward for Android, usbmux for iOS.
+3. TestFlight: on 2026-10-18, `scripts/ios-archive.sh --upload` sent 0.1.0 (20261018.0743) as
+   `vn.camstudio.phonewl` on the user's own paid team. The App Store Connect record "Cam Studio"
+   says version 1.0; the build says 0.1.0. Next: test the TestFlight install on the iPhone.
+   Export compliance: `ITSAppUsesNonExemptEncryption = NO` in `ios/Info.plist` (the user's choice:
+   all crypto is CryptoKit), so builds after 0743 skip the question; `ios-archive.sh` checks the key.
+4. USB transport (written, docs/protocol.md 1.2): build it on Windows, then test the Redmi over adb and
+   the iPhone through Apple Devices/iTunes, including unplugging while Discord uses the camera.
+   Also check the webcam re-find: unplug the OBSBOT while streaming, plug it into another port.
+   Later: screen sharing over USB. It needs the phone servers to replace a session only after a
+   new connection's `hello`, so that a probe is harmless.
 5. Ideas: AI background blur on the PC; check HEVC decoding end to end; let the virtual camera write at
    the consumer's fps (needs a vcam change plus `register.ps1` again).

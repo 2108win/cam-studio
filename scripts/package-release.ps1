@@ -27,7 +27,17 @@ $bin = Join-Path $root "app\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64"
 Copy-Item $bin $appOut -Recurse
 Get-ChildItem $appOut -Recurse -File -Filter *.pdb | Remove-Item -Force
 Copy-Item (Join-Path $root "build\Release\CamStudioVCam.dll") $appOut
-foreach ($f in "CamStudio.exe", "CamStudio.pri", "MainWindow.xbf", "CamStudioEngine.dll") {
+# adb for Android phones on a USB cable (docs/protocol.md 1.2). The engine starts it only while such
+# a phone is plugged in. From the Android SDK's platform-tools, with its NOTICE.txt (licences).
+$platformTools = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools"
+$adbOut = Join-Path $appOut "adb"
+New-Item -ItemType Directory -Force $adbOut | Out-Null
+foreach ($f in "adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll", "NOTICE.txt") {
+    $src = Join-Path $platformTools $f
+    if (-not (Test-Path $src)) { throw "$src missing: run scripts\setup-android-sdk.ps1" }
+    Copy-Item $src $adbOut
+}
+foreach ($f in "CamStudio.exe", "CamStudio.pri", "MainWindow.xbf", "CamStudioEngine.dll", "adb\adb.exe") {
     if (-not (Test-Path (Join-Path $appOut $f))) { throw "$f missing from the app folder" }
 }
 

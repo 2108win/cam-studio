@@ -3,7 +3,7 @@
 Đây là hợp đồng **duy nhất** giữa app điện thoại (Android Kotlin, iOS Swift) và Cam Studio trên PC (C++). Khi đổi giao thức thì sửa file này trước, rồi sửa cả ba bên theo.
 
 - **Vai trò:** điện thoại là **máy chủ**, PC là **máy khách**.
-- **Đường truyền:** Wi‑Fi trong nhà là mặc định. USB (adb cho Android, usbmux cho iPhone) chỉ là một đường ống TCP khác, chạy y nguyên giao thức này.
+- **Đường truyền:** Wi‑Fi trong nhà là mặc định. USB (adb cho Android, usbmux cho iPhone) chỉ là một đường ống TCP khác, chạy y nguyên giao thức này (mục 1.2).
 - **Mã hóa:** mọi dữ liệu sau bước bắt tay đều được mã hóa.
 
 ---
@@ -58,6 +58,50 @@ Trên iPhone, màn hình được chia sẻ bằng một tiện ích ReplayKit (
   - Khi hình màn hình và khung khác chiều (màn hình dọc trong khung ngang, hoặc ngược lại), app xoay hình một phần tư vòng theo chiều kim đồng hồ và báo `orientation = 270` để PC xoay lại.
   - Khi cùng chiều, `orientation = 0`.
 - **Kích thước:** mọi kích thước đều là bội số của 16.
+
+### 1.2 Qua cáp USB
+
+Cáp chỉ thay đường ống TCP. Bắt tay, ghép đôi, mã hóa và mọi bản ghi giữ nguyên như qua Wi‑Fi. App điện thoại **không cần sửa gì**:
+- máy chủ của app nghe trên mọi giao diện mạng;
+- đường ống qua cáp đi vào cổng của app trên chính điện thoại (loopback).
+
+**PC tìm điện thoại trên cáp** (không có mDNS, nên không có TXT):
+
+| | Android | iPhone |
+|---|---|---|
+| Dịch vụ trên PC | adb server, `127.0.0.1:5037` | usbmuxd: trên Windows là Apple Mobile Device Service `127.0.0.1:27015` (cài cùng Apple Devices hoặc iTunes); trên Mac là `/var/run/usbmuxd` |
+| Danh sách, tự cập nhật | `host:track-devices`, rồi `host:devices-l` | `Listen`: các tin `Attached` / `Detached` |
+| Chỉ lấy cáp | bỏ serial dạng `ip:port`, `…._adb-tls-…`, `emulator-…` | chỉ `ConnectionType = "USB"` (iPhone đồng bộ qua Wi‑Fi có `"Network"`) |
+| Tên máy | `shell:settings get global device_name`, giống app (`Store.deviceName`) | `DeviceName` từ lockdownd (cổng 62078), hỏi `GetValue` không cần phiên: không ghép đôi, iPhone không hiện gì |
+| Mở đường ống | `host:transport:<serial>` rồi `tcp:47321` | `Connect` với `DeviceID` và `PortNumber` = cổng **đảo byte** (thứ tự mạng, đọc như số little‑endian: 47321 → 55736) |
+| App chưa mở | `FAIL` cho `tcp:` | kết quả `Number = 3` |
+
+- **Khung tin của adb:** mỗi yêu cầu là 4 chữ số hex độ dài rồi tới nội dung; trả lời là `OKAY`, hoặc `FAIL` kèm 4 chữ số hex độ dài và lý do.
+- **Khung tin của usbmuxd:** đầu 16 byte little‑endian (độ dài kể cả đầu, version `1`, loại `8` = plist, tag) rồi plist XML.
+- **Khung tin của lockdownd:** `u32` big‑endian độ dài rồi plist XML.
+
+**Chỉ dùng cổng cố định:** qua cáp PC chỉ biết cổng 47321. Nếu app phải lùi về cổng ngẫu nhiên (mục 1) thì không kết nối qua cáp được.
+
+**Danh tính:**
+- PC gọi nguồn là `"<tên máy> (USB)"` và giữ nó theo serial (adb) hoặc UDID (iPhone).
+- `deviceId` vẫn lấy từ `hello`, nên khóa ghép đôi qua Wi‑Fi dùng luôn cho cáp, không phải ghép lại.
+- Tên chỉ được đưa vào danh sách khi đã đọc xong, để không đổi trong lúc máy còn cắm (app trên PC tìm lại camera theo tên).
+
+**Khi mất kết nối:**
+- PC kết nối lại qua đúng cáp đó, theo serial hoặc UDID. `DeviceID` của usbmux đổi mỗi lần cắm, nên được tra lại theo UDID mỗi lần.
+- Rút cáp: PC chờ (trạng thái Waiting), camera ảo vẫn giữ. PC **không** tự chuyển sang Wi‑Fi.
+
+**iPhone khóa màn hình hoặc app chạy nền:**
+- Lúc đầu, kết nối vẫn được nhận nhưng app không trả lời `hello`. PC chờ 8 giây rồi báo "mở khóa điện thoại và mở app".
+- Sau khi iOS thu hồi cổng nghe, `Connect` trả `3`.
+
+**adb trên Windows:**
+- Bộ cài kèm `adb.exe` trong `App\adb`.
+- PC chỉ chạy adb server khi chưa có server nào **và** Windows thấy một giao diện ADB, tức có điện thoại bật Gỡ lỗi USB đang cắm. Giao diện ADB thuộc lớp `{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}`, cũng là lớp adb dùng để tìm máy.
+- PC tắt server do chính nó chạy khi không còn điện thoại nào trên adb quá một phút (và Windows không còn thấy giao diện ADB), hoặc khi thoát. Lý do: adb quét USB mỗi giây. Server do công cụ khác chạy thì để nguyên.
+- PC không bao giờ chạy `adb.exe` khi đã có server: adb khác phiên bản sẽ tắt server mà công cụ khác đang dùng.
+
+**Chưa làm:** chia sẻ màn hình qua cáp (cổng 47322). Không thể dò xem cổng có đang mở hay không: một kết nối thử sẽ làm điện thoại bỏ phiên đang phát, vì mỗi lúc điện thoại chỉ phục vụ một PC.
 
 **Tường lửa:** PC chỉ kết nối ra ngoài (ra điện thoại), nên Windows không hiện hộp thoại tường lửa.
 

@@ -1,5 +1,6 @@
 // Finds Cam Studio phones on the home network (DNS-SD _camstudio._tcp,
-// docs/protocol.md section 1) and remembers phones added by IP.
+// docs/protocol.md section 1), remembers phones added by IP, and lists phones on a
+// USB cable (adb, usbmuxd: docs/protocol.md 1.2).
 #pragma once
 
 #include <cstdint>
@@ -9,22 +10,35 @@
 
 namespace phone
 {
+// How the PC reaches a phone: TCP over the network, or a tunnel through a USB cable.
+enum class Transport : uint8_t
+{
+    Network,
+    Adb,     // Android: through the adb server
+    Usbmux,  // iPhone: through usbmuxd (Apple Mobile Device Service)
+};
+
 struct Endpoint
 {
-    std::string host;      // IPv4 address
-    uint16_t port = 0;
+    std::string host;      // IPv4 address (network only)
+    uint16_t port = 0;     // the phone app's port (USB: the fixed 47321)
     std::string deviceId;  // TXT id (empty for manual entries until connected)
     std::string name;      // UTF-8, TXT name or service instance name
     std::string model;
     std::string os;        // ios | android
     bool manual = false;   // added by IP
+    Transport transport = Transport::Network;
+    std::string serial;    // USB: adb serial or the iPhone's UDID
+
+    bool Usb() const { return transport != Transport::Network; }
 };
 
 // Starts browsing in the background (idempotent).
 void StartDiscovery();
 void StopDiscovery();
 
-// Phones currently visible plus manual ones, de-duplicated by deviceId.
+// Phones currently visible on the network, manual ones, then phones on a USB cable. Cheap: the
+// USB list is kept current in the background, nothing is asked here.
 std::vector<Endpoint> KnownPhones();
 
 // "Add by IP": remembered for this run and in %LOCALAPPDATA%\CamStudio\phones.txt.

@@ -88,8 +88,13 @@ Type: filesandordirs; Name: "{app}\App"
 procedure StopCameraUsers();
 var
   Code: Integer;
+  Adb: String;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM CamStudio.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  // The adb server the app starts for Android phones on a cable runs from App\adb.
+  Adb := ExpandConstant('{app}\App\adb\adb.exe');
+  if FileExists(Adb) then
+    Exec(Adb, 'kill-server', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop FrameServerMonitor', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop FrameServer', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Sleep(1500);
