@@ -407,6 +407,9 @@ Gotchas:
 3. TestFlight: on 2026-10-18, `scripts/ios-archive.sh --upload` sent 0.1.0 (20261018.0743) as
    `vn.camstudio.phonewl` on the user's own paid team. The App Store Connect record "Cam Studio"
    says version 1.0; the build says 0.1.0. Next: test the TestFlight install on the iPhone.
+   **Latest: 0.1.0 (20261018.1756)**, uploaded 2026-10-18 from `main` (CryptoTests PASS, `nm -u`:
+   only UserDefaults). New since 0743: probe-safe servers, PiP + `voip`, auto/busy/ping. PiP is not
+   yet tested on a device. External testers need beta review, which may question `voip`.
    Export compliance: `ITSAppUsesNonExemptEncryption = NO` in `ios/Info.plist` (the user's choice:
    all crypto is CryptoKit), so builds after 0743 skip the question; `ios-archive.sh` checks the key.
 4. USB transport (docs/protocol.md 1.2): the Redmi over adb works (2026-10-18). Left: the iPhone

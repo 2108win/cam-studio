@@ -1,8 +1,8 @@
 # Handoff: unfinished work
 
 > **Tóm tắt:** ngày 2026-10-18 phần PC đã build và chạy trên Windows, Redmi qua cáp và Wi‑Fi (cả
-> Discord) chạy tốt, có tự động cập nhật; bản 0.1.5 (giao diện mới) đã đăng trên GitHub. Còn lại: các bài thử cần
-> người cầm máy (mục 3).
+> Discord) chạy tốt, có tự động cập nhật; bản 0.1.5 (giao diện mới) đã đăng trên GitHub. iOS
+> 0.1.0 (20261018.1756) đã lên TestFlight. Còn lại: các bài thử cần người cầm máy (mục 3).
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
 Redmi over USB" says what was verified). Update this file in the same commit as each step; delete
@@ -57,8 +57,8 @@ it once everything is tested.
    the OBSBOT (replug into another port).
 3. **Discord call:** turn the phone, switch sources, pause.
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
-5. **iPhone:** Apple Devices on Windows; `scripts/ios-run.sh` on the Mac for PiP (ask first: it
-   replaces the TestFlight install).
+5. **iPhone:** Apple Devices on Windows. PiP: install TestFlight build 20261018.1756 (it has PiP)
+   or `scripts/ios-run.sh` on the Mac (ask first: it replaces the TestFlight install).
 
 ## 4. Pitfalls
 
