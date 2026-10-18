@@ -7,6 +7,9 @@ import UIKit
 protocol MediaSource: AnyObject {
     /// iOS lets an app use the camera only while it is on screen; the screen broadcast runs anyway.
     var needsForeground: Bool { get }
+    /// Except in a Picture in Picture window (BackgroundCamera): then the stream goes on when the
+    /// app leaves the screen, and may even start there.
+    var keepsRunningInBackground: Bool { get }
     /// The "caps" message (docs/protocol.md 5).
     func caps(store: Store) -> [String: Any]
     /// Starts streaming for a "start" message. Returns the "started" message and a short label for
@@ -16,6 +19,10 @@ protocol MediaSource: AnyObject {
     func set(_ json: [String: Any])
     func requestKeyframe()
     func setBitrate(_ bps: Int)
+}
+
+extension MediaSource {
+    var keepsRunningInBackground: Bool { false }
 }
 
 /// Where a stream's output goes (Session implements these). Called from capture and encoder threads.

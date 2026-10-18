@@ -37,6 +37,7 @@
 		EB23EBFEE22DEFC525C6203C /* Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FD2FE4642ADC0E27AC88332 /* Crypto.swift */; };
 		ED172002AE768134955F149D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A3B7CFFD25D26B53409BA0F4 /* Assets.xcassets */; };
 		EE6BFDCF74CA1BFB4F7802D8 /* Cinematic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C45B3C9B8A17E34E463CB2B /* Cinematic.swift */; };
+		F4B17B4D044B008FBF448D7B /* BackgroundCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D7F11C51FA220A2623E6D2 /* BackgroundCamera.swift */; };
 		FADAD54607F88F76EB08B09C /* CameraCaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438C638C48AA038CAC47986 /* CameraCaps.swift */; };
 /* End PBXBuildFile section */
 
@@ -88,6 +89,7 @@
 		C438C638C48AA038CAC47986 /* CameraCaps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaps.swift; sourceTree = "<group>"; };
 		D85556D77F49C95DFAE68105 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		F1D0F2A07CA35F2D3944E9E9 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
+		F2D7F11C51FA220A2623E6D2 /* BackgroundCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundCamera.swift; sourceTree = "<group>"; };
 		F41B37FE4431EA98FA6A6BA9 /* CamStudioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CamStudioApp.swift; sourceTree = "<group>"; };
 		F60362BB898CCB21AAD7A444 /* ScreenSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSource.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -136,6 +138,7 @@
 		C7B8148E7B63374C79C59DA6 /* CamStudio */ = {
 			isa = PBXGroup;
 			children = (
+				F2D7F11C51FA220A2623E6D2 /* BackgroundCamera.swift */,
 				C438C638C48AA038CAC47986 /* CameraCaps.swift */,
 				5C0B8F9DDD417EDC1962335A /* CameraSource.swift */,
 				671EE379B54B186D315BFEA5 /* CameraStreamer.swift */,
@@ -379,6 +382,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F4B17B4D044B008FBF448D7B /* BackgroundCamera.swift in Sources */,
 				8C40902C7DD7FA82736EE8F4 /* CamStudioApp.swift in Sources */,
 				FADAD54607F88F76EB08B09C /* CameraCaps.swift in Sources */,
 				0A0C9D15ACE6332780D38CE3 /* CameraSource.swift in Sources */,

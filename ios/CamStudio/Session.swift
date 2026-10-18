@@ -16,14 +16,31 @@ final class Session {
         func showSystemEffects()
     }
 
+    /// What the server answers when a PC's hello asks to become the session (PhoneServer.claim).
+    enum Claim {
+        case accepted
+        /// A PC that connected by itself ("auto") while another PC holds the phone.
+        case busy(otherPc: String)
+        case refused
+    }
+
     private let connection: Connection
     private let store: Store
     private weak var ui: UI?
     private let source: MediaSource
     private var channel: SecureChannel?
     private var streaming = false
-    private var pcName = "máy tính"
-    private var closed = false
+    private(set) var pcName = "máy tính"
+    private(set) var clientId = ""
+    private(set) var closed = false
+
+    // Idle links (docs/protocol.md 4.1 "ping"): a PC that pings is expected to keep doing so, so
+    // after a ping, silence means the PC is gone (Wi‑Fi dropped, PC asleep).
+    private static let silenceLimit: TimeInterval = 45
+    private let heardLock = NSLock()
+    private var lastHeard = Date()
+    private var pinged = false
+    private var watchdog: DispatchSourceTimer?
 
     // Adaptive sending (section 6).
     private struct Out { let kind: UInt8; let data: Data; let ptsUs: Int64; let flags: UInt32; let queuedAt: TimeInterval }
@@ -43,12 +60,13 @@ final class Session {
         self.source = source
     }
 
-    /// `claim` runs once the PC's hello is valid (on this thread): this connection replaces the
-    /// session in progress only then. False ends it.
-    func run(claim: () -> Bool) {
+    /// `claim` runs once the PC's hello is valid (on this thread), with its "auto" flag: this
+    /// connection replaces the session in progress only then.
+    func run(claim: (_ auto: Bool) -> Claim) {
         connection.start()
         do {
             try handshake(claim: claim)
+            startWatchdog()
             Thread { self.sendLoop() }.start()
             ui?.status(streaming: false, text: "Đã kết nối với \(pcName)")
             try controlLoop()
@@ -61,6 +79,7 @@ final class Session {
     func close() {
         guard !closed else { return }
         closed = true
+        watchdog?.cancel()
         stopStream()
         pendingSignal.signal()
         connection.close()
@@ -68,15 +87,25 @@ final class Session {
 
     // MARK: - handshake
 
-    private func handshake(claim: () -> Bool) throws {
+    private func handshake(claim: (_ auto: Bool) -> Claim) throws {
         let hello = try connection.readHandshake()
         guard hello["type"] as? String == "hello", hello["v"] as? Int == 1,
               let clientId = hello["clientId"] as? String,
               let commitB64 = hello["commit"] as? String, let commit = Data(base64Encoded: commitB64) else {
             throw WireError.protocolError("bad hello")
         }
-        guard claim() else { throw WireError.closed }
+        self.clientId = clientId
         pcName = hello["clientName"] as? String ?? pcName
+        switch claim(hello["auto"] as? Bool ?? false) {
+        case .accepted:
+            break
+        case .busy(let otherPc):
+            // docs/protocol.md 3.1: a PC connecting by itself never takes the phone from another PC.
+            try? connection.writeHandshake(["type": "error", "code": "busy", "message": "iPhone đang kết nối với \(otherPc)"])
+            throw WireError.closed
+        case .refused:
+            throw WireError.closed
+        }
 
         let key = P256.KeyAgreement.PrivateKey()
         let phonePub = Crypto.encodePublic(key.publicKey)
@@ -131,8 +160,15 @@ final class Session {
         guard let channel else { return }
         while !closed {
             let msg = try channel.receive()
+            heardLock.lock()
+            lastHeard = Date()
+            heardLock.unlock()
             guard msg.kind == Wire.kindControl, let json = msg.json() else { continue }
             switch json["type"] as? String {
+            case "ping":
+                heardLock.lock()
+                pinged = true
+                heardLock.unlock()
             case "getCaps":
                 sendControl(source.caps(store: store))
             case "start":
@@ -155,9 +191,24 @@ final class Session {
         }
     }
 
+    /// Closes the session once a PC that pings has been silent too long.
+    private func startWatchdog() {
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.heardLock.lock()
+            let gone = self.pinged && Date().timeIntervalSince(self.lastHeard) > Self.silenceLimit
+            self.heardLock.unlock()
+            if gone { self.close() }
+        }
+        timer.resume()
+        watchdog = timer
+    }
+
     private func startStream(_ json: [String: Any]) {
         stopStream()
-        guard !source.needsForeground || ui?.inForeground == true else {
+        guard !source.needsForeground || ui?.inForeground == true || source.keepsRunningInBackground else {
             return sendError("background", "Hãy mở app Cam Studio trên iPhone: iOS chỉ cho dùng camera khi app đang mở")
         }
         targetBitrate = (json["bitrateKbps"] as? Int ?? 8000) * 1000
@@ -193,9 +244,10 @@ final class Session {
         pendingLock.lock(); pending.removeAll(); pendingLock.unlock()
     }
 
-    /// Called when the app leaves the foreground: iOS interrupts the camera.
+    /// Called when the app leaves the foreground: iOS interrupts the camera, unless it goes on in
+    /// a Picture in Picture window (then an interruption, if any, is reported by the source).
     func appBackgrounded() {
-        guard streaming, source.needsForeground else { return }
+        guard streaming, source.needsForeground, !source.keepsRunningInBackground else { return }
         stopStream()
         sendError("background", "App Cam Studio trên iPhone đã bị ẩn: hãy mở lại app")
     }

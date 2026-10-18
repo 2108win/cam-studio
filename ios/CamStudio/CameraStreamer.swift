@@ -22,6 +22,12 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var stateTimer: Timer?
     private var controls: [String: Any] = [:]
     private var cinematicOn = false
+    private var interruptionObserver: NSObjectProtocol?
+
+    /// For the preview in the app and its Picture in Picture window (BackgroundCamera).
+    var captureSession: AVCaptureSession { session }
+    /// The camera keeps running when the app leaves the screen (in the PiP window).
+    var runsInBackground: Bool { session.isMultitaskingCameraAccessEnabled }
 
     init(lens: CameraCaps.Lens, width: Int32, height: Int32, fps: Int, codec: String, bitrate: Int, callbacks: StreamCallbacks) {
         self.lens = lens
@@ -94,10 +100,18 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 connection.preferredVideoStabilizationMode = Self.stabilizationMode(s)
             }
         }
+        // Must be set before startRunning. Only offered with the voip background mode (Info.plist).
+        if BackgroundCamera.active, session.isMultitaskingCameraAccessSupported {
+            session.isMultitaskingCameraAccessEnabled = true
+        }
         session.commitConfiguration()
         committed = true
 
         encoder = try VideoEncoder(width: width, height: height, fps: fps, codec: codec, bitrate: bitrate, callbacks: callbacks)
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { [weak self] n in
+            self?.interrupted(n)
+        }
         session.startRunning()
 
         rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
@@ -111,6 +125,8 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     func stop() {
+        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        interruptionObserver = nil
         session.stopRunning()
         rotationObserver = nil
         rotation = nil
@@ -118,6 +134,24 @@ final class CameraStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         queue.sync {
             encoder?.invalidate()
             encoder = nil
+        }
+    }
+
+    /// iOS took the camera away: the stream cannot go on, so the PC is told why (it ends the
+    /// stream on an error, docs/protocol.md 7). Leaving the app without the floating window, or
+    /// with "Tiếp tục phát khi rời app" off, lands here.
+    private func interrupted(_ n: Notification) {
+        guard let raw = n.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int,
+              let reason = AVCaptureSession.InterruptionReason(rawValue: raw) else { return }
+        switch reason {
+        case .videoDeviceNotAvailableInBackground, .videoDeviceNotAvailableWithMultipleForegroundApps:
+            callbacks.error("background", "App Cam Studio trên iPhone đã bị ẩn: hãy mở lại app")
+        case .videoDeviceInUseByAnotherClient:
+            callbacks.error("busy", "Camera của iPhone đang bị ứng dụng khác dùng")
+        case .videoDeviceNotAvailableDueToSystemPressure:
+            callbacks.error("thermal", "iPhone quá nóng nên đã tạm dừng camera")
+        default:
+            break
         }
     }
 

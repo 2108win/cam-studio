@@ -6,6 +6,11 @@ final class CameraSource: MediaSource {
     private var streamer: CameraStreamer?
 
     var needsForeground: Bool { true }
+    var keepsRunningInBackground: Bool { BackgroundCamera.active }
+
+    /// Main queue: the capture session that started (nil when stopped), its camera, and the
+    /// picture's upright size. Drives the preview and the Picture in Picture window.
+    var onCapture: ((AVCaptureSession?, AVCaptureDevice?, CGSize) -> Void)?
 
     func caps(store: Store) -> [String: Any] { cameras.toJson(store: store) }
 
@@ -29,6 +34,8 @@ final class CameraSource: MediaSource {
             throw StreamError(code: "unsupported", message: "Không bắt đầu quay được: \(error)")
         }
         streamer = s
+        let upright = s.orientation % 180 == 90 ? CGSize(width: Int(height), height: Int(width)) : CGSize(width: Int(width), height: Int(height))
+        DispatchQueue.main.async { [weak self] in self?.onCapture?(s.captureSession, lens.device, upright) }
         let started: [String: Any] = [
             "type": "started", "lens": lens.id, "width": Int(width), "height": Int(height), "fps": fps,
             "codec": s.codec, "hdr": s.codec == "hevc10", "orientation": s.orientation,
@@ -39,6 +46,7 @@ final class CameraSource: MediaSource {
     func stop() {
         streamer?.stop()
         streamer = nil
+        DispatchQueue.main.async { [weak self] in self?.onCapture?(nil, nil, .zero) }
     }
 
     func set(_ json: [String: Any]) { streamer?.set(json) }

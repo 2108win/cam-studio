@@ -50,5 +50,12 @@
     </array>
     <key>UIRequiresPersistentWiFi</key>
     <true/>
+    <!-- Like a video call: with this mode (iOS 18+) AVCaptureSession allows multitasking camera
+         access, so the camera keeps streaming in a Picture in Picture window after the person
+         leaves the app (BackgroundCamera.swift). -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>voip</string>
+    </array>
 </dict>
 </plist>
