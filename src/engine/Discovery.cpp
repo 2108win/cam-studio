@@ -28,6 +28,17 @@ bool g_manualLoaded = false;
 // On the heap: its threads must be joined in StopDiscovery, never by a static destructor
 // while the DLL unloads.
 usb::Watcher* g_usb = nullptr;
+std::function<void()> g_onChange;
+
+void Changed()
+{
+    std::function<void()> f;
+    {
+        std::lock_guard lk(g_lock);
+        f = g_onChange;
+    }
+    if (f) f();
+}
 
 std::string Narrow(const wchar_t* w)
 {
@@ -60,9 +71,18 @@ void CALLBACK OnResolved(DWORD status, PVOID context, PDNS_SERVICE_INSTANCE inst
             else if (k == L"name" && !v.empty()) e.name = v;
             else if (k == L"model") e.model = v;
             else if (k == L"os") e.os = v;
+            else if (k == L"src") e.screen = v == "screen";
         }
-        std::lock_guard lk(g_lock);
-        g_found[*key] = e;
+        bool changed = false;
+        {
+            std::lock_guard lk(g_lock);
+            const auto it = g_found.find(*key);
+            // Phones re-announce themselves: only a new or moved phone is a change.
+            changed = it == g_found.end() || it->second.host != e.host || it->second.port != e.port ||
+                      it->second.name != e.name || it->second.deviceId != e.deviceId;
+            g_found[*key] = e;
+        }
+        if (changed) Changed();
     }
     if (instance) DnsServiceFreeInstance(instance);
     delete key;
@@ -91,8 +111,12 @@ void CALLBACK OnBrowse(DWORD status, PVOID, PDNS_RECORD records)
             if (r->dwTtl == 0)
             {
                 // Goodbye packet: the phone app closed.
-                std::lock_guard lk(g_lock);
-                g_found.erase(instance);
+                bool erased = false;
+                {
+                    std::lock_guard lk(g_lock);
+                    erased = g_found.erase(instance) > 0;
+                }
+                if (erased) Changed();
             }
             else
             {
@@ -184,7 +208,8 @@ std::vector<Endpoint> KnownPhones()
         e.port = usb::kCameraPort;
         e.os = d.kind == usb::Kind::Adb ? "android" : "ios";
         e.model = d.model;
-        if (d.state != "device") e.name = "Điện thoại Android – chờ cho phép gỡ lỗi USB";
+        e.ready = d.state == "device";
+        if (!e.ready) e.name = "Điện thoại Android – chờ cho phép gỡ lỗi USB";
         else if (!d.name.empty()) e.name = d.name;
         else e.name = d.kind == usb::Kind::Adb ? "Điện thoại Android" : "iPhone";
         cable.push_back(e);
@@ -207,6 +232,7 @@ std::vector<Endpoint> KnownPhones()
         if (!ready[i]) continue;
         Endpoint screen = camera;
         screen.port = usb::kScreenPort;
+        screen.screen = true;
         screen.name += " · Màn hình";
         out.push_back(screen);
     }
@@ -215,12 +241,21 @@ std::vector<Endpoint> KnownPhones()
 
 void AddManual(const std::string& host, uint16_t port)
 {
+    {
+        std::lock_guard lk(g_lock);
+        LoadManualLocked();
+        for (const Endpoint& m : g_manual)
+            if (m.host == host && m.port == port) return;
+        g_manual.push_back({ host, port, "", host, "", "", true });
+        std::ofstream f(ManualFile(), std::ios::app);
+        f << host << ' ' << port << '\n';
+    }
+    Changed();
+}
+
+void SetOnChange(std::function<void()> onChange)
+{
     std::lock_guard lk(g_lock);
-    LoadManualLocked();
-    for (const Endpoint& m : g_manual)
-        if (m.host == host && m.port == port) return;
-    g_manual.push_back({ host, port, "", host, "", "", true });
-    std::ofstream f(ManualFile(), std::ios::app);
-    f << host << ' ' << port << '\n';
+    g_onChange = std::move(onChange);
 }
 } // namespace phone

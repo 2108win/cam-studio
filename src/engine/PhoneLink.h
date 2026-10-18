@@ -7,6 +7,7 @@
 #include "Json.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -32,6 +33,12 @@ struct Message
     json::Value Json() const { return json::Value::Parse(std::string(payload.begin(), payload.end())); }
 };
 
+// One authenticated connection to a phone app's port (camera or shared screen).
+//
+// Threads: one reader at a time holds the lease (Lease/TryLease): the capture thread while it
+// streams this source, a screen viewer, cs_load_formats while it connects, or the background
+// connector while the link is idle. Only the lease holder connects, receives and closes.
+// SendControl may run on any thread (the app's controls); Abort() too.
 class PhoneLink
 {
 public:
@@ -51,25 +58,56 @@ public:
     // Connects, authenticates (pairing first if needed). Blocking; on
     // failure `error` is a message for the user (Vietnamese, UTF-8).
     bool Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error);
+    // The background connector: hello says "auto", so a phone in use by another PC answers
+    // "busy" and keeps that PC (docs/protocol.md 3.1). Never pairs.
+    bool ConnectAuto(const Endpoint& endpoint, std::string& error);
     // Connects again to the last endpoint (re-resolved by device id, the
     // phone's IP may have changed). Only for an already-paired phone: never
     // starts pairing, since nobody is there to compare codes.
     bool Reconnect(std::string& error);
-    bool Connected() const { return m_socket != kInvalid; }
+    bool Connected() const { return m_socket != kInvalid && !m_aborted; }
+    // Why the last connect failed, for the connector: "busy" (another PC has the phone),
+    // "pair" (pairing needed), or "" (anything else).
+    const std::string& LastErrorCode() const { return m_errorCode; }
 
-    const std::string& DeviceId() const { return m_deviceId; }
-    const std::string& DeviceName() const { return m_deviceName; }
-    const std::string& Os() const { return m_os; }
+    // From the phone's hello; kept after the link closes. Any thread.
+    std::string DeviceId() const;
+    std::string DeviceName() const;
 
     bool SendControl(const json::Value& message);
     // Waits up to timeoutMs. Returns false on timeout (timedOut) or when
     // the connection is gone or tampered with.
     bool Receive(Message& message, int timeoutMs, bool& timedOut);
+    // Something can be read now (a record, or the connection closing).
+    bool Readable() const;
+    // Lease holder: closes the socket.
     void Close();
+    // Any thread: ends the connection without closing the socket under its reader (shutdown).
+    // The reader wakes with an error and closes. Also cuts short a connect in progress.
+    void Abort();
+
+    // GetTickCount64() of the last record sent (the connector pings idle links).
+    uint64_t LastSendTick() const { return m_lastSend; }
 
     // Asks for caps and waits for them (other control messages are skipped).
     // Generous: the phone may test-open hidden cameras before answering.
     bool RequestCaps(json::Value& caps, std::string& error, int timeoutMs = 20000);
+    // The phone's last caps (JSON), kept across reconnects, so picking the source needs no
+    // round trip. Any thread.
+    std::string Caps() const;
+    void SetCaps(const std::string& caps);
+
+    // The lease (see above). TryLease(true) is the connector's: it gives way. While it marks
+    // an attempt (SetAttempting: connecting, asking for caps), a Lease() from anyone else aborts
+    // that attempt, and Preempted() then says so (not a failure). Reading an idle link is quick
+    // and is waited for, so the idle connection survives.
+    bool TryLease(bool background);
+    bool Lease(int timeoutMs);
+    void Unlease();
+    void SetAttempting(bool on) { m_attempting = on; }
+    bool Preempted() const { return m_preempted; }
+    // Held by someone other than the connector (streaming, a viewer, pairing).
+    bool InUse() const;
 
 private:
     static constexpr uintptr_t kInvalid = ~uintptr_t(0);
@@ -80,15 +118,40 @@ private:
     bool ReadHandshake(json::Value& v, int timeoutMs);
 
     bool ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
-                     bool allowPairing, std::string& error);
+                     bool allowPairing, bool automatic, std::string& error);
 
-    uintptr_t m_socket = kInvalid;
+    std::atomic<uintptr_t> m_socket{ kInvalid };
+    std::atomic<bool> m_aborted{ false };
+    std::atomic<uint64_t> m_lastSend{ 0 };
     Endpoint m_endpoint; // last one Connect() was given
     std::recursive_mutex m_sendLock; // Close() may run inside SendControl
     crypto::Bytes m_upKey, m_downKey;
     uint64_t m_sendCounter = 0;
     uint64_t m_receiveCounter = 0;
+    std::string m_errorCode;
+
+    mutable std::mutex m_infoLock; // device identity and caps, read from other threads
     std::string m_deviceId, m_deviceName, m_os;
+    std::string m_caps;
+
+    mutable std::mutex m_leaseLock;
+    std::condition_variable m_leaseFree;
+    int m_leaseState = 0; // 0 free, 1 the connector, 2 anyone else
+    std::atomic<bool> m_attempting{ false };
+    std::atomic<bool> m_preempted{ false };
+};
+
+// Holds a link's lease for a scope (taken with Lease/TryLease beforehand).
+class LeaseGuard
+{
+public:
+    explicit LeaseGuard(PhoneLink* link) : m_link(link) {}
+    ~LeaseGuard() { if (m_link) m_link->Unlease(); }
+    LeaseGuard(const LeaseGuard&) = delete;
+    LeaseGuard& operator=(const LeaseGuard&) = delete;
+
+private:
+    PhoneLink* m_link;
 };
 
 // This PC's identity and pairing keys (DPAPI-protected files under

@@ -67,13 +67,33 @@ CS_API void cs_shutdown();
 CS_API int32_t cs_refresh_cameras();
 // Copies the name; returns its length, or -1 for a bad index.
 CS_API int32_t cs_camera_name(int32_t camera, wchar_t* buffer, int32_t capacity);
-// 0 webcam, 1 phone.
+// A camera's stable id, the same across refreshes (indices are not): "cam:<symbolic link>" for
+// webcams, "phone:<ip>:<port>" or "phone:usb:<serial>:<port>" for phones. Returns its length.
+CS_API int32_t cs_camera_id(int32_t camera, wchar_t* buffer, int32_t capacity);
+// 0 webcam, 1 phone camera, 2 phone screen (shared screen: shown in its own window by default).
 CS_API int32_t cs_camera_kind(int32_t camera);
 
-// Reads a camera's formats (best first). For phones this connects and, the
-// first time, pairs: poll cs_pairing_code meanwhile. Blocking; call it off
-// the UI thread. Returns the count, or <0 (HRESULT) on error; the message
-// is then in cs_last_error.
+// Phones are kept connected in the background (paired ones on Wi‑Fi, every phone on a cable), so
+// picking one starts at once. Their state, for the camera menu:
+enum CsLinkState
+{
+    CS_LINK_IDLE = 0,          // not connected
+    CS_LINK_CONNECTED = 1,     // connected (webcams always report this)
+    CS_LINK_CONNECTING = 2,
+    CS_LINK_NEEDS_PAIRING = 3, // pick it to pair
+    CS_LINK_BUSY = 4,          // another PC has the phone
+    CS_LINK_UNREACHABLE = 5,   // the last try failed (error says why), tried again later
+    CS_LINK_ELSEWHERE = 6,     // the same phone is connected another way (Wi‑Fi / cable)
+};
+// Returns a CsLinkState and copies the last error (may be empty).
+CS_API int32_t cs_camera_state(int32_t camera, wchar_t* error, int32_t capacity);
+// Changes whenever a phone's state changes or phones come and go: refresh the list then.
+CS_API uint32_t cs_sources_generation();
+
+// Reads a camera's formats (best first). For phones the connector usually has them already
+// (instant); otherwise this connects and, the first time, pairs: poll cs_pairing_code
+// meanwhile. Blocking; call it off the UI thread. Returns the count, or <0 (HRESULT) on error;
+// the message is then in cs_last_error.
 CS_API int32_t cs_load_formats(int32_t camera);
 CS_API int32_t cs_get_format(int32_t index, CsFormat* format);
 CS_API int32_t cs_last_error(wchar_t* buffer, int32_t capacity);

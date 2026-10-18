@@ -6,10 +6,13 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
 #include <windows.h>
 #include <dpapi.h>
 #include <objbase.h>
 
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <sstream>
 
@@ -150,7 +153,12 @@ void SavePairKey(const std::string& deviceId, const crypto::Bytes& key)
 
 bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error)
 {
-    return ConnectImpl(endpoint, onPairing, confirm, true, error);
+    return ConnectImpl(endpoint, onPairing, confirm, true, false, error);
+}
+
+bool PhoneLink::ConnectAuto(const Endpoint& endpoint, std::string& error)
+{
+    return ConnectImpl(endpoint, nullptr, nullptr, false, true, error);
 }
 
 bool PhoneLink::Reconnect(std::string& error)
@@ -158,28 +166,29 @@ bool PhoneLink::Reconnect(std::string& error)
     // A cable: the same phone (by serial) and port (camera or shared screen) on a cable again. While
     // it is unplugged, or no longer shares its screen, this fails and the engine keeps waiting; it
     // never moves to Wi‑Fi by itself.
-    if (m_endpoint.Usb()) return ConnectImpl(m_endpoint, nullptr, nullptr, false, error);
+    if (m_endpoint.Usb()) return ConnectImpl(m_endpoint, nullptr, nullptr, false, false, error);
 
     Endpoint endpoint = m_endpoint;
     // Find it again by the TXT id it was found under: the iPhone's shared screen advertises
     // "<deviceId>:screen" (docs/protocol.md 1.1) while its hello carries the camera's deviceId,
     // so the hello id alone would bring a screen link back to the camera. A manual entry only
     // knows the hello id: it takes a discovered address on the same port only.
-    const std::string id = m_endpoint.deviceId.empty() ? m_deviceId : m_endpoint.deviceId;
+    const std::string id = m_endpoint.deviceId.empty() ? DeviceId() : m_endpoint.deviceId;
     if (!id.empty())
     {
         for (const Endpoint& e : KnownPhones())
             if (e.deviceId == id && (!m_endpoint.manual || e.port == m_endpoint.port)) { endpoint = e; break; }
     }
     if (endpoint.host.empty()) { error = "Chưa từng kết nối điện thoại này"; return false; }
-    return ConnectImpl(endpoint, nullptr, nullptr, false, error);
+    return ConnectImpl(endpoint, nullptr, nullptr, false, false, error);
 }
 
 bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm,
-                            bool allowPairing, std::string& error)
+                            bool allowPairing, bool automatic, std::string& error)
 {
     static WinsockInit winsock;
     Close();
+    m_errorCode.clear();
     m_endpoint = endpoint;
 
     const SOCKET s = Dial(endpoint, error);
@@ -188,31 +197,57 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&noDelay), sizeof(noDelay));
     int rcvbuf = 4 * 1024 * 1024;
     setsockopt(s, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<char*>(&rcvbuf), sizeof(rcvbuf));
+    // A send never blocks for long (a dead peer with a full buffer): the caller may hold the
+    // send lock that Close() waits for.
+    DWORD sendTimeout = 5000;
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<char*>(&sendTimeout), sizeof(sendTimeout));
+    if (!endpoint.Usb())
+    {
+        // An idle link to a phone that left the Wi‑Fi is noticed within ~30 s (phones do not
+        // answer "ping"): TCP keepalive after 10 s of silence, then every 2 s.
+        tcp_keepalive ka{ 1, 10000, 2000 };
+        DWORD bytes = 0;
+        WSAIoctl(s, SIO_KEEPALIVE_VALS, &ka, sizeof(ka), nullptr, 0, &bytes, nullptr, nullptr);
+    }
     m_socket = s;
 
     auto fail = [&](const std::string& msg) { error = msg; Close(); return false; };
+    if (m_aborted) return fail("Đã hủy kết nối"); // Abort() while dialling
 
-    // 1. hello with commitment to our ephemeral key (section 3.1)
+    // 1. hello with commitment to our ephemeral key (section 3.1). "auto": a connection the
+    //    user did not ask for, which must not take the phone from another PC.
     crypto::EcdhKey key;
     const std::string clientId = ClientId();
     const crypto::Bytes commit = crypto::Sha256({ &key.PublicKey() });
-    if (!SendHandshake(json::Value::MakeObject()
-            .Set("type", "hello").Set("v", 1)
-            .Set("clientId", clientId).Set("clientName", ClientName())
-            .Set("commit", crypto::Base64(commit))))
-        return fail("Mất kết nối với điện thoại");
+    json::Value ours = json::Value::MakeObject();
+    ours.Set("type", "hello").Set("v", 1)
+        .Set("clientId", clientId).Set("clientName", ClientName())
+        .Set("commit", crypto::Base64(commit));
+    if (automatic) ours.Set("auto", true);
+    if (!SendHandshake(ours)) return fail("Mất kết nối với điện thoại");
 
     json::Value hello;
-    if (!ReadHandshake(hello, 8000) || hello["type"].Str() != "hello")
+    if (!ReadHandshake(hello, 8000))
         // Over a cable a suspended iPhone app still accepts the connection, then never answers.
         return fail(endpoint.Usb() ? "Điện thoại không trả lời qua cáp USB. Mở khóa điện thoại và mở app Cam Studio."
                                    : "Điện thoại không trả lời đúng giao thức");
+    if (hello["type"].Str() == "error")
+    {
+        // In place of the phone's hello: "busy" (another PC has it, and this was an "auto" hello).
+        if (hello["code"].Str() == "busy") m_errorCode = "busy";
+        return fail(hello["message"].Str(m_errorCode == "busy" ? "Điện thoại đang dùng với máy tính khác" : "Điện thoại từ chối kết nối"));
+    }
+    if (hello["type"].Str() != "hello") return fail("Điện thoại không trả lời đúng giao thức");
     if (hello["v"].Int() != 1) return fail("Phiên bản app trên điện thoại không khớp với Cam Studio trên PC");
-    m_deviceId = hello["deviceId"].Str();
-    m_deviceName = hello["name"].Str(endpoint.name);
-    m_os = hello["os"].Str();
+    const std::string deviceId = hello["deviceId"].Str();
+    {
+        std::lock_guard lk(m_infoLock);
+        m_deviceId = deviceId;
+        m_deviceName = hello["name"].Str(endpoint.name);
+        m_os = hello["os"].Str();
+    }
     const crypto::Bytes phonePub = crypto::FromBase64(hello["pub"].Str());
-    if (phonePub.size() != 65 || m_deviceId.empty()) return fail("Dữ liệu bắt tay không hợp lệ");
+    if (phonePub.size() != 65 || deviceId.empty()) return fail("Dữ liệu bắt tay không hợp lệ");
 
     // 2. reveal our key, derive Z and the transcript
     if (!SendHandshake(json::Value::MakeObject().Set("type", "reveal").Set("pub", crypto::Base64(key.PublicKey()))))
@@ -221,7 +256,7 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     try
     {
         z = key.Agree(phonePub);
-        t = crypto::Transcript(clientId, m_deviceId, key.PublicKey(), phonePub);
+        t = crypto::Transcript(clientId, deviceId, key.PublicKey(), phonePub);
     }
     catch (const std::exception&)
     {
@@ -229,11 +264,15 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
     }
 
     // 3. pairing (3.2) or straight to authentication (3.3)
-    crypto::Bytes kPair = LoadPairKey(m_deviceId);
+    crypto::Bytes kPair = LoadPairKey(deviceId);
     bool newPairing = false;
     if (kPair.empty() || !hello["paired"].Bool())
     {
-        if (!allowPairing) return fail("Điện thoại cần ghép đôi lại: chọn lại điện thoại trong danh sách camera");
+        if (!allowPairing)
+        {
+            m_errorCode = "pair";
+            return fail("Điện thoại cần ghép đôi lại: chọn lại điện thoại trong danh sách camera");
+        }
         // The old key, if any, stays until a new pairing succeeds.
         if (!SendHandshake(json::Value::MakeObject().Set("type", "pairStart"))) return fail("Mất kết nối với điện thoại");
         if (onPairing) onPairing(crypto::Sas(t));
@@ -257,7 +296,7 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
         return fail(newPairing ? "Ghép đôi thất bại" : "Điện thoại không nhận ra máy tính này. Hãy ghép đôi lại.");
     if (!crypto::ConstantTimeEqual(crypto::FromBase64(auth["mac"].Str()), crypto::PhoneMac(kPair, t)))
         return fail("Điện thoại xác thực sai: có thể không phải thiết bị đã ghép đôi");
-    if (newPairing) SavePairKey(m_deviceId, kPair);
+    if (newPairing) SavePairKey(deviceId, kPair);
 
     // 4. session keys
     m_upKey = crypto::UpKey(z, kPair, t);
@@ -268,21 +307,120 @@ bool PhoneLink::ConnectImpl(const Endpoint& endpoint, const PairingCallback& onP
 
 void PhoneLink::Close()
 {
-    std::lock_guard lk(m_sendLock);
-    if (m_socket != kInvalid)
+    std::lock_guard lk(m_sendLock); // no send in progress on another thread
     {
-        closesocket(static_cast<SOCKET>(m_socket));
-        m_socket = kInvalid;
+        std::lock_guard sk(m_infoLock); // no Abort() using the socket
+        if (m_socket != kInvalid)
+        {
+            closesocket(static_cast<SOCKET>(m_socket.load()));
+            m_socket = kInvalid;
+        }
+        m_aborted = false;
     }
     m_upKey.clear();
     m_downKey.clear();
+}
+
+void PhoneLink::Abort()
+{
+    // Not under m_sendLock: a send may be blocked right now. shutdown() wakes the reader's
+    // select/recv with an error, and the reader (the lease holder) closes the socket.
+    std::lock_guard sk(m_infoLock);
+    if (m_socket != kInvalid) shutdown(static_cast<SOCKET>(m_socket.load()), SD_BOTH);
+    m_aborted = true;
+}
+
+bool PhoneLink::Readable() const
+{
+    const uintptr_t s = m_socket;
+    if (s == kInvalid) return false;
+    fd_set r;
+    FD_ZERO(&r);
+    FD_SET(static_cast<SOCKET>(s), &r);
+    timeval tv{ 0, 0 };
+    return select(0, &r, nullptr, nullptr, &tv) > 0;
+}
+
+std::string PhoneLink::DeviceId() const
+{
+    std::lock_guard lk(m_infoLock);
+    return m_deviceId;
+}
+
+std::string PhoneLink::DeviceName() const
+{
+    std::lock_guard lk(m_infoLock);
+    return m_deviceName;
+}
+
+std::string PhoneLink::Caps() const
+{
+    std::lock_guard lk(m_infoLock);
+    return m_caps;
+}
+
+void PhoneLink::SetCaps(const std::string& caps)
+{
+    std::lock_guard lk(m_infoLock);
+    m_caps = caps;
+}
+
+// ---- lease ---------------------------------------------------------------------------------
+
+bool PhoneLink::TryLease(bool background)
+{
+    std::lock_guard lk(m_leaseLock);
+    if (m_leaseState != 0) return false;
+    m_leaseState = background ? 1 : 2;
+    if (background) m_preempted = false;
+    return true;
+}
+
+bool PhoneLink::Lease(int timeoutMs)
+{
+    std::unique_lock lk(m_leaseLock);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (m_leaseState != 0)
+    {
+        if (m_leaseState == 1 && m_attempting && !m_preempted)
+        {
+            // The connector is connecting: cut it short (we connect ourselves).
+            m_preempted = true;
+            lk.unlock();
+            Abort();
+            lk.lock();
+            continue;
+        }
+        // Woken by Unlease, or every 100 ms to see whether an attempt started meanwhile.
+        const auto wake = std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(100));
+        m_leaseFree.wait_until(lk, wake);
+        if (m_leaseState != 0 && std::chrono::steady_clock::now() >= deadline) return false;
+    }
+    m_leaseState = 2;
+    return true;
+}
+
+void PhoneLink::Unlease()
+{
+    {
+        std::lock_guard lk(m_leaseLock);
+        m_leaseState = 0;
+    }
+    m_leaseFree.notify_all();
+}
+
+bool PhoneLink::InUse() const
+{
+    std::lock_guard lk(m_leaseLock);
+    return m_leaseState == 2;
 }
 
 // ---- records -------------------------------------------------------------------------------
 
 bool PhoneLink::SendRecord(uint8_t type, const uint8_t* body, size_t size)
 {
-    if (m_socket == kInvalid) return false;
+    const uintptr_t socket = m_socket;
+    if (socket == kInvalid || m_aborted) return false;
     std::vector<uint8_t> buf(5 + size);
     PutU32(buf.data(), static_cast<uint32_t>(1 + size));
     buf[4] = type;
@@ -291,11 +429,12 @@ bool PhoneLink::SendRecord(uint8_t type, const uint8_t* body, size_t size)
     size_t left = buf.size();
     while (left > 0)
     {
-        const int n = send(static_cast<SOCKET>(m_socket), p, static_cast<int>(left), 0);
+        const int n = send(static_cast<SOCKET>(socket), p, static_cast<int>(left), 0);
         if (n <= 0) return false;
         p += n;
         left -= n;
     }
+    m_lastSend = GetTickCount64();
     return true;
 }
 
@@ -318,15 +457,16 @@ bool PhoneLink::ReadExact(uint8_t* dst, size_t size, int timeoutMs, bool& timedO
             deadline = now + 10000;
             continue;
         }
+        const SOCKET socket = static_cast<SOCKET>(m_socket.load());
         fd_set r;
         FD_ZERO(&r);
-        FD_SET(static_cast<SOCKET>(m_socket), &r);
+        FD_SET(socket, &r);
         const ULONGLONG wait = deadline - now;
         timeval tv{ static_cast<long>(wait / 1000), static_cast<long>((wait % 1000) * 1000) };
         const int ready = select(0, &r, nullptr, nullptr, &tv);
         if (ready == 0) continue; // re-checked against the deadline above
         if (ready < 0) return false;
-        const int n = recv(static_cast<SOCKET>(m_socket), reinterpret_cast<char*>(dst + got), static_cast<int>(size - got), 0);
+        const int n = recv(socket, reinterpret_cast<char*>(dst + got), static_cast<int>(size - got), 0);
         if (n <= 0) return false;
         got += n;
     }
@@ -374,7 +514,9 @@ bool PhoneLink::SendControl(const json::Value& message)
     PutU64(body.data(), counter);
     memcpy(body.data() + 8, sealed.data(), sealed.size());
     if (SendRecord(kSealed, body.data(), body.size())) return true;
-    Close(); // dead connection: the next use reconnects
+    // Dead connection: the reader notices, closes, and the next use reconnects. Not Close()
+    // here: this may be another thread than the one reading (the app's controls).
+    Abort();
     return false;
 }
 
@@ -382,6 +524,7 @@ bool PhoneLink::Receive(Message& message, int timeoutMs, bool& timedOut)
 {
     timedOut = false;
     if (m_socket == kInvalid || m_downKey.empty()) return false;
+    if (m_aborted) { Close(); return false; }
     // Any failure other than a plain timeout ends the connection, so
     // Connected() turns false and the next use reconnects.
     auto broken = [&] { Close(); return false; };
@@ -426,7 +569,12 @@ bool PhoneLink::RequestCaps(json::Value& caps, std::string& error, int timeoutMs
         try
         {
             json::Value v = m.Json();
-            if (v["type"].Str() == "caps") { caps = v; return true; }
+            if (v["type"].Str() == "caps")
+            {
+                caps = v;
+                SetCaps(v.Dump());
+                return true;
+            }
         }
         catch (const std::exception&)
         {

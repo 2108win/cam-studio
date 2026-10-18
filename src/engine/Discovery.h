@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -29,6 +30,8 @@ struct Endpoint
     bool manual = false;   // added by IP
     Transport transport = Transport::Network;
     std::string serial;    // USB: adb serial or the iPhone's UDID
+    bool screen = false;   // the phone's shared screen (TXT src=screen, or the cable's port 47322)
+    bool ready = true;     // reachable now (false: Android on a cable waiting for "allow USB debugging")
 
     bool Usb() const { return transport != Transport::Network; }
 };
@@ -43,4 +46,8 @@ std::vector<Endpoint> KnownPhones();
 
 // "Add by IP": remembered for this run and in %LOCALAPPDATA%\CamStudio\phones.txt.
 void AddManual(const std::string& host, uint16_t port);
+
+// Called (on a discovery thread, keep it short) when a phone appears, changes or leaves the
+// network list. Cable changes are not reported: the connector looks every 3 s anyway.
+void SetOnChange(std::function<void()> onChange);
 } // namespace phone

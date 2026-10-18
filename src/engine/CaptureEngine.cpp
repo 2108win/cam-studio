@@ -732,6 +732,12 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
         return Outcome::Lost;
     };
 
+    // The link is ours while this source runs: the connector (which keeps idle links alive)
+    // and screen windows leave it alone.
+    while (!link.Lease(200))
+        if (m_quit) return Outcome::Quit;
+    phone::LeaseGuard lease(&link);
+
     // After a lost connection (phone app closed and reopened, Wi‑Fi dropped):
     // reconnect quietly. Only an already-paired phone gets back in.
     if (!link.Connected())

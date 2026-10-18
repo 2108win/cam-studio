@@ -1,6 +1,7 @@
 #define CAMSTUDIO_ENGINE_EXPORTS
 #include "EngineApi.h"
 #include "CaptureEngine.h"
+#include "Connector.h"
 #include "Discovery.h"
 #include "Json.h"
 #include "PhoneLink.h"
@@ -14,16 +15,21 @@ namespace
 {
 std::mutex g_lock;
 std::unique_ptr<CaptureEngine> g_engine; // created in cs_init, never at DLL load
+// Keeps paired phones connected. Created once and only stopped in cs_shutdown: discovery
+// callbacks may still call Wake() on it.
+phone::Connector* g_connector = nullptr;
+// The camera list as of the last cs_refresh_cameras. Indices change on every refresh; ids do not.
 std::vector<CameraDevice> g_cameras;
+std::vector<std::wstring> g_ids;                   // stable id per entry (cs_camera_id)
+std::vector<int32_t> g_kinds;                      // 0 webcam, 1 phone camera, 2 phone screen
 std::vector<phone::Endpoint> g_endpoints;          // parallel to phone entries in g_cameras
-std::map<std::string, std::shared_ptr<phone::PhoneLink>> g_links; // by EndpointKey, reused
 std::vector<FormatOption> g_formats;
-int32_t g_formatsCamera = -1;
+std::wstring g_formatsId;                          // whose formats g_formats are
 std::string g_phoneCaps;
 std::wstring g_lastError;
 std::wstring g_pairingCode;
 std::atomic<int> g_pairingDecision{ -1 }; // -1 waiting, 0 declined, 1 accepted (PC user)
-int32_t g_streamingCamera = -1;
+std::shared_ptr<phone::PhoneLink> g_streamingLink; // the phone the virtual camera shows, if any
 int g_initCount = 0;
 
 std::wstring Widen(const std::string& s)
@@ -144,9 +150,12 @@ std::vector<FormatOption> PhoneFormats(const json::Value& caps)
     return out;
 }
 
-std::string EndpointKey(const phone::Endpoint& e)
+bool ValidCamera(int32_t camera) { return camera >= 0 && camera < static_cast<int32_t>(g_cameras.size()); }
+
+const phone::Endpoint& EndpointOf(int32_t camera)
 {
-    return (e.Usb() ? "usb:" + e.serial : e.host) + ":" + std::to_string(e.port);
+    const size_t webcams = g_cameras.size() - g_endpoints.size();
+    return g_endpoints[static_cast<size_t>(camera) - webcams];
 }
 } // namespace
 
@@ -162,7 +171,10 @@ CS_API int32_t cs_init()
             return hr;
         }
         g_engine = std::make_unique<CaptureEngine>();
+        if (!g_connector) g_connector = new phone::Connector; // lives until the process ends
+        phone::SetOnChange([] { g_connector->Wake(); });
         phone::StartDiscovery();
+        g_connector->Start();
     }
     return S_OK;
 }
@@ -175,75 +187,105 @@ CS_API void cs_shutdown()
         if (g_initCount == 0 || --g_initCount > 0) return;
         engine = std::move(g_engine);
         g_cameras.clear();
+        g_ids.clear();
+        g_kinds.clear();
+        g_endpoints.clear();
         g_formats.clear();
-        g_links.clear();
+        g_streamingLink.reset();
     }
     engine.reset(); // joins the capture thread
+    g_connector->Stop();
+    g_connector->Clear(); // closes the idle links
     phone::StopDiscovery();
     MFShutdown();
 }
 
 CS_API int32_t cs_refresh_cameras()
 {
+    // Cheap enough for the UI thread: the phone list is kept current in the background.
     std::lock_guard lk(g_lock);
-    // Keep the loaded formats and the streaming source valid across a
-    // refresh: remember them by name and re-find them in the new list.
-    auto nameAt = [](int32_t i) { return i >= 0 && i < static_cast<int32_t>(g_cameras.size()) ? g_cameras[i].name : std::wstring(); };
-    const std::wstring formatsName = nameAt(g_formatsCamera);
-    const std::wstring streamingName = nameAt(g_streamingCamera);
     g_cameras.clear();
+    g_ids.clear();
+    g_kinds.clear();
     g_endpoints.clear();
     for (auto& c : EnumerateCameras())
-        if (!IsOurVirtualCamera(c)) g_cameras.push_back(std::move(c)); // never loop our own output back
+    {
+        if (IsOurVirtualCamera(c)) continue; // never loop our own output back
+        g_ids.push_back(L"cam:" + (c.symbolicLink.empty() ? c.name : ToLower(c.symbolicLink)));
+        g_kinds.push_back(0);
+        g_cameras.push_back(std::move(c));
+    }
     for (const phone::Endpoint& e : phone::KnownPhones())
     {
         CameraDevice d;
         d.name = Widen(e.name.empty() ? e.host : e.name) +
                  (e.Usb() ? L" (USB)" : e.manual ? L" (" + Widen(e.host) + L")" : L" (Wi‑Fi)");
-        auto& link = g_links[EndpointKey(e)];
-        if (!link) link = std::make_shared<phone::PhoneLink>();
-        d.phone = link;
+        d.phone = g_connector->Link(e); // the same link every time: it may be connected already
+        g_ids.push_back(L"phone:" + Widen(phone::EndpointKey(e)));
+        g_kinds.push_back(e.screen ? 2 : 1);
         g_cameras.push_back(std::move(d));
         g_endpoints.push_back(e);
     }
-    auto find = [](const std::wstring& name) {
-        for (size_t i = 0; i < g_cameras.size(); ++i)
-            if (!name.empty() && g_cameras[i].name == name) return static_cast<int32_t>(i);
-        return int32_t(-1);
-    };
-    g_formatsCamera = find(formatsName);
-    if (g_formatsCamera < 0) g_formats.clear();
-    g_streamingCamera = find(streamingName);
+    g_connector->Wake();
     return static_cast<int32_t>(g_cameras.size());
 }
 
 CS_API int32_t cs_camera_name(int32_t camera, wchar_t* buffer, int32_t capacity)
 {
     std::lock_guard lk(g_lock);
-    if (camera < 0 || camera >= static_cast<int32_t>(g_cameras.size())) return -1;
+    if (!ValidCamera(camera)) return -1;
     return CopyOut(g_cameras[camera].name, buffer, capacity);
+}
+
+CS_API int32_t cs_camera_id(int32_t camera, wchar_t* buffer, int32_t capacity)
+{
+    std::lock_guard lk(g_lock);
+    if (!ValidCamera(camera)) return -1;
+    return CopyOut(g_ids[camera], buffer, capacity);
 }
 
 CS_API int32_t cs_camera_kind(int32_t camera)
 {
     std::lock_guard lk(g_lock);
-    if (camera < 0 || camera >= static_cast<int32_t>(g_cameras.size())) return -1;
-    return g_cameras[camera].IsPhone() ? 1 : 0;
+    if (!ValidCamera(camera)) return -1;
+    return g_kinds[camera];
+}
+
+CS_API int32_t cs_camera_state(int32_t camera, wchar_t* error, int32_t capacity)
+{
+    phone::Endpoint endpoint;
+    {
+        std::lock_guard lk(g_lock);
+        if (!ValidCamera(camera)) return -1;
+        if (!g_cameras[camera].IsPhone())
+        {
+            CopyOut(std::wstring(), error, capacity);
+            return static_cast<int32_t>(phone::LinkState::Connected); // a webcam is always there
+        }
+        endpoint = EndpointOf(camera);
+    }
+    std::string why;
+    const phone::LinkState state = g_connector->State(phone::EndpointKey(endpoint), &why);
+    CopyOut(Widen(why), error, capacity);
+    return static_cast<int32_t>(state);
+}
+
+CS_API uint32_t cs_sources_generation()
+{
+    return g_connector ? g_connector->Generation() : 0;
 }
 
 CS_API int32_t cs_load_formats(int32_t camera)
 {
     CameraDevice cam;
     phone::Endpoint endpoint;
+    std::wstring id;
     {
         std::lock_guard lk(g_lock);
-        if (camera < 0 || camera >= static_cast<int32_t>(g_cameras.size())) return E_INVALIDARG;
+        if (!ValidCamera(camera)) return E_INVALIDARG;
         cam = g_cameras[camera];
-        if (cam.IsPhone())
-        {
-            const size_t webcams = g_cameras.size() - g_endpoints.size();
-            endpoint = g_endpoints[static_cast<size_t>(camera) - webcams];
-        }
+        id = g_ids[camera];
+        if (cam.IsPhone()) endpoint = EndpointOf(camera);
         g_lastError.clear();
     }
 
@@ -261,22 +303,30 @@ CS_API int32_t cs_load_formats(int32_t camera)
     }
     else
     {
-        // While this phone streams, its connection belongs to the capture
-        // thread: reuse the capabilities read before.
-        const auto state = g_engine ? g_engine->GetStatus().state : CaptureEngine::State::Stopped;
-        const bool streaming = g_streamingCamera == camera &&
-            (state == CaptureEngine::State::Running || state == CaptureEngine::State::Waiting);
-        json::Value caps;
-        if (streaming && !g_phoneCaps.empty())
+        // Usually instant: the connector (or an earlier load) already has the phone's caps, and
+        // they are kept across reconnects. Otherwise connect now, pairing if needed.
+        phone::PhoneLink& link = *cam.phone;
+        capsText = link.Caps();
+        if (capsText.empty())
         {
-            caps = json::Value::Parse(g_phoneCaps);
+            // The lease keeps the connector and everyone else off the link meanwhile (a
+            // connector attempt in progress is cut short: this one may pair).
+            if (!link.Lease(30000))
+            {
+                std::lock_guard lk(g_lock);
+                g_lastError = L"Điện thoại đang bận, hãy thử lại sau giây lát";
+                return E_FAIL;
+            }
+            phone::LeaseGuard lease(&link);
+            capsText = link.Caps(); // the connector may have just got them
         }
-        else
+        if (capsText.empty())
         {
+            json::Value caps;
             std::string error;
             auto connect = [&] {
                 g_pairingDecision = -1;
-                return cam.phone->Connect(endpoint,
+                return link.Connect(endpoint,
                     [](const std::string& code) {
                         std::lock_guard lk(g_lock);
                         g_pairingCode = code.empty() ? L"" : Widen(code.substr(0, 3) + " " + code.substr(3));
@@ -288,22 +338,33 @@ CS_API int32_t cs_load_formats(int32_t camera)
                     },
                     error);
             };
-            bool ok = cam.phone->Connected() || connect();
-            if (ok && !cam.phone->RequestCaps(caps, error))
+            bool ok = link.Connected() || connect();
+            if (ok && !link.RequestCaps(caps, error))
             {
                 // The old connection may be dead (phone app restarted): one fresh try.
-                cam.phone->Close();
-                ok = connect() && cam.phone->RequestCaps(caps, error);
+                link.Close();
+                ok = connect() && link.RequestCaps(caps, error);
             }
             if (!ok)
             {
-                cam.phone->Close();
+                link.Close();
                 std::lock_guard lk(g_lock);
                 g_lastError = Widen(error);
                 return E_FAIL;
             }
+            capsText = caps.Dump();
         }
-        capsText = caps.Dump();
+        json::Value caps;
+        try
+        {
+            caps = json::Value::Parse(capsText);
+        }
+        catch (const std::exception&)
+        {
+            std::lock_guard lk(g_lock);
+            g_lastError = L"Thông tin camera của điện thoại bị hỏng";
+            return E_FAIL;
+        }
         formats = PhoneFormats(caps);
         if (formats.empty())
         {
@@ -315,7 +376,7 @@ CS_API int32_t cs_load_formats(int32_t camera)
 
     std::lock_guard lk(g_lock);
     g_formats = std::move(formats);
-    g_formatsCamera = camera;
+    g_formatsId = id;
     g_phoneCaps = capsText;
     return static_cast<int32_t>(g_formats.size());
 }
@@ -368,13 +429,13 @@ CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image)
     {
         std::lock_guard lk(g_lock);
         if (!g_engine) return E_UNEXPECTED;
-        if (camera < 0 || camera >= static_cast<int32_t>(g_cameras.size())) return E_INVALIDARG;
-        if (camera != g_formatsCamera || format < 0 || format >= static_cast<int32_t>(g_formats.size()))
+        if (!ValidCamera(camera)) return E_INVALIDARG;
+        if (g_ids[camera] != g_formatsId || format < 0 || format >= static_cast<int32_t>(g_formats.size()))
             return E_INVALIDARG;
         cam = g_cameras[camera];
         fmt = g_formats[format].native;
         engine = g_engine.get();
-        g_streamingCamera = camera;
+        g_streamingLink = cam.phone;
     }
     engine->Start(cam, fmt, ToImage(image));
     return S_OK;
@@ -383,7 +444,8 @@ CS_API int32_t cs_start(int32_t camera, int32_t format, const CsImage* image)
 CS_API void cs_stop()
 {
     if (g_engine) g_engine->Stop();
-    g_streamingCamera = -1;
+    std::lock_guard lk(g_lock);
+    g_streamingLink.reset();
 }
 
 CS_API int32_t cs_set_image(const CsImage* image)
@@ -453,8 +515,7 @@ CS_API int32_t cs_phone_send(const char* text)
     std::shared_ptr<phone::PhoneLink> link;
     {
         std::lock_guard lk(g_lock);
-        if (g_streamingCamera < 0 || g_streamingCamera >= static_cast<int32_t>(g_cameras.size())) return E_FAIL;
-        link = g_cameras[g_streamingCamera].phone;
+        link = g_streamingLink; // held, not looked up by index: refreshes may move it
     }
     if (!link || !text) return E_FAIL;
     try
