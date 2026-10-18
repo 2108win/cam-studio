@@ -11,6 +11,8 @@ and tested.
 ## 1. What is not verified yet
 
 All of it is on `main`. Details are in CLAUDE.md and the commit messages.
+The uncompiled PC code was reviewed by reading (engine and app); the bugs found are fixed in
+8357bd0 and 3a25aa9. No compile errors were spotted, but nothing replaces a Windows build.
 
 | Piece | Built | Tested on a device |
 |---|---|---|
