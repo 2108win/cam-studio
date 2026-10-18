@@ -22,7 +22,7 @@ namespace CamStudio;
 
 public sealed partial class MainWindow : Window
 {
-    public sealed record LaunchOptions(string? Device, bool Tray);
+    public sealed record LaunchOptions(string? Device, bool Tray, bool Updated = false);
 
     private sealed record FormatItem(int Index, CsFormat Format)
     {
@@ -101,7 +101,7 @@ public sealed partial class MainWindow : Window
 
         LoadSettingsIntoUi();
         _loading = false;
-        SetupUpdater(options.Tray);
+        SetupUpdater(options.Tray, options.Updated);
 
         _statusTimer.Start();
         UpdatePreviewActivity(visible: !options.Tray);

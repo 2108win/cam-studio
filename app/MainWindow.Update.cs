@@ -22,9 +22,11 @@ public sealed partial class MainWindow
     private bool _installing;
     private string _balloonShownFor = "";
 
-    private void SetupUpdater(bool tray)
+    // updated: opened again by the installer after an update (--updated): not a manual launch, so
+    // no automatic install in this session (a release whose tag is newer than its setup would loop).
+    private void SetupUpdater(bool tray, bool updated)
     {
-        _manualLaunch = !tray;
+        _manualLaunch = !tray && !updated;
         _launchedAt = DateTime.UtcNow;
         _updater.AutoDownload = _settings.AutoUpdate;
         _updater.Changed += () => DispatcherQueue.TryEnqueue(OnUpdateChanged);
@@ -73,6 +75,7 @@ public sealed partial class MainWindow
         }
         // By itself: just opened by the user, the installer is already here, no camera in use.
         if (_updater.State == Updater.Phase.Ready && _settings.AutoUpdate && _manualLaunch &&
+            _settings.AutoInstalledVersion != version &&
             DateTime.UtcNow - _launchedAt < TimeSpan.FromMinutes(2) && CamerasInUse().Count == 0)
         {
             _manualLaunch = false; // once
@@ -97,6 +100,9 @@ public sealed partial class MainWindow
             UpdateBar.Message = "Đã tải sẵn. Camera đang được dùng nên chưa cài: bấm Cập nhật ngay khi xong, hoặc để lần sau mở Cam Studio.";
             return;
         }
+        // Never by itself twice for the same version (a click still installs it).
+        _settings.AutoInstalledVersion = version.ToString();
+        _settings.Save();
         await InstallUpdateAsync(confirmed: true);
     }
 
@@ -131,7 +137,7 @@ public sealed partial class MainWindow
 
         _installing = true;
         OnUpdateChanged();
-        var setup = _updater.Install(relaunchInTray: !IsOnScreen);
+        var setup = await _updater.InstallAsync(relaunchInTray: !IsOnScreen);
         if (setup is null)
         {
             _installing = false;

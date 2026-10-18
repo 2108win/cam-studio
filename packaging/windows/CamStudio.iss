@@ -92,10 +92,11 @@ end;
 
 function RelaunchArgs(Param: String): String;
 begin
+  // --updated: the app does not install another update by itself in that session.
   if CompareText(ExpandConstant('{param:RELAUNCH|}'), 'tray') = 0 then
-    Result := '--tray'
+    Result := '--tray --updated'
   else
-    Result := '';
+    Result := '--updated';
 end;
 
 // Frame Server keeps the virtual camera DLL loaded and the app keeps its files open:

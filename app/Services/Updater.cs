@@ -148,23 +148,25 @@ public sealed class Updater
         string part = path + ".part";
         Progress = 0;
         Set(Phase.Downloading);
-        using (var response = await _http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead))
+        // A stalled connection must not hold the updater (the next look retries).
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+        using (var response = await _http.GetAsync(release.SetupUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token))
         {
             response.EnsureSuccessStatusCode();
             if (response.RequestMessage?.RequestUri is { } final && !IsAllowedUrl(final.ToString()))
                 throw new InvalidDataException("Địa chỉ tải bản cập nhật không hợp lệ");
-            await using var input = await response.Content.ReadAsStreamAsync();
+            await using var input = await response.Content.ReadAsStreamAsync(cts.Token);
             await using var output = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
             using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[1 << 16];
             long done = 0;
             int read;
-            while ((read = await input.ReadAsync(buffer)) > 0)
+            while ((read = await input.ReadAsync(buffer, cts.Token)) > 0)
             {
                 done += read;
                 if (done > release.SetupSize) throw new InvalidDataException("Bản cập nhật lớn hơn khai báo");
                 sha.AppendData(buffer, 0, read);
-                await output.WriteAsync(buffer.AsMemory(0, read));
+                await output.WriteAsync(buffer.AsMemory(0, read), cts.Token);
                 int percent = (int)(done * 100 / Math.Max(1, release.SetupSize));
                 if (percent != Progress) { Progress = percent; Changed?.Invoke(); }
             }
@@ -197,12 +199,12 @@ public sealed class Updater
     /// Runs the verified installer (silent, with its own progress window). Inno Setup asks for admin
     /// rights itself, closes Cam Studio and opens it again ("tray": hidden in the tray).
     /// Returns the setup process, or null with Error set.
-    public Process? Install(bool relaunchInTray)
+    public async Task<Process?> InstallAsync(bool relaunchInTray)
     {
         if (!CanInstall) { Error = "Bản đang chạy không phải bản đã cài: không tự cập nhật"; return null; }
         if (State != Phase.Ready || ReadyPath is null || Latest is null) { Error = "Chưa có bản cập nhật"; return null; }
         // Checked again right before running: the file sits in a folder this user can write.
-        if (!VerifyAsync(ReadyPath, Latest).GetAwaiter().GetResult()) { Error = "Bản tải về đã bị thay đổi, sẽ tải lại"; ReadyPath = null; Set(Phase.Failed); return null; }
+        if (!await VerifyAsync(ReadyPath, Latest)) { Error = "Bản tải về đã bị thay đổi, sẽ tải lại"; ReadyPath = null; Set(Phase.Failed); return null; }
         try
         {
             // No "runas" verb: Setup elevates itself, so it can open the app again as this user.

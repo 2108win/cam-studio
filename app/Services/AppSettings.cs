@@ -46,6 +46,7 @@ public sealed class AppSettings
     public int Temperature { get; set; }
     public int OutputSize { get; set; }    // "Kích thước camera ảo": 0 auto, 1 4K, 2 1080p, 3 720p
     public bool AutoUpdate { get; set; } = true; // download new versions and install when no camera is in use
+    public string AutoInstalledVersion { get; set; } = ""; // the version last installed by itself (never twice)
     // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
     public Dictionary<string, string> Modes { get; } = new();
 
@@ -79,6 +80,7 @@ public sealed class AppSettings
         s.Temperature = Math.Clamp(Int("Temperature", 0), -100, 100);
         s.OutputSize = Math.Clamp(Int("OutputSize", 0), 0, 3);
         s.AutoUpdate = Int("AutoUpdate", 1) != 0;
+        s.AutoInstalledVersion = key.GetValue("AutoInstalledVersion") as string ?? "";
         using (var modes = key.OpenSubKey("Modes"))
         {
             if (modes is not null)
@@ -114,6 +116,7 @@ public sealed class AppSettings
         key.SetValue("Temperature", Temperature, RegistryValueKind.DWord);
         key.SetValue("OutputSize", OutputSize, RegistryValueKind.DWord);
         key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
+        key.SetValue("AutoInstalledVersion", AutoInstalledVersion);
         using var modes = key.CreateSubKey("Modes");
         foreach (var (id, mode) in Modes) modes.SetValue(id, mode);
     }
