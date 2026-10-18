@@ -24,7 +24,7 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 | PC app (WinUI 3, C#, .NET 10, unpackaged) | `app/` | Windows only | `scripts\build.ps1` |
 | Verify tool, protocol test, fake phone | `src/verify`, `tools/` | Windows only | `scripts\build.ps1` |
 | Fake PC (tests a phone app end to end: pair, caps, stream, decode, PNGs) | `tools/fake_pc.swift` | **macOS** | `scripts/fake-pc.sh --lens all` (`--usb`: iPhone over the cable) |
-| USB transport check (lists phones on a cable, opens a tunnel, exchanges `hello`) | `tools/usb_check.cpp` + `src/engine/UsbTransport.cpp` | Windows, **macOS** | Windows: `camstudio-usb-check`; Mac: `clang++ -std=c++20 -o build/usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp` |
+| USB transport check (lists phones on a cable, opens a tunnel, exchanges `hello`, probes a port) | `tools/usb_check.cpp` + `src/engine/UsbTransport.cpp` | Windows, **macOS** | Windows: `camstudio-usb-check`; Mac: `clang++ -std=c++20 -o build/usb-check tools/usb_check.cpp src/engine/UsbTransport.cpp` |
 | Android app (Kotlin, Camera2 + MediaCodec) | `android/` | Windows, **macOS**, Linux | `cd android && ./gradlew assembleRelease` (JDK 17, Android SDK 36) |
 | iPhone app (Swift, AVFoundation + VideoToolbox + Network.framework) | `ios/` | **macOS** (Xcode via XcodeGen), or Linux/WSL via xtool (no screen sharing) | `scripts/ios-run.sh` (tests, build, install, launch); `scripts/ios-archive.sh` (TestFlight); see [ios/README.md](ios/README.md) |
 | iPhone screen sharing (ReplayKit broadcast upload extension) | `ios/CamStudioScreen` | **macOS** (Xcode only) | built and embedded with the app |
@@ -84,6 +84,20 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
   names "<name> (USB)", webcam re-find after replug), the adb start/stop, `package-release.ps1` copying adb,
   the installer's `adb kill-server`. **Android over adb is untested anywhere**, and so is the Apple
   Mobile Device Service on Windows.
+- **Screen over USB and probe-safe phone servers** (later the same day):
+  - iPhone 14 over the cable, new app: `fake-pc --usb` streamed 40 s without a break (1194 frames,
+    30 fps, 0 decode errors) while `usb-check probe <udid> 47321 close|junk|silent` ran. The phone
+    closed junk at once and a silent probe after 10.5 s; its status still said "Đang phát …".
+  - `usb-check hello <udid> 47322` with no broadcast gives the new "iPhone chưa chia sẻ màn hình…".
+  - **Not run on the device:** the screen extension over USB (the user skipped it), and a second
+    real `hello` taking over. Both were checked on the Mac instead: the iOS `PhoneServer` and
+    `Session` built with stub sources, for both kinds (47321, 47322). All of these passed:
+    - probes leave the session and the status alone;
+    - a valid hello replaces the session;
+    - the session ending sets "Đang chờ…" once;
+    - `stop()` closes waiting connections.
+  - **Not compiled:** the PC side ("· Màn hình (USB)" entries, port-aware errors) and the Android
+    change (no JDK on the Mac).
 
 ## Things learned the hard way
 
@@ -217,10 +231,13 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
     - Redmi screen: 0.3% CPU, and 0 encoders running on the phone. It woke in ~0.5 s.
   - **Memory:** the app calls `EmptyWorkingSet` when hidden.
   - **Status:** shown through `CsStatus.standby`.
-- **USB cable (docs/protocol.md 1.2):** the phone apps are unchanged; the tunnel arrives on loopback.
-  - **Never probe a phone port** to see whether the app is open: any accepted connection replaces the
-    session in progress. USB phones are listed when attached, and only the camera port 47321
-    (screen sharing over USB is not done).
+- **USB cable (docs/protocol.md 1.2):** no phone change was needed for the tunnel; it arrives on loopback.
+  - **The PC never probes a phone port** to see whether the app is open or sharing its screen. Phone
+    apps from 2026-10-18 on are probe-safe (below), but older ones (Android 0.1.3, iOS TestFlight
+    20261018.0743 and before) drop the session in progress on any accepted connection.
+  - So every phone ready on the cable is listed twice, whether or not it shares its screen:
+    "<name> (USB)" on 47321 and "<name> · Màn hình (USB)" on 47322. When nothing listens on 47322,
+    adb answers `FAIL` and usbmux `3`, and `OpenAdb`/`OpenUsbmux` say "chưa chia sẻ màn hình".
   - The USB list comes from background watchers (adb `host:track-devices`, usbmuxd `Listen`), never
     from I/O in `KnownPhones()`: `cs_refresh_cameras` runs on the UI thread.
   - A phone is listed only once its name is read (adb `settings get global device_name`, lockdownd
@@ -235,9 +252,16 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
     runs (another version would kill it). It stops only the server it started: after a minute with no
     phone on adb (adb scans USB every second), or on exit.
   - A USB link reconnects over the same cable only: unplugged means Waiting, never a silent switch to Wi‑Fi.
-- **The phone serves one PC at a time:** a new connection replaces the old one. A test from the
-  fake PC on the Mac kicks the user's real Windows PC off (and the PC's reconnect kicks the fake
-  PC). Ask before testing while the user's PC may be streaming.
+- **The phone serves one PC at a time:** a new connection replaces the old one, but only once it has
+  sent a valid `hello` (docs/protocol.md 3.1). A test from the fake PC on the Mac kicks the user's
+  real Windows PC off (and the PC's reconnect kicks the fake PC). Ask before testing while the
+  user's PC may be streaming.
+  - **Probe-safe since 2026-10-18** (`PhoneServer` on iOS, shared with the screen extension, and on
+    Android): a connection waits apart from `session` until its hello is valid, then `claim`s it.
+    One that closes first, sends junk, or is silent for 10 s is closed; the session in progress
+    and the status text stay as they were.
+  - iOS `Connection.readExact` has no timeout, so the 10 s deadline is a main-queue timer that
+    cancels the `NWConnection` (that ends the pending receive). Android uses `soTimeout`.
 - **Any `error` ends the PC's stream** (`CaptureEngine::RunPhone`). So a `set` the phone cannot apply
   (e.g. cinematic on a lens without it) is reported through `state`, not `error`.
 
@@ -260,7 +284,9 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
 4. USB transport (written, docs/protocol.md 1.2): build it on Windows, then test the Redmi over adb and
    the iPhone through Apple Devices/iTunes, including unplugging while Discord uses the camera.
    Also check the webcam re-find: unplug the OBSBOT while streaming, plug it into another port.
-   Later: screen sharing over USB. It needs the phone servers to replace a session only after a
-   new connection's `hello`, so that a probe is harmless.
+   Then the screen over USB: "<name> · Màn hình (USB)" with and without a broadcast running, stop and
+   start the broadcast while Discord uses the camera (Waiting, then back).
+   Build and install the probe-safe Android app on the Redmi (written on the Mac, no JDK there: not
+   compiled), then `camstudio-usb-check probe <serial> 47321 close|junk|silent` during a stream.
 5. Ideas: AI background blur on the PC; check HEVC decoding end to end; let the virtual camera write at
    the consumer's fps (needs a vcam change plus `register.ps1` again).
