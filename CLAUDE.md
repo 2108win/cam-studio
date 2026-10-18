@@ -1,7 +1,7 @@
 # Cam Studio — notes for Claude Code
 
-> **Unfinished work (2026-10-18): read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It says which git
-> branches hold which features, what is built and tested, the user's decisions, and the next steps.
+> **Unfinished work (2026-10-18): read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It says what is
+> not compiled or tested yet, the user's decisions, and the next steps.
 
 A Camo Studio–like app: external cameras (USB webcams, Android phones, iPhones) published as a Windows 11
 virtual camera **"Cam Studio"** at each source's **native resolution**. User-facing docs: [README.md](README.md)
@@ -15,6 +15,13 @@ virtual camera **"Cam Studio"** at each source's **native resolution**. User-fac
 - Phone apps are **native per platform** (Kotlin/Camera2, Swift/AVFoundation). They share only the
   protocol spec and the test vectors, not code.
 - Keep the PC app light: no per-frame work when nobody consumes the virtual camera.
+- **Git: one branch only, `main`** (the user's rule, 2026-10-18):
+  - Work and commit directly on `main` in the main checkout. Push only `main`.
+  - Create no other branch and no worktree. Do not start sessions or agents in a worktree
+    (`use_worktree: false`, no `isolation: "worktree"`).
+  - If a tool or session still creates one: before the session ends, merge it into `main`, push
+    `main`, and delete the branch (local and remote) and the worktree. Leave nothing behind.
+  - Keep notes short. The user does not want to read much.
 
 ## Layout and where each part builds
 
@@ -106,7 +113,7 @@ USB cable (2026-10-18), on the Mac with the iPhone 14 plugged in:
 
 ### PC: many sources, screen window, window source, camera always on (2026-10-18)
 
-Written on the Mac on branch `claude/nifty-hawking-2631de` (plan steps 3–5, plus the user's
+Written on the Mac (plan steps 3–5, plus the user's
 "camera always there" request). **Only the portable picture code is compiled and tested:**
 `tools/frame_check.cpp`, 307 checks passing with clang `-arch x86_64`, also under ASan/UBSan
 (`PlanOutput`, `ComputeLayout` fit, `Nv12FillBars`, `Nv12CropScaleBilinearTo`,
