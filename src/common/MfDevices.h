@@ -34,8 +34,11 @@ struct CameraDevice
     // Phone camera (docs/protocol.md): activate is null, frames come
     // through this authenticated connection instead.
     std::shared_ptr<phone::PhoneLink> phone;
+    // A window on this PC (Windows.Graphics.Capture): activate and phone are null.
+    HWND window = nullptr;
 
     bool IsPhone() const { return phone != nullptr; }
+    bool IsPcWindow() const { return window != nullptr; }
 };
 
 enum class LensFacing : int

@@ -373,6 +373,7 @@ public sealed partial class MainWindow : Window
 
     private async System.Threading.Tasks.Task SelectCameraAsync(int index)
     {
+        _windowSource = null;
         _camera = index;
         _isPhone = index >= 0 && Engine.IsPhone(index);
         CameraButtonText.Text = index >= 0 ? _cameras[index] : "Không tìm thấy camera";
@@ -757,8 +758,9 @@ public sealed partial class MainWindow : Window
     // using it keep it, frozen for a moment). A connected phone has its formats already.
     private async void OnCameraPicked(int camera)
     {
-        if (camera < 0 || camera >= _cameras.Count || camera == _camera) return;
+        if (camera < 0 || camera >= _cameras.Count || (camera == _camera && _windowSource is null)) return;
         int previous = _camera;
+        var previousWindow = _windowSource;
         bool wasCapturing = IsCapturing;
         await SelectCameraAsync(camera);
         if (_camera != camera) return; // another pick meanwhile
@@ -771,6 +773,15 @@ public sealed partial class MainWindow : Window
                 string error = ErrorBar.Message;
                 await SelectCameraAsync(previous);
                 ShowError(error);
+            }
+            else if (wasCapturing && previousWindow is { } window)
+            {
+                _windowSource = window;
+                _camera = -1;
+                CameraButtonText.Text = "Cửa sổ: " + window.Title;
+                FormatButtonText.Text = "Theo cỡ cửa sổ";
+                BuildCameraMenu();
+                UpdateSourceRow();
             }
             return;
         }
@@ -796,6 +807,11 @@ public sealed partial class MainWindow : Window
 
     private void StartCapture()
     {
+        if (_windowSource is { } window)
+        {
+            OnWindowPicked(window.Handle, window.Title);
+            return;
+        }
         if (_camera < 0 || _format < 0)
         {
             ShowError("Chưa có camera. Cắm camera rồi chọn \"Tìm lại camera\".");

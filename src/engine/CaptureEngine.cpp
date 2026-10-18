@@ -2,6 +2,7 @@
 #include "FrameWriter.h"
 #include "PhoneLink.h"
 #include "VideoDecoder.h"
+#include "WindowSource.h"
 
 #include <mfvirtualcamera.h>
 
@@ -753,6 +754,10 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             {
                 outcome = RunPhone(pipeline, cam, format, why, hr);
             }
+            else if (cam.IsPcWindow())
+            {
+                outcome = RunWindow(pipeline, cam, format, why, hr);
+            }
             else if (lost && !FindCameraAgain(cam, webcam))
             {
                 why = L"Camera đã bị rút ra. Cắm lại cáp để tiếp tục";
@@ -1141,5 +1146,122 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     }
 
     if (link.Connected()) link.SendControl(json::Value::MakeObject().Set("type", "stop"));
+    return m_quit ? Outcome::Quit : m_switch ? Outcome::Switch : outcome;
+}
+
+// A window on this PC. Its size changes while it is being resized: frames of another size are
+// fitted (with bars) into the size the source started with, and once the window has kept a new
+// size for a second the pipeline takes that size (the camera then follows the size rule).
+CaptureEngine::Outcome CaptureEngine::RunWindow(Pipeline& pipeline, const CameraDevice& cam, const NativeFormat& format,
+                                                std::wstring& why, HRESULT& hr)
+{
+    if (!IsWindow(cam.window))
+    {
+        why = L"Cửa sổ đã đóng. Hãy chọn nguồn khác";
+        return Outcome::Fatal;
+    }
+    static_cast<void>(format); // the size comes from the frames
+    WindowCapture capture;
+    if (!capture.Open(cam.window, why)) return Outcome::Fatal;
+
+    constexpr int64_t kInterval100ns = 333333; // the camera is published at 30 fps
+    uint32_t srcW = 0, srcH = 0;               // what the pipeline gets
+    uint32_t pendingW = 0, pendingH = 0;
+    ULONGLONG pendingSince = 0;
+    std::vector<uint8_t> content, frame;
+    ULONGLONG idleSince = 0;
+    ULONGLONG lastFrame = GetTickCount64();
+    ULONGLONG lastTaken = 0;
+    int64_t ts = 0;
+    Outcome outcome = Outcome::Quit;
+    hr = S_OK;
+
+    auto onFrame = [&](const uint8_t* bgra, uint32_t pitch, uint32_t w, uint32_t h) {
+        const uint32_t cw = w & ~1u, ch = h & ~1u;
+        if (cw < 2 || ch < 2) return;
+        const ULONGLONG now = GetTickCount64();
+        if (!srcW || ((cw != srcW || ch != srcH) && pendingW == cw && pendingH == ch && now - pendingSince >= 1000))
+        {
+            srcW = cw;
+            srcH = ch;
+            hr = pipeline.Begin(srcW, srcH, 30, 1, MFVideoFormat_ARGB32);
+            if (FAILED(hr)) return;
+        }
+        if (cw != srcW || ch != srcH)
+        {
+            if (pendingW != cw || pendingH != ch)
+            {
+                pendingW = cw;
+                pendingH = ch;
+                pendingSince = now;
+            }
+        }
+        frame.resize(CamStudioNv12Bytes(srcW, srcH));
+        uint8_t* y = frame.data();
+        uint8_t* uv = frame.data() + static_cast<size_t>(srcW) * srcH;
+        if (cw == srcW && ch == srcH)
+        {
+            BgraToNv12(bgra, pitch, cw, ch, y, uv, srcW);
+        }
+        else
+        {
+            content.resize(CamStudioNv12Bytes(cw, ch));
+            BgraToNv12(bgra, pitch, cw, ch, content.data(), content.data() + static_cast<size_t>(cw) * ch, cw);
+            const FrameLayout l = ComputeLayout(cw, ch, ImageSettings{}, srcW, srcH);
+            Nv12FillBars(frame.data(), srcW, srcH, l.destX, l.destY, l.destWidth, l.destHeight);
+            Nv12CropScaleBilinearTo(content.data(), static_cast<long>(cw), cw, ch,
+                Nv12Rect{ 0, 0, static_cast<double>(cw), static_cast<double>(ch) },
+                y + static_cast<size_t>(l.destY) * srcW + l.destX,
+                uv + static_cast<size_t>(l.destY / 2) * srcW + l.destX,
+                static_cast<long>(srcW), l.destWidth, l.destHeight);
+        }
+        pipeline.Frame(frame.data(), static_cast<long>(srcW), ts);
+    };
+
+    while (!Interrupted())
+    {
+        // Nobody needs the picture any more: stop capturing (back to standby).
+        if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
+        const ULONGLONG now = GetTickCount64();
+        // A window sends frames only when it changes, up to the screen's rate: take at most 30 a
+        // second, and read one back from the GPU only when it goes somewhere.
+        const bool due = now - lastTaken >= 30;
+        const bool read = due && (!srcW || pipeline.WillPublish());
+        const WindowCapture::Result result = capture.Next(100, read, onFrame);
+        if (result == WindowCapture::Result::Closed)
+        {
+            why = L"Cửa sổ đã đóng. Hãy chọn nguồn khác";
+            outcome = Outcome::Fatal;
+            break;
+        }
+        if (FAILED(hr))
+        {
+            why = pipeline.Failure();
+            outcome = Outcome::Fatal;
+            break;
+        }
+        if (result == WindowCapture::Result::Frame)
+        {
+            lastFrame = now;
+            if (due)
+            {
+                lastTaken = now;
+                ts += kInterval100ns;
+                if (!read && srcW)
+                {
+                    pipeline.Count(ts); // counted, not converted: nobody watches
+                    pipeline.Tick();
+                }
+            }
+        }
+        else if (srcW && now - lastFrame >= 500)
+        {
+            // A still window: the camera keeps showing its last picture.
+            pipeline.Hold();
+            pipeline.Tick();
+        }
+        if (pipeline.Broken()) { why = pipeline.Failure(); outcome = Outcome::Fatal; break; }
+    }
+    capture.Close();
     return m_quit ? Outcome::Quit : m_switch ? Outcome::Switch : outcome;
 }

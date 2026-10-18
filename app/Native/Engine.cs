@@ -132,6 +132,10 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial int cs_viewer_copy(int viewer, uint* pixels, int capacity, uint* width, uint* height, ulong* frameId);
     [LibraryImport(Dll)] public static partial int cs_viewer_state(int viewer, uint* screenWidth, uint* screenHeight, char* error, int capacity);
     [LibraryImport(Dll)] public static partial void cs_viewer_close(int viewer);
+    [LibraryImport(Dll)] public static partial int cs_list_windows();
+    [LibraryImport(Dll)] public static partial int cs_window_title(int index, char* buffer, int capacity);
+    [LibraryImport(Dll)] public static partial long cs_window_handle(int index);
+    [LibraryImport(Dll)] public static partial int cs_switch_window(long handle, CsImage* image);
 
     // Phone camera (1) or a phone's shared screen (2): both connect over the network or a cable.
     public static bool IsPhone(int camera) => cs_camera_kind(camera) is 1 or 2;
@@ -205,6 +209,21 @@ internal static unsafe partial class Engine
     // Both return the new source's id (> 0, see CsStatus.SourceId) or an HRESULT (< 0).
     public static int Start(int camera, int format, CsImage image) => cs_start(camera, format, &image);
     public static int Switch(int camera, int format, CsImage image) => cs_switch(camera, format, &image);
+    public static int SwitchWindow(long handle, CsImage image) => cs_switch_window(handle, &image);
+
+    // Windows on this PC that can be the camera's source.
+    public static System.Collections.Generic.List<(long Handle, string Title)> ListWindows()
+    {
+        var list = new System.Collections.Generic.List<(long, string)>();
+        int count = cs_list_windows();
+        char* buf = stackalloc char[512];
+        for (int i = 0; i < count; i++)
+        {
+            long handle = cs_window_handle(i);
+            if (handle != 0) list.Add((handle, Text(buf, cs_window_title(i, buf, 512))));
+        }
+        return list;
+    }
 
     public static bool SetImage(CsImage image) => cs_set_image(&image) != 0;
 

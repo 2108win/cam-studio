@@ -162,3 +162,12 @@ CS_API int32_t cs_viewer_copy(int32_t viewer, uint32_t* pixels, int32_t capacity
 CS_API int32_t cs_viewer_state(int32_t viewer, uint32_t* screenWidth, uint32_t* screenHeight, wchar_t* error, int32_t capacity);
 // Stops the screen's stream; the phone stays connected in the background.
 CS_API void cs_viewer_close(int32_t viewer);
+
+// A window on this PC as the virtual camera's source (Windows.Graphics.Capture). Lists the
+// windows worth offering (visible, titled, not cloaked, not Cam Studio's) and returns the count.
+CS_API int32_t cs_list_windows();
+CS_API int32_t cs_window_title(int32_t index, wchar_t* buffer, int32_t capacity);
+CS_API int64_t cs_window_handle(int32_t index); // HWND, 0 for a bad index
+// Like cs_switch, for a window (by handle). A resized window is fitted into the camera with bars
+// until its new size has been steady for a second. Returns the source id or an HRESULT < 0.
+CS_API int32_t cs_switch_window(int64_t handle, const CsImage* image);

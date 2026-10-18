@@ -22,6 +22,7 @@ public sealed partial class MainWindow
     private uint _sourcesGeneration;
     private int _expectSourceId;                   // the engine source a lens switch waits for
     private readonly Dictionary<string, ScreenWindow> _screenWindows = new(); // by source id
+    private (long Handle, string Title)? _windowSource;  // a window on this PC is the camera's source
 
     // Reads the engine's list into _cameras/_ids/_kinds and finds the current source again by id.
     private void ReadCameraList()
@@ -83,6 +84,7 @@ public sealed partial class MainWindow
         }
         if (_cameras.Count > 0) CameraMenu.Items.Add(new MenuFlyoutSeparator());
         AddScreenItems();
+        AddWindowItems();
         var refresh = new MenuFlyoutItem { Text = "Tìm lại camera và điện thoại", Icon = new FontIcon { Glyph = "" } };
         refresh.Click += async (_, _) => await RefreshCamerasAsync(null);
         CameraMenu.Items.Add(refresh);
@@ -162,6 +164,57 @@ public sealed partial class MainWindow
     {
         foreach (var window in _screenWindows.Values.ToList()) window.Close();
         _screenWindows.Clear();
+    }
+
+    // ---- A window on this PC as the camera's source ----------------------------------------------
+
+    private void AddWindowItems()
+    {
+        var sub = new MenuFlyoutSubItem { Text = "Cửa sổ trên máy tính", Icon = new FontIcon { Glyph = "\uE7C4" } };
+        var windows = Engine.ListWindows(); // cheap: listed each time the menu opens
+        foreach (var (handle, title) in windows)
+        {
+            var item = new RadioMenuFlyoutItem
+            {
+                Text = title.Length > 60 ? title[..57] + "…" : title,
+                GroupName = "camera",
+                IsChecked = _windowSource?.Handle == handle,
+            };
+            ToolTipService.SetToolTip(item, title);
+            long h = handle;
+            string t = title;
+            item.Click += (_, _) => OnWindowPicked(h, t);
+            sub.Items.Add(item);
+        }
+        if (windows.Count == 0) sub.Items.Add(new MenuFlyoutItem { Text = "Không có cửa sổ nào", IsEnabled = false });
+        CameraMenu.Items.Add(sub);
+        CameraMenu.Items.Add(new MenuFlyoutSeparator());
+    }
+
+    // The window becomes the camera's source at once (the camera is turned on if it was off).
+    private void OnWindowPicked(long handle, string title)
+    {
+        int id = Engine.SwitchWindow(handle, CurrentImage());
+        if (id < 0)
+        {
+            ShowError($"Không quay được cửa sổ này (0x{id:X8}).");
+            return;
+        }
+        _windowSource = (handle, title);
+        _expectSourceId = id;
+        _lensSwitchFrom = -1;
+        ++_loadGeneration; // a camera's formats still loading are no longer wanted
+        _camera = -1;
+        _isPhone = false;
+        _phoneCaps = null;
+        _formats.Clear();
+        SelectFormat(-1);
+        FormatButtonText.Text = "Theo cỡ cửa sổ";
+        CameraButtonText.Text = "Cửa sổ: " + title;
+        ErrorBar.IsOpen = false;
+        SetToggleQuietly(true);
+        UpdateSourceRow();
+        UpdateStatus();
     }
 
     // ---- Quick switching: the source row, Ctrl+1…9, the tray menu ----------------------------

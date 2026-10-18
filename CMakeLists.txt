@@ -27,10 +27,14 @@ add_library(CamStudioEngine SHARED
     src/engine/PhoneLink.cpp
     src/engine/Connector.cpp
     src/engine/ScreenViewer.cpp
+    src/engine/WindowSource.cpp
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)
-target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite mfsensorgroup ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32)
+target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite mfsensorgroup ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32
+    windowsapp d3d11 dxgi dwmapi)
+# C++/WinRT (Windows.Graphics.Capture) is used in WindowSource.cpp only.
+set_source_files_properties(src/engine/WindowSource.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
 
 # Stand-in phone for testing the PC side of the protocol without a device.
 add_executable(camstudio-fake-phone tools/fake_phone.cpp src/engine/Crypto.cpp)

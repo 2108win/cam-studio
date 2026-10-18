@@ -6,6 +6,7 @@
 #include "Json.h"
 #include "PhoneLink.h"
 #include "ScreenViewer.h"
+#include "WindowSource.h"
 
 #include <algorithm>
 #include <atomic>
@@ -34,6 +35,7 @@ std::atomic<int> g_pairingDecision{ -1 }; // -1 waiting, 0 declined, 1 accepted 
 std::shared_ptr<phone::PhoneLink> g_streamingLink; // the phone the virtual camera shows, if any
 std::map<int32_t, std::unique_ptr<ScreenViewer>> g_viewers; // screen windows, by cs_viewer_open id
 int32_t g_nextViewer = 1;
+std::vector<WindowInfo> g_windows; // the last cs_list_windows
 int g_initCount = 0;
 
 std::wstring Widen(const std::string& s)
@@ -628,4 +630,53 @@ CS_API void cs_viewer_close(int32_t viewer)
         g_viewers.erase(it);
     }
     closing.reset(); // joins its thread (a connect in progress is aborted)
+}
+
+// ---- a window on this PC as the camera's source --------------------------------------------------
+
+CS_API int32_t cs_list_windows()
+{
+    std::vector<WindowInfo> windows = ListCaptureWindows();
+    std::lock_guard lk(g_lock);
+    g_windows = std::move(windows);
+    return static_cast<int32_t>(g_windows.size());
+}
+
+CS_API int32_t cs_window_title(int32_t index, wchar_t* buffer, int32_t capacity)
+{
+    std::lock_guard lk(g_lock);
+    if (index < 0 || index >= static_cast<int32_t>(g_windows.size())) return -1;
+    return CopyOut(g_windows[index].title, buffer, capacity);
+}
+
+CS_API int64_t cs_window_handle(int32_t index)
+{
+    std::lock_guard lk(g_lock);
+    if (index < 0 || index >= static_cast<int32_t>(g_windows.size())) return 0;
+    return reinterpret_cast<int64_t>(g_windows[index].hwnd);
+}
+
+CS_API int32_t cs_switch_window(int64_t handle, const CsImage* image)
+{
+    const HWND hwnd = reinterpret_cast<HWND>(handle);
+    if (!hwnd || !IsWindow(hwnd)) return E_INVALIDARG;
+    CameraDevice cam;
+    cam.window = hwnd;
+    wchar_t title[256] = {};
+    GetWindowTextW(hwnd, title, ARRAYSIZE(title));
+    cam.name = title;
+    NativeFormat fmt;
+    CaptureWindowSize(hwnd, fmt.width, fmt.height);
+    fmt.fpsNum = 30;
+    fmt.fpsDen = 1;
+    fmt.subtype = MFVideoFormat_ARGB32;
+    CaptureEngine* engine = nullptr;
+    {
+        std::lock_guard lk(g_lock);
+        if (!g_engine) return E_UNEXPECTED;
+        engine = g_engine.get();
+        g_streamingLink.reset();
+    }
+    engine->SetImage(ToImage(image));
+    return static_cast<int32_t>(engine->Switch(cam, fmt) & 0x7FFFFFFF);
 }
