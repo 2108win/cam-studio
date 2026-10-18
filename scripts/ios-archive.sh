@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Archives the iPhone app (with the screen-sharing extension) for TestFlight / App Store Connect.
-# The archive shows up in Xcode > Window > Organizer: upload it from there (Distribute App).
+# The archive shows up in Xcode > Window > Organizer: upload it from there (Distribute App), or
+# pass --upload to send it with the Apple account signed in to Xcode.
 # Needs a paid Apple Developer Program team and a bundle id registered on it, both set in
 # ios/Signing.local.xcconfig (not in git; see ios/Signing.xcconfig):
 #   DEVELOPMENT_TEAM = ABCDE12345
@@ -8,6 +9,7 @@
 #
 #   scripts/ios-archive.sh               archive; build number = date.time (each upload needs a new one)
 #   scripts/ios-archive.sh --build 7     pick the build number
+#   scripts/ios-archive.sh --upload      archive, then upload to App Store Connect (TestFlight)
 #   scripts/ios-archive.sh --unsigned    Release build check without an Apple account (not uploadable)
 set -euo pipefail
 cd "$(dirname "$0")/../ios"
@@ -20,10 +22,12 @@ command -v xcodegen >/dev/null || { echo "Cần XcodeGen: brew install xcodegen"
 
 build="$(date +%Y%m%d.%H%M)"
 unsigned=0
+upload=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build) build="$2"; shift 2 ;;
         --unsigned) unsigned=1; shift ;;
+        --upload) upload=1; shift ;;
         *) echo "Tham số không hợp lệ: $1"; exit 1 ;;
     esac
 done
@@ -71,7 +75,7 @@ for key in CFBundleShortVersionString CFBundleVersion; do
     [[ "$($pb -c "Print $key" "$app/Info.plist")" == "$($pb -c "Print $key" "$appex/Info.plist")" ]] ||
         { echo "$key của app và tiện ích khác nhau"; exit 1; }
 done
-for key in NSCameraUsageDescription NSLocalNetworkUsageDescription NSBonjourServices; do
+for key in NSCameraUsageDescription NSLocalNetworkUsageDescription NSBonjourServices ITSAppUsesNonExemptEncryption; do
     $pb -c "Print $key" "$app/Info.plist" >/dev/null 2>&1 ||
         { echo "Info.plist của app thiếu $key: chạy  git checkout ios/Info.plist  rồi archive lại."; exit 1; }
 done
@@ -79,7 +83,31 @@ echo "== Xong: $($pb -c 'Print CFBundleIdentifier' "$app/Info.plist")" \
     "$($pb -c 'Print CFBundleShortVersionString' "$app/Info.plist") ($build)"
 echo "   $archive"
 
-if (( ! unsigned )); then
+if (( unsigned )); then
+    exit 0
+elif (( upload )); then
+    # Distribution signing is cloud-managed: no Apple Distribution certificate needed on this Mac.
+    echo "== Upload lên App Store Connect"
+    options=../build/ios-export/ExportOptions.plist
+    mkdir -p "$(dirname "$options")"
+    cat > "$options" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key><string>app-store-connect</string>
+    <key>destination</key><string>upload</string>
+    <key>teamID</key><string>$team</string>
+    <key>signingStyle</key><string>automatic</string>
+    <key>uploadSymbols</key><true/>
+    <key>manageAppVersionAndBuildNumber</key><false/>
+</dict>
+</plist>
+PLIST
+    xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$options" \
+        -exportPath ../build/ios-export -allowProvisioningUpdates
+    echo "Đã upload. App Store Connect xử lý vài phút, rồi bản build hiện trong tab TestFlight."
+else
     echo "Upload: Xcode > Window > Organizer > chọn bản này > Distribute App > TestFlight & App Store."
     open "$archive"
 fi
