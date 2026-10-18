@@ -1,5 +1,8 @@
 # Cam Studio — notes for Claude Code
 
+> **Unfinished work (2026-10-18): read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It says which git
+> branches hold which features, what is built and tested, the user's decisions, and the next steps.
+
 A Camo Studio–like app: external cameras (USB webcams, Android phones, iPhones) published as a Windows 11
 virtual camera **"Cam Studio"** at each source's **native resolution**. User-facing docs: [README.md](README.md)
 (Vietnamese). Wire protocol shared by all three sides: [docs/protocol.md](docs/protocol.md).
