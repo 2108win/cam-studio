@@ -47,19 +47,32 @@ class CameraCaps(private val context: Context) {
         .filter { c -> c.profileLevels.any { it.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 } }
         .mapNotNull { it.videoCapabilities }
 
-    val lenses: List<Lens> by lazy { enumerateLenses() }
+    private var listed: List<Lens>? = null
+    /** False while a hidden lens could not be opened when it was probed (the camera may just have been busy). */
+    private var complete = false
 
-    fun lens(id: String): Lens? = lenses.firstOrNull { it.id == id }
+    /**
+     * Every lens. The list is kept once every hidden lens was probed successfully; until then
+     * `retry` probes again. Probing opens cameras, so the caller passes false while it streams:
+     * opening another camera could take this app's own stream away.
+     */
+    @Synchronized fun lenses(retry: Boolean = false): List<Lens> {
+        listed?.let { if (complete || !retry) return it }
+        return enumerateLenses().also { listed = it }
+    }
 
-    fun toJson(deviceName: String): JSONObject = JSONObject().apply {
+    fun lens(id: String): Lens? = lenses().firstOrNull { it.id == id }
+
+    fun toJson(deviceName: String, retry: Boolean = false): JSONObject = JSONObject().apply {
+        val all = lenses(retry)
         put("type", "caps")
         put("device", JSONObject()
             .put("name", deviceName)
             .put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("os", "android")
             .put("osVersion", Build.VERSION.RELEASE))
-        put("lenses", JSONArray().apply { lenses.forEach { put(lensJson(it)) } })
-        put("modes", JSONArray().apply { lenses.forEach { l -> modes(l).forEach { put(it) } } })
+        put("lenses", JSONArray().apply { all.forEach { put(lensJson(it)) } })
+        put("modes", JSONArray().apply { all.forEach { l -> modes(l).forEach { put(it) } } })
         put("effects", effectsJson())
         put("encoder", encoderJson())
     }
@@ -67,6 +80,7 @@ class CameraCaps(private val context: Context) {
     // ---- lenses ----------------------------------------------------------------
 
     private fun enumerateLenses(): List<Lens> {
+        complete = true // until a hidden lens fails to open
         val out = mutableListOf<Lens>()
         val seenPhysical = mutableSetOf<String>()
         for (id in manager.cameraIdList) {
@@ -131,7 +145,10 @@ class CameraCaps(private val context: Context) {
             // The same sensor under another id (often a binned mode of the main camera).
             if (!signatures.add(signature(ch))) continue
             // Reading characteristics is not permission to open: some ROMs reserve these for their own camera app.
-            if (!canOpen(id)) continue
+            if (!canOpen(id)) {
+                complete = false
+                continue
+            }
             candidates += id to ch
         }
         // Phones with both a macro and a depth camera (two tiny back sensors):

@@ -8,7 +8,7 @@ import org.json.JSONObject
  * a source owns capture and encoding. Same split as the iPhone app.
  */
 interface MediaSource {
-    /** Android lets an app use the camera only while it is on screen; screen sharing runs anyway. */
+    /** Android lets an app use the camera only while on screen or from a camera foreground service; screen sharing runs anyway. */
     val needsForeground: Boolean
 
     /** The "caps" message (docs/protocol.md 5). */
@@ -22,7 +22,7 @@ interface MediaSource {
     fun requestKeyframe()
     fun setBitrate(bps: Int)
 
-    /** The phone was turned (the activity tells the camera; the screen sees it itself). */
+    /** The phone was turned (CameraService tells the camera; the screen sees it itself). */
     fun onRotationChanged() {}
 
     /** The "started" message, and a short label for the phone's status line. */

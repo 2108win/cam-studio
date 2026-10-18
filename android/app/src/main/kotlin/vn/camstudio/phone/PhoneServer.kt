@@ -14,7 +14,8 @@ import java.net.ServerSocket
  * Listens for the PC on the home network and advertises itself as
  * _camstudio._tcp (docs/protocol.md section 1). One PC session at a time:
  * a new connection replaces the old one, but only once it has sent a valid
- * hello. A connection that only probes the port changes nothing.
+ * hello. A connection that only probes the port changes nothing, and a PC
+ * that connects by itself ("auto") does not take the phone from another PC.
  *
  * The cameras and the shared screen are two servers (two sources on the PC):
  * the screen has its own port, TXT id and name (docs/protocol.md 1.1).
@@ -59,13 +60,6 @@ class PhoneServer(
         runCatching { server?.close() }
     }
 
-    /** IPv4 addresses on Wi‑Fi/Ethernet, for the "add by IP" fallback. */
-    fun addresses(): List<String> {
-        val cm = context.getSystemService(ConnectivityManager::class.java)
-        val props: LinkProperties = cm.getLinkProperties(cm.activeNetwork) ?: return emptyList()
-        return props.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>().map { it.hostAddress ?: "" }
-    }
-
     private fun acceptLoop() {
         while (running) {
             val socket = try {
@@ -79,22 +73,26 @@ class PhoneServer(
             val s = Session(context, socket, store, ui, source, canPair = kind == Kind.CAMERA, claim = ::claim)
             Thread({
                 s.run()
-                if (ended(s)) {
+                if (ended(s) && running) { // after stop() the owner shows its own text
                     ui.status(false, if (kind == Kind.CAMERA) "Đang chờ máy tính kết nối…" else "Đang chờ máy tính chọn \"${txtName()}\"…")
                 }
             }, "session").start()
         }
     }
 
-    /** `s` sent a valid hello: it replaces the session in progress. False once the server stopped. */
-    private fun claim(s: Session): Boolean {
+    /** `s` sent a valid hello: it replaces the session in progress, unless it came by itself ("auto") for another PC's phone. */
+    private fun claim(s: Session, auto: Boolean): Session.Claim {
         // The old session is closed outside the lock: stopping a camera may take a while.
         val old = synchronized(this) {
-            if (!running) return false
-            session.also { session = s }
+            if (!running) return Session.Claim.Stopped
+            val current = session
+            // The same PC coming back may replace its own session: that one is dead (Wi‑Fi dropped, PC restarted).
+            if (auto && current != null && current.clientId != s.clientId) return Session.Claim.Busy(current.pcName)
+            session = s
+            current
         }
         old?.close()
-        return true
+        return Session.Claim.Granted
     }
 
     /** True when `s` was the session (a probe never was, and leaves the status text alone). */
@@ -107,6 +105,13 @@ class PhoneServer(
     companion object {
         const val DEFAULT_PORT = 47321 // docs/protocol.md section 1
         const val SCREEN_PORT = 47322  // docs/protocol.md 1.1
+
+        /** IPv4 addresses on Wi‑Fi/Ethernet, for the "add by IP" fallback. */
+        fun addresses(context: Context): List<String> {
+            val cm = context.getSystemService(ConnectivityManager::class.java)
+            val props: LinkProperties = cm.getLinkProperties(cm.activeNetwork) ?: return emptyList()
+            return props.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>().map { it.hostAddress ?: "" }
+        }
     }
 
     /** The screen gets its own TXT id and name; its "hello" keeps the real deviceId (pairing key). */

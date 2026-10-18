@@ -31,6 +31,11 @@ class Store(context: Context) {
         get() = Settings.Global.getString(appContext.contentResolver, Settings.Global.DEVICE_NAME)
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
+    /** "Chạy nền": the camera keeps serving the PC while the app is hidden (CameraService). On unless turned off. */
+    var cameraInBackground: Boolean
+        get() = prefs.getBoolean("cameraInBackground", true)
+        set(value) = prefs.edit().putBoolean("cameraInBackground", value).apply()
+
     fun pairKey(clientId: String): ByteArray? {
         val stored = prefs.getString("pair.$clientId", null) ?: return null
         return runCatching {
