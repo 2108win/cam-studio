@@ -126,7 +126,14 @@ passes. The Android app (0.1.3) is installed on the Redmi. Verified with `camstu
 - `--tray` with an app opening the camera at once: the phone's picture in ~4 s.
 - **Window source** (a test window): picture, resize, close ("Cửa sổ đã đóng…"), still window.
 - Standby with the phone connected idle: 0.10 % CPU of one core, 47 MB working set.
-- `package-release.ps1` builds `CamStudio-Setup-0.1.3.exe` with adb (not installed).
+- `package-release.ps1` builds `CamStudio-Setup-0.1.4.exe` with adb (not installed, not published).
+
+- **Discord, Redmi over Wi‑Fi** (same day, private voice channel): camera on, lens switches
+  (Macro fitted with bars), Ctrl+1/Ctrl+2 webcam ↔ phone, the phone's screen off with the power
+  button and locked for minutes: 30 fps throughout. Caveats: the phone was charging on the cable
+  (no Doze), and with the cable in, Ctrl+2 picks the cable entry (cable preferred).
+- While Discord streams, a second reader (`camstudio-verify`, any mode) gets `0xC00D3704`
+  from Frame Server. Open: check whether OBS + Discord together work.
 
 Fixed while testing:
 - native stays native across lens switches;
@@ -140,9 +147,18 @@ Not tested (needs someone at the phone or the PC):
 - unplugging the cable/OBSBOT during a call, rotation, two PCs ("Bận với PC khác"), the iPhone,
   a real Discord call.
 
+**Automatic updates (0.1.4), [docs/updates.md](docs/updates.md):** PC and Android check the
+GitHub releases, download, verify SHA-256, then install (PC: never while any app uses a camera,
+no UAC at boot; Android: PackageInstaller, the person confirms). Tested on the PC with a fake feed
+on 127.0.0.1 (`CAMSTUDIO_UPDATE_FEED`): download, wrong hash rejected, camera in use blocks, a dev
+build does not install. **Not tested:** the real install (UAC, silent setup, relaunch) and the
+Android install (needs a release newer than the phone's app).
+
 Gotchas:
 - The computer-use tool minimizes windows of apps it is not allowed to control, and Windows
   sends no frames for a minimized window: test the window source with a window you may control.
+- Windows keeps camera "in use" entries of apps killed while using it (and of old Discord
+  version folders): `CameraUsage.RunningAppsInUse()` skips those.
 - With the window source, "Lật ngang" (a global setting) mirrors the window's text too.
 
 ## Things learned the hard way
