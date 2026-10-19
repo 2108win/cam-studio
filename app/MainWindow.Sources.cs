@@ -80,71 +80,170 @@ public sealed partial class MainWindow
         SourceList.Children.Clear();
         _selectedSubtitle = null;
         var quick = QuickSources();
-        AddSourceGroup("Điện thoại", 1, quick);
-        AddSourceGroup("Webcam", 0, quick);
-        AddScreenRows();
-        AddPaneLabel("Máy tính");
+
+        // One card per device. A phone's routes (cable, Wi‑Fi) and its shared screen fold into the
+        // phone's card, so a phone is listed once however many ways it is reachable.
+        var devices = new List<(string Name, List<int> Cameras, List<int> Screens)>();
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            if (_kinds[i] == 0) continue;
+            string name = DeviceName(_cameras[i]);
+            int d = devices.FindIndex(x => x.Name == name);
+            if (d < 0)
+            {
+                devices.Add((name, new List<int>(), new List<int>()));
+                d = devices.Count - 1;
+            }
+            (_kinds[i] == 2 ? devices[d].Screens : devices[d].Cameras).Add(i);
+        }
+        foreach (var (name, cameras, screens) in devices) SourceList.Children.Add(PhoneCard(name, cameras, screens, quick));
+
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            if (_kinds[i] != 0) continue;
+            int cam = i;
+            var card = SourceCard("\uE960", ScreenTitle(_cameras[i]), IsBuiltIn(i) ? "Camera tích hợp" : "Webcam USB",
+                i == _camera && _windowSource is null, null, _cameras[i] + QuickHint(quick, i));
+            card.Click += (_, _) => OnCameraPicked(cam);
+            SourceList.Children.Add(card);
+        }
+
         bool windowSelected = _windowSource is not null;
-        var windowRow = SourceRow("", windowSelected ? _windowSource!.Value.Title : "Cửa sổ trên máy tính",
+        var windowCard = SourceCard("\uE7C4", windowSelected ? _windowSource!.Value.Title : "Cửa sổ trên máy tính",
             windowSelected ? "Cửa sổ trên máy tính" : "Trình duyệt, bài trình chiếu…", windowSelected, null,
             "Một cửa sổ trên máy tính làm nguồn của camera ảo");
-        windowRow.Click += (_, _) => ShowWindowPicker(windowRow);
-        SourceList.Children.Add(windowRow);
+        windowCard.Click += (_, _) => ShowWindowPicker(windowCard);
+        SourceList.Children.Add(windowCard);
         UpdateSelectedSubtitle(Engine.GetStatus());
     }
 
-    private void AddPaneLabel(string text) =>
-        SourceList.Children.Add(new TextBlock { Text = text, Style = Res<Style>("PaneLabelStyle") });
+    // "Redmi 9T · Màn hình (USB)" -> "Redmi 9T".
+    private static string DeviceName(string name) => ScreenTitle(name).Replace(" · Màn hình", "");
+
+    private static string QuickHint(List<int> quick, int cam) => quick.IndexOf(cam) is var n and >= 0 ? $"   Ctrl+{n + 1}" : "";
 
     private static string TransportOf(string name) =>
         TransportSuffix.Match(name) is { Success: true } m ? (m.Groups[1].Value == "USB" ? "Cáp USB" : m.Groups[1].Value) : "";
 
+    private static string RouteLabel(string name) => TransportOf(name).Replace("Cáp ", "");
+
     private static string JoinParts(params string?[] parts) => string.Join(" · ", parts.Where(p => !string.IsNullOrEmpty(p)));
 
-    private void AddSourceGroup(string label, int kind, List<int> quick)
+    private bool IsUsb(int cam) => _ids[cam].StartsWith("phone:usb:", StringComparison.Ordinal);
+
+    // Lower is better: a connected route first, the cable before Wi‑Fi.
+    private int RouteRank(int cam)
     {
-        bool any = false;
-        for (int i = 0; i < _cameras.Count; i++)
+        int rank = Engine.CameraState(cam, out _) switch
         {
-            if (_kinds[i] != kind) continue;
-            if (!any) AddPaneLabel(label);
-            any = true;
-            int cam = i;
-            var state = Engine.CameraState(i, out string error);
-            string sub = kind == 0 ? (IsBuiltIn(i) ? "Camera tích hợp" : "Webcam USB") : JoinParts(TransportOf(_cameras[i]), StateText(kind, state));
-            int n = quick.IndexOf(i);
-            string tip = (error.Length > 0 ? error : _cameras[i]) + (n >= 0 ? $"   Ctrl+{n + 1}" : "");
-            var row = SourceRow(kind == 0 ? "" : "", ScreenTitle(_cameras[i]), sub,
-                i == _camera && _windowSource is null, DotColor(kind, state), tip);
-            row.Click += (_, _) => OnCameraPicked(cam);
-            SourceList.Children.Add(row);
-        }
+            LinkState.Connected => 0,
+            LinkState.Elsewhere => 2,
+            LinkState.Connecting => 4,
+            _ => 6,
+        };
+        return rank + (IsUsb(cam) ? 0 : 1);
     }
 
-    // A shared screen opens in its own window (to share in a meeting app); "Làm camera" makes it the
-    // virtual camera's source instead.
-    private void AddScreenRows()
+    // A phone: its name, the route it is used (or would be used) through, "USB"/"Wi‑Fi" chips when
+    // it is reachable both ways, and its shared screen with "Mở cửa sổ" / "Làm camera".
+    private Button PhoneCard(string name, List<int> cameras, List<int> screens, List<int> quick)
     {
-        bool any = false;
-        for (int i = 0; i < _cameras.Count; i++)
+        bool onCamera = _windowSource is null;
+        int route = onCamera && cameras.Contains(_camera) ? _camera : cameras.OrderBy(RouteRank).DefaultIfEmpty(-1).First();
+        int screen = onCamera && screens.Contains(_camera) ? _camera : screens.OrderBy(RouteRank).DefaultIfEmpty(-1).First();
+        bool screenIsCamera = onCamera && screens.Contains(_camera);
+        bool selected = onCamera && (route >= 0 && route == _camera || screenIsCamera);
+
+        string subtitle, tooltip;
+        Windows.UI.Color? dot;
+        if (route >= 0)
         {
-            if (_kinds[i] != 2) continue;
-            if (!any) AddPaneLabel("Màn hình điện thoại");
-            any = true;
-            int cam = i;
-            var state = Engine.CameraState(i, out string error);
-            bool open = _screenWindows.ContainsKey(_ids[i]);
-            bool notShared = state == LinkState.Unreachable;
-            string sub = JoinParts(TransportOf(_cameras[i]), notShared ? "Chưa chia sẻ màn hình" : StateText(2, state), open ? "đang mở cửa sổ" : null);
-            var asCamera = new Button { Content = "Làm camera", Padding = new Thickness(8, 2, 8, 3), VerticalAlignment = VerticalAlignment.Center };
-            ToolTipService.SetToolTip(asCamera, "Dùng màn hình này làm nguồn của camera ảo");
-            asCamera.Click += (_, _) => UseScreenAsCamera(cam);
-            var row = SourceRow("", ScreenTitle(_cameras[i]).Replace(" · Màn hình", ""), sub, i == _camera && _windowSource is null,
-                notShared ? DotColor(2, LinkState.Idle) : DotColor(2, state),
-                error.Length > 0 ? error : "Mở trong cửa sổ riêng, để chia sẻ cửa sổ này trong Discord, Zoom, Meet…", asCamera);
-            row.Click += (_, _) => OpenScreenWindow(cam);
-            SourceList.Children.Add(row);
+            var state = Engine.CameraState(route, out string error);
+            // A phone added by IP has no name yet: the list shows its address as the name.
+            string transport = TransportOf(_cameras[route]);
+            subtitle = JoinParts(transport == name ? "Thêm theo IP" : transport, StateText(1, state));
+            dot = DotColor(1, state);
+            tooltip = (error.Length > 0 ? error : _cameras[route]) + QuickHint(quick, route);
         }
+        else
+        {
+            var state = Engine.CameraState(screen, out string error);
+            subtitle = "Chỉ chia sẻ màn hình";
+            dot = state == LinkState.Unreachable ? DotColor(2, LinkState.Idle) : DotColor(2, state);
+            tooltip = error.Length > 0 ? error : _cameras[screen];
+        }
+
+        var extras = new StackPanel { Spacing = 6, Margin = new Thickness(0, 8, 0, 0) };
+        if (cameras.Count > 1)
+        {
+            var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            foreach (int c in cameras.OrderBy(c => IsUsb(c) ? 0 : 1))
+            {
+                int pick = c;
+                var state = Engine.CameraState(c, out _);
+                var chip = new ToggleButton
+                {
+                    Content = RouteLabel(_cameras[c]),
+                    IsChecked = selected && c == route,
+                    Style = Res<Style>("RouteChipStyle"),
+                };
+                ToolTipService.SetToolTip(chip, JoinParts(TransportOf(_cameras[c]), StateText(1, state)));
+                chip.Click += (_, _) => OnCameraPicked(pick);
+                chips.Children.Add(chip);
+            }
+            extras.Children.Add(chips);
+        }
+        if (screen >= 0) extras.Children.Add(ScreenRow(screen, screenIsCamera));
+
+        var card = SourceCard("\uE8EA", name, subtitle, selected, dot, tooltip, extras.Children.Count > 0 ? extras : null);
+        if (route >= 0)
+        {
+            int pick = route;
+            card.Click += (_, _) => OnCameraPicked(pick);
+        }
+        else
+        {
+            int s = screen;
+            card.Click += (_, _) => OpenScreenWindow(s);
+        }
+        return card;
+    }
+
+    // The phone's shared screen: it opens in its own window (to share that window in a meeting
+    // app), or "Làm camera" makes it the virtual camera's source.
+    private FrameworkElement ScreenRow(int screen, bool isCamera)
+    {
+        var state = Engine.CameraState(screen, out _);
+        bool notShared = state == LinkState.Unreachable;
+        bool open = _screenWindows.ContainsKey(_ids[screen]);
+        string? what = isCamera ? "đang làm camera" : notShared ? "chưa chia sẻ" : open ? "đang mở cửa sổ" : StateText(2, state)?.ToLowerInvariant();
+        var row = new Grid { ColumnSpacing = 8 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.Children.Add(new TextBlock
+        {
+            Text = JoinParts("Màn hình", what),
+            Style = Res<Style>("SourceSubtitleStyle"), VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (!isCamera)
+        {
+            int s = screen;
+            var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            var window = new HyperlinkButton { Content = open ? "Cửa sổ" : "Mở cửa sổ", Style = Res<Style>("CardLinkStyle") };
+            ToolTipService.SetToolTip(window, "Mở trong cửa sổ riêng, để chia sẻ cửa sổ đó trong Discord, Zoom, Meet…");
+            window.Click += (_, _) => OpenScreenWindow(s);
+            links.Children.Add(window);
+            if (!notShared)
+            {
+                var asCamera = new HyperlinkButton { Content = "Làm camera", Style = Res<Style>("CardLinkStyle") };
+                ToolTipService.SetToolTip(asCamera, "Dùng màn hình này làm nguồn của camera ảo");
+                asCamera.Click += (_, _) => UseScreenAsCamera(s);
+                links.Children.Add(asCamera);
+            }
+            Grid.SetColumn(links, 1);
+            row.Children.Add(links);
+        }
+        return row;
     }
 
     private static Windows.UI.Color? DotColor(int kind, LinkState state) => kind == 0 ? null : state switch
@@ -155,27 +254,25 @@ public sealed partial class MainWindow
         _ => Windows.UI.Color.FromArgb(255, 0x8A, 0x8A, 0x8A),
     };
 
-    // One row: selection pill, icon, name and second line, an optional button, a state dot.
-    private Button SourceRow(string glyph, string title, string subtitle, bool selected, Windows.UI.Color? dot, string tooltip,
-                             FrameworkElement? trailing = null)
+    // One card: an icon tile, the name and its state line, a state dot; extras (route chips, the
+    // screen row) under them. Theme colours come from styles (App.xaml), so they follow the app's
+    // own light/dark choice.
+    private Button SourceCard(string glyph, string title, string subtitle, bool selected, Windows.UI.Color? dot, string tooltip,
+                              FrameworkElement? extras = null)
     {
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        // Theme colours come from styles (App.xaml), so they follow the app's own light/dark choice.
-        var pill = new Border
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var tile = new Border
         {
-            Style = Res<Style>("SelectionPillStyle"), Margin = new Thickness(-10, 0, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
-            Visibility = selected ? Visibility.Visible : Visibility.Collapsed,
+            Style = Res<Style>(selected ? "IconTileSelectedStyle" : "IconTileStyle"),
+            Child = new FontIcon { Glyph = glyph, Style = Res<Style>(selected ? "TileGlyphSelectedStyle" : "TileGlyphStyle") },
         };
-        grid.Children.Add(pill);
-        var icon = new FontIcon { Glyph = glyph, FontSize = 18, VerticalAlignment = VerticalAlignment.Center };
-        if (selected) icon.Style = Res<Style>("SourceIconSelectedStyle");
-        grid.Children.Add(icon);
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        grid.Children.Add(tile);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
         text.Children.Add(new TextBlock
         {
             Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
@@ -189,18 +286,20 @@ public sealed partial class MainWindow
         text.Children.Add(second);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        if (trailing is not null)
-        {
-            Grid.SetColumn(trailing, 2);
-            grid.Children.Add(trailing);
-        }
         if (dot is { } c)
         {
             var e = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(c), VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(e, 3);
+            Grid.SetColumn(e, 2);
             grid.Children.Add(e);
         }
-        var button = new Button { Style = Res<Style>(selected ? "SourceItemSelectedStyle" : "SourceItemStyle"), Content = grid };
+        if (extras is not null)
+        {
+            Grid.SetRow(extras, 1);
+            Grid.SetColumn(extras, 1);
+            Grid.SetColumnSpan(extras, 2);
+            grid.Children.Add(extras);
+        }
+        var button = new Button { Style = Res<Style>(selected ? "SourceCardSelectedStyle" : "SourceCardStyle"), Content = grid };
         if (selected)
         {
             _selectedSubtitle = second;

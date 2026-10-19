@@ -739,11 +739,11 @@ public sealed partial class MainWindow : Window
         bool lensPicker = _isPhone && (LensChips.Children.Count > 0 || FacingButton.Visibility == Visibility.Visible);
         LensSection.Visibility = lensPicker ? Visibility.Visible : Visibility.Collapsed;
         ZoomGroup.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        CameraSide.Visibility = running && _isPhone && (FlashButton.Visibility == Visibility.Visible || ExposureButton.Visibility == Visibility.Visible)
+        LightSection.Visibility = running && _isPhone && (FlashButton.Visibility == Visibility.Visible || ExposureButton.Visibility == Visibility.Visible)
             ? Visibility.Visible : Visibility.Collapsed;
         ManualSection.Visibility = _isPhone && _phoneCaps is not null ? Visibility.Visible : Visibility.Collapsed;
-        bool any = lensPicker || running || ManualSection.Visibility == Visibility.Visible;
-        CameraEmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        // Not UpdatePaneActivity: it calls UpdateStatus, which calls here.
+        _phoneOpen = InspectorPane.Visibility == Visibility.Visible && ManualSection.IsExpanded && ManualSection.Visibility == Visibility.Visible;
     }
 
     // Native stays native (else 1× → Macro → 1× ends at the macro's 4:3 size); otherwise the
@@ -1374,22 +1374,17 @@ public sealed partial class MainWindow : Window
 
     // ---- Panes: inspector tabs, showing/hiding it, settings ----------------------------------
 
-    private void InspectorTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
-    {
-        var item = sender.SelectedItem;
-        ImagePanel.Visibility = item == ImageTab ? Visibility.Visible : Visibility.Collapsed;
-        CameraPanel.Visibility = item == CameraTab ? Visibility.Visible : Visibility.Collapsed;
-        DetailsPanel.Visibility = item == DetailsTab ? Visibility.Visible : Visibility.Collapsed;
-        UpdatePaneActivity();
-    }
+    // A section (Expander) opened or closed: live values are only refreshed while their section
+    // can be seen.
+    private void Section_Expanding(Expander sender, ExpanderExpandingEventArgs args) => UpdatePaneActivity();
+    private void Section_Collapsed(Expander sender, ExpanderCollapsedEventArgs args) => UpdatePaneActivity();
 
-    // Live values are only refreshed while their tab can be seen.
     private void UpdatePaneActivity()
     {
         bool open = InspectorPane.Visibility == Visibility.Visible;
         bool phoneWasOpen = _phoneOpen;
-        _infoOpen = open && DetailsPanel.Visibility == Visibility.Visible;
-        _phoneOpen = open && CameraPanel.Visibility == Visibility.Visible;
+        _infoOpen = open && DetailsSection.IsExpanded;
+        _phoneOpen = open && ManualSection.IsExpanded && ManualSection.Visibility == Visibility.Visible;
         if (_phoneOpen && !phoneWasOpen) BuildPhoneControls();
         if (!_phoneOpen) _phoneReadout = null;
         UpdateStatus();
@@ -1577,6 +1572,10 @@ public sealed partial class MainWindow : Window
         PlaceholderHint.Visibility = howTo;
         PlaceholderAdd.Visibility = howTo;
         UpdateSelectedSubtitle(s);
+        // What the folded sections hold, at a glance.
+        DetailsSummary.Text = running ? $"{s.Fps:0} fps · {s.Width} × {s.Height}" : "";
+        ColorSummary.Text = _settings.Brightness != 0 || _settings.Contrast != 0 || _settings.Saturation != 0 || _settings.Temperature != 0
+            ? "Đã chỉnh" : "";
 
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.
