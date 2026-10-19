@@ -25,7 +25,7 @@ it once everything is tested.
 | auto/busy/ping | yes | auto yes; busy (two PCs) **no** |
 | PC connector, seamless switch, size "Tự động" | yes | yes (with `camstudio-verify`, not Discord) |
 | PC window as the camera source | yes | yes (test window) |
-| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | written on the Mac, **not compiled** (C# and C++/WinRT) | logic only: `framing-check` 37/0, `frame-check` 375/0 on the Mac |
+| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | **compiled on Windows 2026-10-19** (engine + app, 0 warnings) | `framing-check` 37/0, `frame-check` 375/0, protocol ALL PASS on Windows; **not run on a device** |
 | PC camera always on, automatic source pick | yes | yes |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
@@ -51,7 +51,7 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-- **"Tự căn khung" on Windows (first):** build; `camstudio-framing-check`, `camstudio-frame-check`; turn it on with the
+- **"Tự căn khung" on Windows (first):** built 2026-10-19, checks pass; still to try on a device: turn it on with the
   OBSBOT and a phone at 4K: it follows a face, goes wide after ~4 s with nobody, the hint shows
   the crop size. Measure "Chi tiết › Cam Studio dùng" (the whole app; the tracker has its own
   thread) and `processMs` with it off and on, at 4K and 1080p (framed means a crop-scale every
@@ -65,7 +65,11 @@ it once everything is tested.
    window, "Dùng làm camera ảo"; stop/start sharing while an app holds the camera.
 2. **Unplug tests** while Discord (or `camstudio-verify --hold`) holds the camera: the phone cable,
    the OBSBOT (replug into another port).
-3. **Discord call:** turn the phone, switch sources, pause.
+3. **Discord call:** turn the phone, switch sources, pause. **Seen 2026-10-19:** the phone turned
+   portrait → landscape in a call keeps the portrait camera (fitted, `PlanOutput` with
+   `consumerHolds`), so Discord shows a letterboxed/cropped landscape picture. A new size needs a
+   rebuild, which Discord does not survive. Open: the user picks between keeping this, a fixed
+   landscape size (Settings › 1080p), or a rebuild on rotation (the app must re-enable the camera).
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
 5. **iPhone:** Apple Devices on Windows. PiP: install TestFlight build 20261018.1756 (it has PiP)
    or `scripts/ios-run.sh` on the Mac (ask first: it replaces the TestFlight install).
