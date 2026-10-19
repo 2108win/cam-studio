@@ -1,4 +1,6 @@
 #include "CaptureEngine.h"
+#include "AutoFrame.h"
+#include "FaceDetect.h"
 #include "FrameWriter.h"
 #include "PhoneLink.h"
 #include "VideoDecoder.h"
@@ -8,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 using Microsoft::WRL::ComPtr;
 
@@ -133,6 +136,7 @@ public:
         m_interval100ns = fpsNum ? 1e7 * fpsDen / fpsNum : 333333.0;
         m_firstTs = -1;
         m_received = m_dropped = 0;
+        RestartFraming();
         Relayout();
         if (m_broken) return m_brokenHr;
 
@@ -257,6 +261,15 @@ public:
 
     double LastFps() const { return m_lastFps; }
 
+    // Automatic framing applies to cameras only (a webcam, a phone's camera): a shared screen or
+    // a PC window would be zoomed into the faces on it.
+    void SetFramingSource(bool camera)
+    {
+        m_framingSource = camera;
+        std::lock_guard lk(m_engine.m_lock);
+        m_engine.m_framing.cameraSource = camera;
+    }
+
 private:
     // Applies the size rule and computes the layout for the current settings.
     void Relayout()
@@ -282,6 +295,15 @@ private:
 
         m_image = image;
         m_layout = Live() ? ComputeLayout(m_width, m_height, image, m_vcamWidth, m_vcamHeight) : natural;
+        // Another shape (the phone turned, rotation, aspect): faces found so far are elsewhere now.
+        const uint32_t shape[5] = { m_layout.orientedWidth, m_layout.orientedHeight, m_layout.pictureWidth, m_layout.pictureHeight,
+                                    static_cast<uint32_t>(image.orientation.rotation) | (image.orientation.mirror ? 1u << 9 : 0) |
+                                        (image.orientation.flip ? 1u << 10 : 0) };
+        if (!std::equal(shape, shape + 5, m_framedShape))
+        {
+            std::copy(shape, shape + 5, m_framedShape);
+            RestartFraming();
+        }
         std::lock_guard lk(m_engine.m_lock);
         auto& s = m_engine.m_status;
         s.width = m_layout.outWidth;
@@ -362,7 +384,7 @@ private:
     void Publish(const uint8_t* data, long pitch)
     {
         const double t0 = QpcMs();
-        const FrameLayout& l = m_layout;
+        FrameLayout l = m_layout; // a copy: automatic framing moves the shown region every frame
         const ImageSettings& image = m_image;
 
         // Nobody is watching (no app on the virtual camera, preview hidden):
@@ -385,6 +407,7 @@ private:
             frame = owned = m_oriented.data();
             framePitch = static_cast<long>(l.orientedWidth);
         }
+        ApplyFraming(l, frame, framePitch);
 
         // The picture alone (no bars): what the preview shows.
         const uint8_t* picY = nullptr;
@@ -453,6 +476,55 @@ private:
         ++m_workFrames;
     }
 
+    // Faces found before now belong to another picture: start again from the whole picture, and
+    // drop detections still under way (they carry the old generation).
+    void RestartFraming()
+    {
+        m_framer.Reset();
+        ++m_framingGen;
+    }
+
+    // "Tự căn khung": now and then the detector gets a grey copy of this oriented frame, and the
+    // shown region moves a step towards the people in it. Only for frames that go somewhere
+    // (Publish returned early otherwise) and only for cameras. Off, it costs nothing: no
+    // detector thread exists until the first framed frame.
+    void ApplyFraming(FrameLayout& l, const uint8_t* frame, long pitch)
+    {
+        if (!m_engine.m_autoFrame || !m_framingSource)
+        {
+            if (m_framingOn)
+            {
+                m_framingOn = false;
+                std::lock_guard lk(m_engine.m_lock);
+                m_engine.m_framing.active = false;
+            }
+            return;
+        }
+        if (!m_framingOn)
+        {
+            m_framingOn = true;
+            RestartFraming();
+        }
+        if (!m_detector) m_detector = std::make_unique<FaceDetector>();
+        const double now = QpcMs();
+        if (m_detector->Due(now)) m_detector->Offer(frame, pitch, l.orientedWidth, l.orientedHeight, m_framingGen, now);
+        if (m_detector->TakeResult(m_framingGen, m_faces)) m_framer.OnFaces(m_faces, now / 1000);
+        const FramingGeometry g{ static_cast<double>(l.orientedWidth), static_cast<double>(l.orientedHeight),
+                                 static_cast<double>(l.pictureWidth), static_cast<double>(l.pictureHeight) };
+        const FramingView v = m_framer.Step(g, now / 1000);
+        SetLayoutView(l, v.zoom, v.centerX, v.centerY);
+
+        std::lock_guard lk(m_engine.m_lock);
+        auto& f = m_engine.m_framing;
+        f.active = true;
+        f.available = m_detector->Available();
+        f.faces = m_framer.Faces();
+        f.zoom = v.zoom;
+        f.centerX = v.centerX;
+        f.centerY = v.centerY;
+        f.maxZoom = FramingMaxZoom(g);
+    }
+
     CaptureEngine& m_engine;
     const bool m_dshow;
     ComPtr<IMFVirtualCamera> m_vcam;
@@ -481,6 +553,15 @@ private:
     ULONGLONG m_lastWriteTick = 0;
     ULONGLONG m_statStart = GetTickCount64();
     double m_lastFps = 0;
+
+    // Automatic framing (ApplyFraming).
+    AutoFramer m_framer;
+    std::unique_ptr<FaceDetector> m_detector;
+    std::vector<FaceRect> m_faces;
+    uint32_t m_framingGen = 0;
+    uint32_t m_framedShape[5] = {};
+    bool m_framingSource = false;
+    bool m_framingOn = false;
 };
 
 // ---- Engine control ------------------------------------------------------------------
@@ -577,6 +658,12 @@ CaptureEngine::Status CaptureEngine::GetStatus() const
     Status s = m_status;
     s.sourceRotation = m_sourceRotation;
     return s;
+}
+
+CaptureEngine::Framing CaptureEngine::GetFraming() const
+{
+    std::lock_guard lk(m_lock);
+    return m_framing;
 }
 
 std::string CaptureEngine::PhoneState() const
@@ -837,6 +924,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             HRESULT hr = S_OK;
             Outcome outcome;
             const uint32_t begins = pipeline.Begins();
+            pipeline.SetFramingSource(!cam.IsPcWindow() && !(cam.IsPhone() && format.phoneCamera == "screen"));
             if (cam.IsPhone())
             {
                 outcome = RunPhone(pipeline, cam, format, why, hr);

@@ -520,6 +520,30 @@ CS_API void cs_set_output_size(int32_t mode)
     if (g_engine && mode >= 0 && mode <= 3) g_engine->SetOutputSize(static_cast<OutputSize>(mode));
 }
 
+CS_API void cs_set_auto_frame(int32_t enabled)
+{
+    if (g_engine) g_engine->SetAutoFrame(enabled != 0);
+}
+
+CS_API void cs_get_framing(CsFraming* out)
+{
+    if (!out) return;
+    *out = {};
+    out->zoom = out->maxZoom = 1.0;
+    out->centerX = out->centerY = 0.5;
+    out->available = 1;
+    if (!g_engine) return;
+    const CaptureEngine::Framing f = g_engine->GetFraming();
+    out->zoom = f.zoom;
+    out->centerX = f.centerX;
+    out->centerY = f.centerY;
+    out->maxZoom = f.maxZoom;
+    out->active = f.active ? 1 : 0;
+    out->faces = f.faces;
+    out->available = f.available ? 1 : 0;
+    out->cameraSource = f.cameraSource ? 1 : 0;
+}
+
 CS_API void cs_get_status(CsStatus* out)
 {
     if (!out) return;

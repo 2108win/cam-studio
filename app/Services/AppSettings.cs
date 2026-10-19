@@ -37,6 +37,7 @@ public sealed class AppSettings
     public double Zoom { get; set; } = 1.0;
     public double CenterX { get; set; } = 0.5;
     public double CenterY { get; set; } = 0.5;
+    public bool AutoFrame { get; set; }    // "Tự căn khung": the engine zooms and moves the picture to the faces
     public bool CloseToTray { get; set; } = true;
     public bool TrayHintShown { get; set; }
     public int Theme { get; set; }         // 0 system, 1 light, 2 dark
@@ -71,6 +72,7 @@ public sealed class AppSettings
         s.Zoom = Math.Clamp(Int("ZoomMilli", 1000) / 1000.0, 1.0, 4.0);
         s.CenterX = Math.Clamp(Int("CenterXMilli", 500) / 1000.0, 0, 1);
         s.CenterY = Math.Clamp(Int("CenterYMilli", 500) / 1000.0, 0, 1);
+        s.AutoFrame = Int("AutoFrame", 0) != 0;
         s.CloseToTray = Int("CloseToTray", 1) != 0;
         s.TrayHintShown = Int("TrayHintShown", 0) != 0;
         s.Theme = Math.Clamp(Int("Theme", 0), 0, 2);
@@ -107,6 +109,7 @@ public sealed class AppSettings
         key.SetValue("ZoomMilli", (int)Math.Round(Zoom * 1000), RegistryValueKind.DWord);
         key.SetValue("CenterXMilli", (int)Math.Round(CenterX * 1000), RegistryValueKind.DWord);
         key.SetValue("CenterYMilli", (int)Math.Round(CenterY * 1000), RegistryValueKind.DWord);
+        key.SetValue("AutoFrame", AutoFrame ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("CloseToTray", CloseToTray ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("TrayHintShown", TrayHintShown ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("Theme", Theme, RegistryValueKind.DWord);

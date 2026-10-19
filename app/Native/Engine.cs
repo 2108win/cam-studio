@@ -77,6 +77,20 @@ public unsafe struct CsStatus
     }
 }
 
+// Mirrors CsFraming: what "Tự căn khung" shows now.
+[StructLayout(LayoutKind.Sequential)]
+public struct CsFraming
+{
+    public double Zoom;       // the view shown now (1 .. MaxZoom)
+    public double CenterX;    // 0 .. 1 of the oriented frame, as CsImage
+    public double CenterY;
+    public double MaxZoom;    // how far framing may zoom into this picture
+    public int Active;        // framing moves the picture now
+    public int Faces;         // people in the last look
+    public int Available;     // face detection works on this PC
+    public int CameraSource;  // the source is a camera (screens and windows are never framed)
+}
+
 // Mirrors CsLinkState: a phone's background connection, for the camera menu.
 public enum LinkState
 {
@@ -124,6 +138,8 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial void cs_stop();
     [LibraryImport(Dll)] public static partial int cs_set_image(CsImage* image);
     [LibraryImport(Dll)] public static partial void cs_get_status(CsStatus* status);
+    [LibraryImport(Dll)] public static partial void cs_set_auto_frame(int enabled);
+    [LibraryImport(Dll)] public static partial void cs_get_framing(CsFraming* framing);
     [LibraryImport(Dll)] public static partial void cs_set_preview_enabled(int enabled);
     [LibraryImport(Dll)] public static partial void cs_set_preview_size(int maxWidth, int maxHeight);
     [LibraryImport(Dll)] public static partial int cs_copy_preview(uint* pixels, int capacity, uint* width, uint* height, ulong* frameId);
@@ -229,6 +245,13 @@ internal static unsafe partial class Engine
     }
 
     public static bool SetImage(CsImage image) => cs_set_image(&image) != 0;
+
+    public static CsFraming GetFraming()
+    {
+        CsFraming f;
+        cs_get_framing(&f);
+        return f;
+    }
 
     public static CsStatus GetStatus()
     {

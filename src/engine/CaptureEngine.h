@@ -1,6 +1,6 @@
 // Runs the virtual camera on a worker thread:
-//   source (webcam, phone, or a window on this PC) -> NV12 -> orient -> crop/zoom -> fit -> adjust
-//     -> shared memory -> virtual camera
+//   source (webcam, phone, or a window on this PC) -> NV12 -> orient -> crop/zoom (or automatic
+//     framing) -> fit -> adjust -> shared memory -> virtual camera
 // and keeps a small BGRA copy of the latest frame for the preview. Switch() moves to another
 // source while the virtual camera stays registered, so apps using it never lose it.
 #pragma once
@@ -88,6 +88,23 @@ public:
         ++m_layoutGen;
     }
 
+    // "Tự căn khung" (AutoFrame.h): webcams and phone cameras are zoomed and moved to keep the
+    // faces in the shot. Screens and windows are never framed.
+    void SetAutoFrame(bool on) { m_autoFrame = on; }
+
+    struct Framing
+    {
+        bool active = false;       // framing moves the picture now (on, a camera, frames flowing)
+        bool available = true;     // face detection works on this PC
+        bool cameraSource = false; // the source is a camera
+        int faces = 0;             // in the last detection
+        double zoom = 1.0;         // the view shown now
+        double centerX = 0.5;
+        double centerY = 0.5;
+        double maxZoom = 1.0;      // how far framing may zoom into this picture
+    };
+    Framing GetFraming() const;
+
     void SetPreviewEnabled(bool enabled) { m_previewEnabled = enabled; }
 
     // Largest preview size worth producing (the panel's size in pixels).
@@ -149,11 +166,13 @@ private:
     std::atomic<int> m_outputSize{ 0 };    // OutputSize
     std::atomic<uint32_t> m_layoutGen{ 0 }; // bumped when the picture's shape may change
     std::atomic<bool> m_previewEnabled{ true };
+    std::atomic<bool> m_autoFrame{ false };
     std::atomic<uint32_t> m_previewMaxW{ 1280 };
     std::atomic<uint32_t> m_previewMaxH{ 720 };
 
     mutable std::mutex m_lock;
     Status m_status;
+    Framing m_framing;
     ImageSettings m_image;
     int m_sourceRotation = 0;
     std::string m_phoneState;

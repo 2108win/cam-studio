@@ -81,6 +81,7 @@ public sealed partial class MainWindow : Window
         int hr = Engine.cs_init_delayed(options.Tray ? 20000 : 0);
         if (hr < 0) throw new InvalidOperationException($"Engine init failed 0x{hr:X8}");
         Engine.cs_set_output_size(_settings.OutputSize);
+        Engine.cs_set_auto_frame(_settings.AutoFrame ? 1 : 0);
 
         SetupWindow();
         ApplyTheme();
@@ -328,6 +329,7 @@ public sealed partial class MainWindow : Window
         FlipButton.IsChecked = _settings.Flip;
         ShowAspect(_settings.Aspect);
         ZoomSlider.Value = _settings.Zoom;
+        AutoFrameToggle.IsOn = _settings.AutoFrame;
         BrightnessSlider.Value = _settings.Brightness;
         ContrastSlider.Value = _settings.Contrast;
         SaturationSlider.Value = _settings.Saturation;
@@ -337,6 +339,7 @@ public sealed partial class MainWindow : Window
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
         UpdateToolIndicators();
+        UpdateAutoFrameHint();
     }
 
     private CsImage CurrentImage() => new()
@@ -720,9 +723,6 @@ public sealed partial class MainWindow : Window
         {
             FacingButton.Visibility = Visibility.Collapsed;
         }
-        ZoomHint.Text = PhoneZoom
-            ? "Thu phóng trên điện thoại: giữ độ nét, tự đổi ống kính khi cần."
-            : "Thu phóng trên máy tính. Kéo trên hình để chọn khung, nhấp đúp để đặt lại.";
         ConfigureZoomSlider();
         UpdateOverlayVisibility();
         if (_phoneOpen) BuildPhoneControls(); // another lens: other controls
@@ -1072,6 +1072,12 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureZoomSlider()
     {
+        ZoomHint.Text = PhoneZoom
+            ? "Thu phóng trên điện thoại: giữ độ nét, tự đổi ống kính khi cần."
+            : AutoFraming
+                ? "Tự căn khung đang điều khiển thu phóng."
+                : "Thu phóng trên máy tính. Kéo trên hình để chọn khung, nhấp đúp để đặt lại.";
+        ZoomSlider.IsEnabled = !AutoFramingOwnsZoom;
         bool was = _loading;
         _loading = true;
         if (PhoneZoom)
@@ -1096,6 +1102,7 @@ public sealed partial class MainWindow : Window
 
     private void SetZoom(double zoom)
     {
+        if (AutoFramingOwnsZoom) return;
         zoom = Math.Clamp(Math.Round(zoom, 2), ZoomSlider.Minimum, ZoomSlider.Maximum);
         bool was = _loading;
         _loading = true;
@@ -1119,6 +1126,11 @@ public sealed partial class MainWindow : Window
 
     private void ResetFraming()
     {
+        if (AutoFraming)
+        {
+            if (PhoneZoom) SetZoom(Math.Max(1, ZoomSlider.Minimum)); // the lens zoom stays the user's
+            return;
+        }
         _settings.CenterX = 0.5;
         _settings.CenterY = 0.5;
         SetZoom(PhoneZoom ? Math.Max(1, ZoomSlider.Minimum) : 1.0);
@@ -1144,22 +1156,29 @@ public sealed partial class MainWindow : Window
         PushImage();
     }
 
-    // Visible part of the oriented camera frame, as a fraction of each axis.
-    private (double fx, double fy) VisibleFraction()
+    // The zoom and centre the engine shows now: automatic framing's while it runs, else the user's.
+    private (double Zoom, double CenterX, double CenterY) CurrentView()
+    {
+        if (AutoFraming && Engine.GetFraming() is { Active: not 0 } f) return (f.Zoom, f.CenterX, f.CenterY);
+        return (_settings.Zoom, _settings.CenterX, _settings.CenterY);
+    }
+
+    // Visible part of the oriented camera frame at this zoom, as a fraction of each axis.
+    private (double fx, double fy) VisibleFraction(double zoom)
     {
         var s = Engine.GetStatus();
         // The picture's own size: the output may be bigger, with black bars around it.
         uint pw = s.PictureWidth != 0 ? s.PictureWidth : s.Width, ph = s.PictureHeight != 0 ? s.PictureHeight : s.Height;
-        if (pw == 0 || s.CameraWidth == 0) return (1 / _settings.Zoom, 1 / _settings.Zoom);
+        if (pw == 0 || s.CameraWidth == 0) return (1 / zoom, 1 / zoom);
         bool swap = (_settings.Rotation + s.SourceRotation) % 180 != 0;
         double ow = swap ? s.CameraHeight : s.CameraWidth;
         double oh = swap ? s.CameraWidth : s.CameraHeight;
-        return (pw / _settings.Zoom / ow, ph / _settings.Zoom / oh);
+        return (pw / zoom / ow, ph / zoom / oh);
     }
 
     private void ClampCenter()
     {
-        var (fx, fy) = VisibleFraction();
+        var (fx, fy) = VisibleFraction(_settings.Zoom);
         _settings.CenterX = Math.Clamp(_settings.CenterX, fx / 2, 1 - fx / 2);
         _settings.CenterY = Math.Clamp(_settings.CenterY, fy / 2, 1 - fy / 2);
     }
@@ -1168,7 +1187,7 @@ public sealed partial class MainWindow : Window
     {
         _pressPoint = e.GetCurrentPoint(PreviewImage).Position;
         _pressMoved = false;
-        if (_settings.Zoom <= 1.001) return;
+        if (_settings.Zoom <= 1.001 || AutoFraming) return;
         _panning = PreviewImage.CapturePointer(e.Pointer);
         _panLast = _pressPoint;
     }
@@ -1178,7 +1197,7 @@ public sealed partial class MainWindow : Window
         if (!_panning || PreviewImage.ActualWidth < 1) return;
         var p = e.GetCurrentPoint(PreviewImage).Position;
         if (Math.Abs(p.X - _pressPoint.X) + Math.Abs(p.Y - _pressPoint.Y) > 6) _pressMoved = true;
-        var (fx, fy) = VisibleFraction();
+        var (fx, fy) = VisibleFraction(_settings.Zoom);
         // Dragging the picture right reveals what is to the left.
         _settings.CenterX -= (p.X - _panLast.X) / PreviewImage.ActualWidth * fx;
         _settings.CenterY -= (p.Y - _panLast.Y) / PreviewImage.ActualHeight * fy;
@@ -1210,10 +1229,11 @@ public sealed partial class MainWindow : Window
         double u = p.X / PreviewImage.ActualWidth, v = p.Y / PreviewImage.ActualHeight;
         if (u < 0 || u > 1 || v < 0 || v > 1) return;
 
-        // Undo crop/zoom: the preview shows [source rect] of the oriented frame.
-        var (fx, fy) = VisibleFraction();
-        double ox = Math.Clamp(_settings.CenterX - fx / 2, 0, 1 - fx);
-        double oy = Math.Clamp(_settings.CenterY - fy / 2, 0, 1 - fy);
+        // Undo crop/zoom: the preview shows [source rect] of the oriented frame (framing's while it runs).
+        var view = CurrentView();
+        var (fx, fy) = VisibleFraction(view.Zoom);
+        double ox = Math.Clamp(view.CenterX - fx / 2, 0, 1 - fx);
+        double oy = Math.Clamp(view.CenterY - fy / 2, 0, 1 - fy);
         u = ox + u * fx;
         v = oy + v * fy;
         // Undo mirror/flip, then the total clockwise rotation (ours + the phone's).
@@ -1250,6 +1270,66 @@ public sealed partial class MainWindow : Window
     }
 
     private void HideFocusRing(DispatcherQueueTimer sender, object args) => FocusRing.Opacity = 0;
+
+    // ---- Tự căn khung (automatic framing, done by the engine) ---------------------------
+
+    // Framing runs for cameras only: a webcam or a phone's camera, not a shared screen or a window.
+    private bool FramingSource => _windowSource is null && _camera >= 0 && _camera < _kinds.Count && _kinds[_camera] != 2;
+    private bool AutoFraming => _settings.AutoFrame && FramingSource;
+    // It then owns the PC zoom; a phone's lens zoom stays the user's.
+    private bool AutoFramingOwnsZoom => AutoFraming && !PhoneZoom;
+
+    private void AutoFrameToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.AutoFrame = AutoFrameToggle.IsOn;
+        _settings.Save();
+        Engine.cs_set_auto_frame(_settings.AutoFrame ? 1 : 0);
+        ConfigureZoomSlider();
+        UpdateAutoFrameHint();
+    }
+
+    // Under the switch: who it follows, and how sharp the crop is ("Smart Zoom": the crop keeps
+    // the source's own pixels; 720 lines or more look sharp in a call).
+    private void UpdateAutoFrameHint()
+    {
+        ZoomSlider.IsEnabled = !AutoFramingOwnsZoom; // the source may have changed since
+        string text;
+        if (!_settings.AutoFrame)
+            text = "Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Chỉ chạy khi đang có hình.";
+        else if (!FramingSource)
+            text = "Chỉ dùng cho webcam và camera điện thoại, không dùng cho màn hình hay cửa sổ.";
+        else
+        {
+            var f = Engine.GetFraming();
+            var s = Engine.GetStatus();
+            if (f.Available == 0)
+                text = "Windows trên máy này không có nhận diện khuôn mặt (bản N cần Media Feature Pack).";
+            else if (f.Active == 0 || s.PictureWidth == 0 || s.PictureHeight == 0)
+                text = "Bắt đầu khi có hình.";
+            else
+            {
+                int cw = (int)Math.Round(s.PictureWidth / f.Zoom), ch = (int)Math.Round(s.PictureHeight / f.Zoom);
+                string who = f.Faces switch { 0 => "Không thấy ai", 1 => "Đang theo 1 người", _ => $"Đang theo {f.Faces} người" };
+                text = $"{who} · {f.Zoom:0.0}× · dùng {cw} × {ch} của {s.PictureWidth} × {s.PictureHeight}";
+                if (Math.Min(cw, ch) >= 720) text += " · nét";
+                else if (HasLargerMode(s)) text += ". Chọn độ phân giải lớn hơn (như 4K) để zoom nét hơn.";
+                if (AutoFramingOwnsZoom)
+                {
+                    bool was = _loading;
+                    _loading = true;
+                    ZoomSlider.Value = Math.Clamp(f.Zoom, ZoomSlider.Minimum, ZoomSlider.Maximum);
+                    _loading = was;
+                    ZoomValueText.Text = $"{f.Zoom:0.0}×";
+                }
+            }
+        }
+        AutoFrameHint.Text = text;
+    }
+
+    // This source (this lens, for a phone) has a mode with more pixels than the one in use.
+    private bool HasLargerMode(CsStatus s) =>
+        LensFormats().Any(f => (long)f.Format.Width * f.Format.Height > (long)s.CameraWidth * s.CameraHeight);
 
     private void Preview_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
@@ -1403,6 +1483,7 @@ public sealed partial class MainWindow : Window
         bool running = state == EngineState.Running && s.NoSource == 0;
         _noSource = s.NoSource != 0;
         _statusTicks++;
+        UpdateAutoFrameHint();
 
         if (state != _lastState)
         {

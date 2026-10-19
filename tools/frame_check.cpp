@@ -1,10 +1,11 @@
 // Checks the portable picture code: the virtual camera size rule (PlanOutput), the "fit" layout
-// (ComputeLayout with a fixed output), black bars, pitch-aware scale/adjust into a rectangle,
-// and BGRA <-> NV12. Builds on Windows (camstudio-frame-check.exe) and on a Mac. Nv12.h uses SSE2,
+// (ComputeLayout with a fixed output), moving the view (SetLayoutView), black bars, pitch-aware
+// scale/adjust into a rectangle, and BGRA <-> NV12. Builds on Windows (camstudio-frame-check.exe) and on a Mac. Nv12.h uses SSE2,
 // so on Apple silicon build for x86_64 (runs under Rosetta):
 //   clang++ -std=c++20 -arch x86_64 -O1 -Wall -Wextra -o build/frame-check tools/frame_check.cpp && build/frame-check
 #include "../src/engine/ImageSettings.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -339,6 +340,64 @@ void TestNv12ToBgraScaled()
     Check(out[0] == 0xFF000000u && out[1] == 0xFF000000u && out[2] == 0xFFFFFFFFu && out[3] == 0xFFFFFFFFu,
           "downscaled preview keeps the halves");
 }
+
+// ---- moving the view (automatic framing) ---------------------------------------------------
+
+void TestView()
+{
+    auto same = [](const Nv12Rect& a, const Nv12Rect& b) {
+        return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9 && std::abs(a.w - b.w) < 1e-9 && std::abs(a.h - b.h) < 1e-9;
+    };
+    // SetLayoutView on a layout gives what ComputeLayout gives for the same zoom and centre.
+    const double zooms[] = { 1.0, 1.37, 2.0, 3.5 };
+    const double centres[][2] = { { 0.5, 0.5 }, { 0.1, 0.9 }, { 0.93, 0.07 } };
+    for (double z : zooms)
+        for (const auto& c : centres)
+            for (int aspect = 0; aspect <= 4; ++aspect)
+            {
+                ImageSettings s;
+                s.aspect = static_cast<CropAspect>(aspect);
+                FrameLayout moved = ComputeLayout(3840, 2160, s);
+                s.zoom = z;
+                s.centerX = c[0];
+                s.centerY = c[1];
+                const FrameLayout want = ComputeLayout(3840, 2160, s);
+                SetLayoutView(moved, z, c[0], c[1]);
+                Check(same(moved.source, want.source) && moved.needsResample == want.needsResample,
+                      "view matches ComputeLayout: zoom " + std::to_string(z) + " aspect " + std::to_string(aspect));
+            }
+
+    // Kept inside the frame at the edges.
+    FrameLayout l = ComputeLayout(1920, 1080, ImageSettings{});
+    SetLayoutView(l, 2.0, 0.0, 1.0);
+    Check(l.source.x == 0 && std::abs(l.source.y - 540) < 1e-9 && l.source.w == 960 && l.source.h == 540, "view clamped to the corner");
+    SetLayoutView(l, 2.0, 1.0, 0.0);
+    Check(std::abs(l.source.x - 960) < 1e-9 && l.source.y == 0, "view clamped to the other corner");
+
+    // Zoom 1 of an aspect crop: even whole pixels, so the copy stays exact.
+    ImageSettings square;
+    square.aspect = CropAspect::R1x1;
+    l = ComputeLayout(1920, 1080, square);
+    SetLayoutView(l, 1.0, 0.3011, 0.5);
+    Check(static_cast<int>(l.source.x) % 2 == 0 && l.source.x == std::floor(l.source.x), "zoom 1 crop on even pixels");
+
+    // needsResample follows the view both ways.
+    l = ComputeLayout(1920, 1080, ImageSettings{});
+    Check(!l.needsResample, "native picture needs no resample");
+    SetLayoutView(l, 1.6, 0.5, 0.5);
+    Check(l.needsResample, "framing zoom needs a resample");
+    SetLayoutView(l, 1.0, 0.5, 0.5);
+    Check(!l.needsResample, "back to zoom 1: no resample");
+
+    // A fitted layout keeps its output and bars; only the source region moves.
+    l = ComputeLayout(1080, 1920, ImageSettings{}, 1920, 1080);
+    const FrameLayout before = l;
+    SetLayoutView(l, 2.5, 0.4, 0.3);
+    Check(l.fitted && l.needsResample && l.outWidth == before.outWidth && l.outHeight == before.outHeight &&
+          l.destX == before.destX && l.destY == before.destY && l.destWidth == before.destWidth &&
+          l.destHeight == before.destHeight, "fitted view keeps the bars");
+    Check(std::abs(l.source.w - 1080 / 2.5) < 1e-9 && std::abs(l.source.h - 1920 / 2.5) < 1e-9, "fitted view size");
+}
 } // namespace
 
 int main()
@@ -350,6 +409,7 @@ int main()
     TestAdjustRect();
     TestBgraToNv12();
     TestNv12ToBgraScaled();
+    TestView();
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

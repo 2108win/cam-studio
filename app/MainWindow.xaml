@@ -300,6 +300,15 @@
                                 </StackPanel>
 
                                 <StackPanel x:Name="ZoomGroup">
+                                    <!-- Automatic framing: the engine zooms and moves the picture to the faces (cameras only). -->
+                                    <Grid Margin="0,14,0,0">
+                                        <TextBlock Text="Tự căn khung" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        <ToggleSwitch x:Name="AutoFrameToggle" HorizontalAlignment="Right" OnContent="" OffContent="" MinWidth="0"
+                                                      Toggled="AutoFrameToggle_Toggled"
+                                                      ToolTipService.ToolTip="Tự zoom và giữ người ở giữa khung, theo khuôn mặt. Cho webcam và camera điện thoại" />
+                                    </Grid>
+                                    <TextBlock x:Name="AutoFrameHint" Style="{StaticResource InspectorHintStyle}" Margin="0,0,0,0" />
+
                                     <TextBlock Text="Thu phóng" Style="{StaticResource InspectorHeaderStyle}" />
                                     <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions>

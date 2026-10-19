@@ -141,7 +141,7 @@ Xếp theo thứ người dùng **không tự có được** trong Discord/Zoom/
 
 | # | Tính năng | Chạy ở | Vì sao người dùng cần | Công sức |
 |---|---|---|---|---|
-| 1 | **Tự căn khung + Smart Zoom**: theo mặt, cắt từ nguồn 4K nên vẫn nét | PC (`FaceTracker` trên khung nhỏ, vài lần/giây), dùng zoom/tâm sẵn có | app họp không cắt nét được từ 4K | M |
+| 1 | **Tự căn khung + Smart Zoom**: theo mặt, cắt từ nguồn 4K nên vẫn nét (đã viết 2026-10-19, chưa build trên Windows) | PC (`FaceTracker` trên khung nhỏ, vài lần/giây), dùng zoom/tâm sẵn có | app họp không cắt nét được từ 4K | M |
 | 2 | **Xóa phông / riêng tư / thay nền ở nguồn** | điện thoại (iOS Vision, Android MediaPipe); webcam: PC (ONNX + DirectML) | app họp đã có xóa phông; lợi thế là viền đẹp hơn và **một cài đặt cho mọi app** | L |
 | 3 | **Ghi hình chất lượng gốc + chụp ảnh**, nút ghi có đồng hồ | PC: ghi luồng gốc của điện thoại (gần 0% CPU, không có cắt/màu của PC) hoặc mã hóa phần cứng đúng hình camera ảo | quay bài giảng, review | M |
 | 4 | **Bộ màu có ảnh xem trước sống** (Gốc, Ấm, Mát, Đen trắng…), thêm hue/gamma/độ nét | PC; ảnh xem trước chỉ vẽ khi cửa sổ đang hiện | đổi "look" bằng một cú bấm | S–M |

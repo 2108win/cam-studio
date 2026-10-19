@@ -105,6 +105,38 @@ inline double AspectRatio(CropAspect a)
     }
 }
 
+// The region of the oriented frame shown at this zoom around this centre (0..1
+// of the frame), kept inside it. pictureW/H is the picture at zoom 1 (the
+// aspect crop).
+inline Nv12Rect ViewRect(uint32_t orientedW, uint32_t orientedH, uint32_t pictureW, uint32_t pictureH,
+                         double zoomIn, double centerX, double centerY)
+{
+    const double zoom = std::clamp(zoomIn, 1.0, 4.0);
+    Nv12Rect r;
+    r.w = pictureW / zoom;
+    r.h = pictureH / zoom;
+    const double cx = std::clamp(centerX, 0.0, 1.0) * orientedW;
+    const double cy = std::clamp(centerY, 0.0, 1.0) * orientedH;
+    r.x = std::clamp(cx - r.w / 2, 0.0, orientedW - r.w);
+    r.y = std::clamp(cy - r.h / 2, 0.0, orientedH - r.h);
+    if (zoom <= 1.0001)
+    {
+        // Plain crop: whole even pixels, so resampling is an exact copy.
+        r.x = std::floor(r.x / 2) * 2;
+        r.y = std::floor(r.y / 2) * 2;
+    }
+    return r;
+}
+
+// Moves the shown region of a computed layout (automatic framing, every frame):
+// the output's size, bars and fit stay as they are.
+inline void SetLayoutView(FrameLayout& l, double zoom, double centerX, double centerY)
+{
+    l.source = ViewRect(l.orientedWidth, l.orientedHeight, l.pictureWidth, l.pictureHeight, zoom, centerX, centerY);
+    l.needsResample = l.fitted || std::clamp(zoom, 1.0, 4.0) > 1.0001 ||
+                      l.pictureWidth != l.orientedWidth || l.pictureHeight != l.orientedHeight;
+}
+
 // The picture size depends only on the camera size, rotation and aspect, so
 // zoom and pan can change live without touching the virtual camera.
 // fitWidth/fitHeight (both non-zero): the output has that size instead, with
@@ -130,19 +162,7 @@ inline FrameLayout ComputeLayout(uint32_t cameraWidth, uint32_t cameraHeight, co
 
     // Zoom shrinks the shown region around the chosen centre, kept inside.
     const double zoom = std::clamp(s.zoom, 1.0, 4.0);
-    const double vw = l.outWidth / zoom, vh = l.outHeight / zoom;
-    const double cx = std::clamp(s.centerX, 0.0, 1.0) * l.orientedWidth;
-    const double cy = std::clamp(s.centerY, 0.0, 1.0) * l.orientedHeight;
-    l.source.w = vw;
-    l.source.h = vh;
-    l.source.x = std::clamp(cx - vw / 2, 0.0, l.orientedWidth - vw);
-    l.source.y = std::clamp(cy - vh / 2, 0.0, l.orientedHeight - vh);
-    if (zoom <= 1.0001)
-    {
-        // Plain crop: whole even pixels, so resampling is an exact copy.
-        l.source.x = std::floor(l.source.x / 2) * 2;
-        l.source.y = std::floor(l.source.y / 2) * 2;
-    }
+    l.source = ViewRect(l.orientedWidth, l.orientedHeight, l.outWidth, l.outHeight, zoom, s.centerX, s.centerY);
 
     l.needsResample = zoom > 1.0001 || l.outWidth != l.orientedWidth || l.outHeight != l.orientedHeight;
 

@@ -1,6 +1,6 @@
 // Windows.Graphics.Capture for one window: a free-threaded frame pool (no dispatcher on the
 // capture thread), the newest frame copied into a staging texture and mapped for the CPU.
-// Every C++/WinRT include lives in this file.
+// C++/WinRT includes live here and in FaceDetect.cpp only.
 #include "WindowSource.h"
 
 #include <unknwn.h> // before the C++/WinRT headers: classic COM interop

@@ -139,6 +139,24 @@ CS_API int32_t cs_set_image(const CsImage* image);
 // 2 1920x1080, 3 1280x720.
 CS_API void cs_set_output_size(int32_t mode);
 
+// "Tự căn khung" (automatic framing): webcams and phone cameras are zoomed and moved to keep the
+// faces in a head-and-shoulders shot (screens and windows never are). It replaces the zoom and
+// centre of CsImage while on. Runs only while the picture goes somewhere (an app on the camera,
+// or the preview on screen); off, it costs nothing.
+CS_API void cs_set_auto_frame(int32_t enabled);
+struct CsFraming
+{
+    double zoom;          // the view shown now (1 .. maxZoom)
+    double centerX;       // its centre, 0 .. 1 of the oriented frame (as CsImage)
+    double centerY;
+    double maxZoom;       // how far framing may zoom into this picture ("Smart Zoom")
+    int32_t active;       // framing moves the picture now
+    int32_t faces;        // people in the last look (0: nobody; the shot goes wide after 4 s)
+    int32_t available;    // face detection works on this PC (0: e.g. Windows N without the Media Feature Pack)
+    int32_t cameraSource; // the source is a camera
+};
+CS_API void cs_get_framing(CsFraming* framing);
+
 CS_API void cs_get_status(CsStatus* status);
 CS_API void cs_set_preview_enabled(int32_t enabled);
 // Largest preview worth producing: the preview panel's size in pixels.

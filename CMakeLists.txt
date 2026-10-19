@@ -28,7 +28,7 @@ add_library(CamStudioDShow SHARED
     src/dshow/dshow.def)
 target_link_libraries(CamStudioDShow PRIVATE mfplat strmiids ole32 oleaut32 advapi32 uuid runtimeobject)
 
-# Camera engine used by the WinUI app (app/): capture -> orient/crop/zoom ->
+# Camera engine used by the WinUI app (app/): capture -> orient/crop/zoom/framing ->
 # shared memory, and the virtual camera registration. Flat C API.
 add_library(CamStudioEngine SHARED
     src/engine/EngineApi.cpp
@@ -38,14 +38,15 @@ add_library(CamStudioEngine SHARED
     src/engine/Connector.cpp
     src/engine/ScreenViewer.cpp
     src/engine/WindowSource.cpp
+    src/engine/FaceDetect.cpp
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)
 # mfsensorgroup (MFCreateVirtualCamera, Windows 11) is loaded at run time: see VirtualCameraApi().
 target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32
     windowsapp d3d11 dxgi dwmapi)
-# C++/WinRT (Windows.Graphics.Capture) is used in WindowSource.cpp only.
-set_source_files_properties(src/engine/WindowSource.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
+# C++/WinRT is used in WindowSource.cpp (Windows.Graphics.Capture) and FaceDetect.cpp (FaceTracker) only.
+set_source_files_properties(src/engine/WindowSource.cpp src/engine/FaceDetect.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
 
 # Stand-in phone for testing the PC side of the protocol without a device.
 add_executable(camstudio-fake-phone tools/fake_phone.cpp src/engine/Crypto.cpp)
@@ -57,6 +58,9 @@ target_link_libraries(camstudio-usb-check PRIVATE ws2_32 cfgmgr32)
 
 # Picture code: the virtual camera size rule, fit with black bars, BGRA <-> NV12 (also builds on a Mac).
 add_executable(camstudio-frame-check tools/frame_check.cpp)
+
+# Automatic framing: the shot for some faces, easing, the zoom limit (also builds on a Mac).
+add_executable(camstudio-framing-check tools/framing_check.cpp)
 
 # Protocol crypto against docs/protocol-vectors.json.
 add_executable(camstudio-protocol-test src/verify/protocol_test.cpp src/engine/Crypto.cpp)
