@@ -87,7 +87,7 @@ public struct CsFraming
     public double MaxZoom;    // how far framing may zoom into this picture
     public int Active;        // framing moves the picture now
     public int Faces;         // people in the last look
-    public int Available;     // face detection works on this PC
+    public int Available;     // 1 face detection works, 0 Windows has none, -1 it kept failing
     public int CameraSource;  // the source is a camera (screens and windows are never framed)
 }
 

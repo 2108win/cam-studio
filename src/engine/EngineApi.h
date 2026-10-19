@@ -152,7 +152,8 @@ struct CsFraming
     double maxZoom;       // how far framing may zoom into this picture ("Smart Zoom")
     int32_t active;       // framing moves the picture now
     int32_t faces;        // people in the last look (0: nobody; the shot goes wide after 4 s)
-    int32_t available;    // face detection works on this PC (0: e.g. Windows N without the Media Feature Pack)
+    int32_t available;    // 1 face detection works; 0 Windows has none (e.g. N editions without the Media
+                          // Feature Pack); -1 it kept failing (turning framing off and on retries)
     int32_t cameraSource; // the source is a camera
 };
 CS_API void cs_get_framing(CsFraming* framing);

@@ -95,7 +95,7 @@ public:
     struct Framing
     {
         bool active = false;       // framing moves the picture now (on, a camera, frames flowing)
-        bool available = true;     // face detection works on this PC
+        int available = 1;         // 1 face detection works, 0 Windows has none, -1 it kept failing
         bool cameraSource = false; // the source is a camera
         int faces = 0;             // in the last detection
         double zoom = 1.0;         // the view shown now

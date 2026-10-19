@@ -27,11 +27,13 @@ public:
     void Offer(const uint8_t* luma, long pitch, uint32_t width, uint32_t height, uint32_t generation, double nowMs);
     // The newest finished detection of this generation, once.
     bool TakeResult(uint32_t generation, std::vector<FaceRect>& faces);
-    // False once the tracker could not run (e.g. Windows N without the Media Feature Pack).
-    bool Available() const { return !m_failed; }
+    // 1 works (or not tried yet); 0 Windows has no face tracker (e.g. N editions without the
+    // Media Feature Pack); -1 it failed kMaxErrors frames in a row and was given up.
+    int State() const { return m_unsupported ? 0 : m_gaveUp ? -1 : 1; }
 
     static constexpr double kIntervalMs = 200;
     static constexpr uint32_t kMaxSide = 640; // long side of the grey copy
+    static constexpr int kMaxErrors = 10;
 
 private:
     void Worker();
@@ -41,7 +43,8 @@ private:
     std::thread m_thread;
     bool m_quit = false;
     bool m_busy = false; // a frame waits or is being looked at
-    std::atomic<bool> m_failed{ false };
+    std::atomic<bool> m_unsupported{ false };
+    std::atomic<bool> m_gaveUp{ false };
     double m_lastOfferMs = -1e9;
 
     std::vector<uint8_t> m_scratch; // capture thread: the grey copy being made

@@ -1305,6 +1305,8 @@ public sealed partial class MainWindow : Window
             var s = Engine.GetStatus();
             if (f.Available == 0)
                 text = "Windows trên máy này không có nhận diện khuôn mặt (bản N cần Media Feature Pack).";
+            else if (f.Available < 0)
+                text = "Nhận diện khuôn mặt bị lỗi nhiều lần. Tắt rồi bật lại Tự căn khung để thử lại.";
             else if (f.Active == 0 || s.PictureWidth == 0 || s.PictureHeight == 0)
                 text = "Bắt đầu khi có hình.";
             else

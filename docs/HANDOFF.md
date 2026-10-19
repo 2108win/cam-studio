@@ -25,7 +25,7 @@ it once everything is tested.
 | auto/busy/ping | yes | auto yes; busy (two PCs) **no** |
 | PC connector, seamless switch, size "Tự động" | yes | yes (with `camstudio-verify`, not Discord) |
 | PC window as the camera source | yes | yes (test window) |
-| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | written on the Mac, **not compiled** (C# and C++/WinRT) | logic only: `framing-check` 35/0, `frame-check` 375/0 on the Mac |
+| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | written on the Mac, **not compiled** (C# and C++/WinRT) | logic only: `framing-check` 37/0, `frame-check` 375/0 on the Mac |
 | PC camera always on, automatic source pick | yes | yes |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
@@ -53,9 +53,10 @@ it once everything is tested.
 
 - **"Tự căn khung" on Windows (first):** build; `camstudio-framing-check`, `camstudio-frame-check`; turn it on with the
   OBSBOT and a phone at 4K: it follows a face, goes wide after ~4 s with nobody, the hint shows
-  the crop size. Measure `processMs` (Chi tiết) with it on at 4K and 1080p (a full crop-scale every
-  frame). Check: screens and windows are never framed, tap-to-focus lands right while framed, a
-  Discord call.
+  the crop size. Measure "Chi tiết › Cam Studio dùng" (the whole app; the tracker has its own
+  thread) and `processMs` with it off and on, at 4K and 1080p (framed means a crop-scale every
+  frame). With it on, the window hidden and no app on the camera: no detector work. Check: screens
+  and windows are never framed, tap-to-focus lands right while framed, a Discord call.
 
 0. **v0.1.5 is published** (2026-10-18, the new PC layout): the user's PC updated itself 0.1.4 ->
    0.1.5 (UAC, relaunch, not elevated). The Redmi still runs 0.1.4: opening the app there should show

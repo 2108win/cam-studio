@@ -540,7 +540,7 @@ CS_API void cs_get_framing(CsFraming* out)
     out->maxZoom = f.maxZoom;
     out->active = f.active ? 1 : 0;
     out->faces = f.faces;
-    out->available = f.available ? 1 : 0;
+    out->available = f.available;
     out->cameraSource = f.cameraSource ? 1 : 0;
 }
 

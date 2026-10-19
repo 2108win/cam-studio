@@ -164,12 +164,13 @@ private:
     FramingView m_view, m_target;
 };
 
-// Size of the grey copy the face detector looks at: the long side at most maxLong pixels.
+// Size of the grey copy the face detector looks at: the long side at most maxLong pixels, both
+// sides even (the detector takes it as NV12).
 inline void DetectionSize(uint32_t width, uint32_t height, uint32_t maxLong, uint32_t& dw, uint32_t& dh)
 {
     const double scale = std::min(1.0, static_cast<double>(maxLong) / std::max<uint32_t>(1, std::max(width, height)));
-    dw = std::max<uint32_t>(2, static_cast<uint32_t>(std::lround(width * scale)));
-    dh = std::max<uint32_t>(2, static_cast<uint32_t>(std::lround(height * scale)));
+    dw = std::max<uint32_t>(2, static_cast<uint32_t>(width * scale) & ~1u);
+    dh = std::max<uint32_t>(2, static_cast<uint32_t>(height * scale) & ~1u);
 }
 
 // Shrinks a luma plane to dw x dh (tightly packed): each pixel averages the 2x2 block at the

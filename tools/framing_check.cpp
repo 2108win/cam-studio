@@ -230,6 +230,10 @@ void TestDetectionImage()
     Check(w == 360 && h == 640, "detection size portrait");
     DetectionSize(320, 240, 640, w, h);
     Check(w == 320 && h == 240, "detection size: small frames stay");
+    DetectionSize(880, 1920, 640, w, h);
+    Check(w == 292 && h == 640, "detection size: even sides (NV12), got " + std::to_string(w) + "x" + std::to_string(h));
+    DetectionSize(1281, 721, 2000, w, h);
+    Check(w == 1280 && h == 720, "detection size: odd small frame made even");
 
     // Constant grey stays constant; a gradient stays a gradient.
     const uint32_t sw = 1920, sh = 1080;

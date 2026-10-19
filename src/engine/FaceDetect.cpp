@@ -1,6 +1,7 @@
 // FaceTracker (Windows.Media.FaceAnalysis) for automatic framing. Its C++/WinRT includes stay in
 // this file, like WindowSource.cpp's. The worker runs in the multithreaded apartment, where
-// blocking on an async call with .get() is allowed.
+// blocking on an async call with .get() is allowed. Frames go in as NV12 (what Microsoft's face
+// tracking sample feeds it: our grey copy plus neutral colour), or Gray8 where only that works.
 #include "FaceDetect.h"
 
 #include <unknwn.h> // before the C++/WinRT headers: classic COM interop
@@ -40,7 +41,7 @@ FaceDetector::~FaceDetector()
 
 bool FaceDetector::Due(double nowMs)
 {
-    if (m_failed || nowMs - m_lastOfferMs < kIntervalMs) return false;
+    if (m_unsupported || m_gaveUp || nowMs - m_lastOfferMs < kIntervalMs) return false;
     std::lock_guard lk(m_mutex);
     return !m_busy;
 }
@@ -79,20 +80,24 @@ void FaceDetector::Worker()
 {
     bool apartment = false;
     faces::FaceTracker tracker{ nullptr };
+    bool nv12 = true;
     try
     {
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         apartment = true;
+        nv12 = faces::FaceTracker::IsBitmapPixelFormatSupported(imaging::BitmapPixelFormat::Nv12);
         if (!faces::FaceTracker::IsSupported() ||
-            !faces::FaceTracker::IsBitmapPixelFormatSupported(imaging::BitmapPixelFormat::Gray8))
-            m_failed = true;
+            (!nv12 && !faces::FaceTracker::IsBitmapPixelFormatSupported(imaging::BitmapPixelFormat::Gray8)))
+            m_unsupported = true;
         else
             tracker = faces::FaceTracker::CreateAsync().get();
     }
     catch (...)
     {
-        m_failed = true;
+        m_unsupported = true;
     }
+    const imaging::BitmapPixelFormat format = nv12 ? imaging::BitmapPixelFormat::Nv12 : imaging::BitmapPixelFormat::Gray8;
+    int errors = 0;
 
     std::vector<uint8_t> pixels;
     for (;;)
@@ -110,23 +115,35 @@ void FaceDetector::Worker()
 
         std::vector<FaceRect> found;
         bool ok = false;
-        if (!m_failed)
+        if (!m_unsupported && !m_gaveUp)
         {
             try
             {
-                imaging::SoftwareBitmap bitmap(imaging::BitmapPixelFormat::Gray8, static_cast<int32_t>(w), static_cast<int32_t>(h));
+                imaging::SoftwareBitmap bitmap(format, static_cast<int32_t>(w), static_cast<int32_t>(h));
                 {
                     imaging::BitmapBuffer buffer = bitmap.LockBuffer(imaging::BitmapBufferAccessMode::Write);
-                    const imaging::BitmapPlaneDescription plane = buffer.GetPlaneDescription(0);
                     winrt::Windows::Foundation::IMemoryBufferReference reference = buffer.CreateReference();
                     uint8_t* data = nullptr;
                     uint32_t capacity = 0;
                     winrt::check_hresult(reference.as<IMemoryBufferByteAccess>()->GetBuffer(&data, &capacity));
+                    // Plane 0: the grey picture. NV12's plane 1 (interleaved U, V at half height): 128,
+                    // no colour.
+                    const imaging::BitmapPlaneDescription luma = buffer.GetPlaneDescription(0);
                     for (uint32_t y = 0; y < h; ++y)
                     {
-                        const size_t at = static_cast<size_t>(plane.StartIndex) + static_cast<size_t>(y) * plane.Stride;
+                        const size_t at = static_cast<size_t>(luma.StartIndex) + static_cast<size_t>(y) * luma.Stride;
                         if (at + w > capacity) break;
                         memcpy(data + at, pixels.data() + static_cast<size_t>(y) * w, w);
+                    }
+                    if (nv12)
+                    {
+                        const imaging::BitmapPlaneDescription chroma = buffer.GetPlaneDescription(1);
+                        for (uint32_t y = 0; y < h / 2; ++y)
+                        {
+                            const size_t at = static_cast<size_t>(chroma.StartIndex) + static_cast<size_t>(y) * chroma.Stride;
+                            if (at + w > capacity) break;
+                            memset(data + at, 128, w);
+                        }
                     }
                     reference.Close();
                     buffer.Close();
@@ -140,10 +157,13 @@ void FaceDetector::Worker()
                 }
                 frame.Close();
                 ok = true;
+                errors = 0;
             }
             catch (...)
             {
-                m_failed = true; // framing then reports itself unavailable
+                // One bad frame is skipped; a run of them gives up (framing then says so, and
+                // turning it off and on starts a new detector).
+                if (++errors >= kMaxErrors) m_gaveUp = true;
             }
         }
 

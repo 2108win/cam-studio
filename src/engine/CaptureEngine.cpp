@@ -494,9 +494,13 @@ private:
         {
             if (m_framingOn)
             {
+                // The detector's thread goes too; turning framing on again starts a fresh one
+                // (also the way out of a detector that gave up).
                 m_framingOn = false;
+                m_detector.reset();
                 std::lock_guard lk(m_engine.m_lock);
                 m_engine.m_framing.active = false;
+                m_engine.m_framing.available = 1;
             }
             return;
         }
@@ -517,7 +521,7 @@ private:
         std::lock_guard lk(m_engine.m_lock);
         auto& f = m_engine.m_framing;
         f.active = true;
-        f.available = m_detector->Available();
+        f.available = m_detector->State();
         f.faces = m_framer.Faces();
         f.zoom = v.zoom;
         f.centerX = v.centerX;
@@ -709,6 +713,7 @@ void CaptureEngine::SetStandby(bool standby)
         {
             m_status.fps = 0;
             m_status.consumerActive = false;
+            m_framing.active = false; // nothing is framed while the source is closed
         }
     }
     Notify();
