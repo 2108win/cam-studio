@@ -229,7 +229,7 @@ public sealed partial class MainWindow
         {
             int s = screen;
             var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-            var window = new HyperlinkButton { Content = open ? "Cửa sổ" : "Mở cửa sổ", Style = Res<Style>("CardLinkStyle") };
+            var window = new HyperlinkButton { Content = "Cửa sổ", Style = Res<Style>("CardLinkStyle") };
             ToolTipService.SetToolTip(window, "Mở trong cửa sổ riêng, để chia sẻ cửa sổ đó trong Discord, Zoom, Meet…");
             window.Click += (_, _) => OpenScreenWindow(s);
             links.Children.Add(window);
