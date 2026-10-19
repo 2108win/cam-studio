@@ -40,7 +40,7 @@ Theo quy tắc trong `CLAUDE.md`, Camo chỉ được nghiên cứu ở **mức 
 | `CamoStreamDeckPlugin` | nút Stream Deck | chưa có |
 | `Helpers/camo-mcp` | cho trợ lý AI (như Claude) điều khiển app qua MCP | chưa có |
 | `devices.json` | thông tin riêng từng mẫu webcam (ống kính, tính năng tắt) | chưa có |
-| `Sparkle.framework` | tự cập nhật | chưa có |
+| `Sparkle.framework` | tự cập nhật | **có** (0.1.4, `docs/updates.md`) |
 
 Bản Camo cho Windows có thể khác bản Mac (ví dụ, theo blog 2.8, trộn âm thanh có trên Windows). Muốn so trên Windows thì xem release notes của Camo cho Windows.
 
@@ -59,7 +59,7 @@ Ký hiệu: **Có**, **Một phần**, **Chưa**. Gói Camo "không rõ" là ch�
 | Qua cáp USB | không rõ | **Một phần**: đã viết, chưa build trên Windows | Open work mục 4 | M |
 | HDR / 10-bit | không rõ | **Một phần**: iPhone gửi HEVC 10-bit HLG; PC chưa kiểm HEVC từ đầu tới cuối | PC | S–M |
 | Smart Zoom (quay 4K, cắt ra 1080p nét) | không rõ | **Một phần**: PC đã có zoom số 1–4× và chọn tâm | PC: tùy chọn "nhận 4K, phát 1080p" | S |
-| Thu cửa sổ/màn hình PC | không rõ | **Chưa** (chỉ có màn hình điện thoại) | PC: Windows.Graphics.Capture | M |
+| Thu cửa sổ/màn hình PC | không rõ | **Có** (cửa sổ, Windows.Graphics.Capture) | — | — |
 
 ### Điều khiển camera
 
@@ -105,7 +105,7 @@ Ký hiệu: **Có**, **Một phần**, **Chưa**. Gói Camo "không rõ" là ch�
 
 | Tính năng Camo | Gói Camo | Cam Studio | Nên làm ở đâu | Công sức |
 |---|---|---|---|---|
-| Micro điện thoại thành micro trên máy tính | không rõ | **Chưa** | gửi tiếng qua giao thức thì dễ; **micro ảo trên Windows cần driver có chữ ký** | XL |
+| Micro điện thoại thành micro trên máy tính | không rõ | **Chưa** | Camo cho Windows 2.8 đã có "Camo Microphone" (trộn tiếng, lọc ồn, EQ): có nhu cầu thật. Gửi tiếng qua giao thức thì dễ; **micro ảo trên Windows cần driver có chữ ký** | XL |
 | Lọc ồn | không rõ | **Chưa** | điện thoại: iOS voice processing, Android `NoiseSuppressor` (gần như miễn phí) | S (khi đã có tiếng) |
 | Thu tiếng hệ thống, trộn tiếng | không rõ | **Chưa** | PC (WASAPI loopback) | M |
 
@@ -132,33 +132,35 @@ Ký hiệu: **Có**, **Một phần**, **Chưa**. Gói Camo "không rõ" là ch�
 | Phím tắt hệ thống / URL scheme | không rõ | **Chưa** | PC: `camstudio://` hoặc CLI nhỏ qua named pipe (đổi nguồn, ống kính, zoom, preset, bật/tắt camera ảo) và phím tắt toàn cục | S–M |
 | Stream Deck | không rõ | **Chưa** | dựa trên CLI/URL scheme ở trên | M |
 | MCP cho trợ lý AI | không rõ | **Chưa** | máy chủ MCP nhỏ dựa trên cùng lệnh điều khiển | S (khi đã có CLI) |
-| Tự cập nhật | — | **Chưa** | PC: hỏi GitHub Releases khi mở app, tải Setup.exe; hoặc manifest winget | S–M |
+| Tự cập nhật | — | **Có** (PC và Android, 0.1.4) | — | — |
 | Watermark | bản Free hiện không có | **Không có** | — | — |
 
-## Lộ trình đề xuất
+## Đề xuất (cập nhật 2026-10-19)
 
-Các việc trong "Open work" của `CLAUDE.md` vẫn đi trước: mục 1–4 (iPhone với PC thật, build `PhoneLink::Reconnect` và USB trên Windows, kiểm Redmi, TestFlight). Danh sách dưới đây xếp **sau** các việc đó. Nó giữ hai nguyên tắc của dự án: **tối giản**, và **không làm gì theo từng khung hình khi không ai dùng camera ảo**.
+Xếp theo thứ người dùng **không tự có được** trong Discord/Zoom/Meet. Mọi mục phải tốn **0** khi không app nào dùng camera.
 
-**Đợt A: nhỏ, giá trị cao, hợp hướng "nhẹ"**
-1. **Ghi hình bằng cách đóng gói lại luồng từ điện thoại**, và chụp ảnh PNG. Đây là điểm Camo thu tiền ("ghi độ phân giải siêu cao"), mà Cam Studio làm được gần như không tốn CPU. Lưu ý: file là luồng gốc của điện thoại, không có cắt/zoom/màu của PC. Muốn ghi đúng hình camera ảo thì làm thêm đường mã hóa (cũng là đường cho webcam).
-2. **Tự căn khung cho mọi nguồn** bằng `FaceTracker` của Windows, lái zoom và tâm sẵn có. Chỉ chạy khi có app đang dùng camera, vài lần mỗi giây là đủ.
-3. **Smart Zoom:** nhận 4K từ điện thoại, phát 1080p đã cắt, nên zoom vẫn nét.
-4. **Preset màu**, cùng hue/gamma/độ nét.
-5. **Điều khiển từ ngoài:** URL scheme/CLI và phím tắt toàn cục. Sau đó MCP và Stream Deck dùng chung lớp lệnh này.
-6. **Bật/tắt Center Stage trên iPhone thẳng từ PC** (`AVCaptureDevice.centerStageControlMode = .app`), thay vì chỉ mở bảng hệ thống. Xóa phông, Ánh sáng studio và Thay nền của hệ thống thì app chỉ đọc được, không bật được: muốn PC điều khiển (và có thanh độ mạnh) thì đi đường tách người bằng Vision ở mục 7.
+| # | Tính năng | Chạy ở | Vì sao người dùng cần | Công sức |
+|---|---|---|---|---|
+| 1 | **Tự căn khung + Smart Zoom**: theo mặt, cắt từ nguồn 4K nên vẫn nét | PC (`FaceTracker` trên khung nhỏ, vài lần/giây), dùng zoom/tâm sẵn có | app họp không cắt nét được từ 4K | M |
+| 2 | **Xóa phông / riêng tư / thay nền ở nguồn** | điện thoại (iOS Vision, Android MediaPipe); webcam: PC (ONNX + DirectML) | app họp đã có xóa phông; lợi thế là viền đẹp hơn và **một cài đặt cho mọi app** | L |
+| 3 | **Ghi hình chất lượng gốc + chụp ảnh**, nút ghi có đồng hồ | PC: ghi luồng gốc của điện thoại (gần 0% CPU, không có cắt/màu của PC) hoặc mã hóa phần cứng đúng hình camera ảo | quay bài giảng, review | M |
+| 4 | **Bộ màu có ảnh xem trước sống** (Gốc, Ấm, Mát, Đen trắng…), thêm hue/gamma/độ nét | PC; ảnh xem trước chỉ vẽ khi cửa sổ đang hiện | đổi "look" bằng một cú bấm | S–M |
+| 5 | **Ảnh khi tạm dừng** ("Quay lại ngay", ảnh riêng) + phím tắt toàn cục để tạm dừng | PC: engine ghi ảnh này vào bộ nhớ chung, **không cần sửa vcam** | riêng tư nhanh khi đang họp | S |
+| 6 | **Tự hạ chế độ khi điện thoại nóng** (4K → 1080p, 60 → 30) trước khi iPhone tự dừng camera | PC, dựa trên `thermal` đã có trong `state` | gọi lâu bằng 4K không bị ngắt | S |
 
-**Đợt B: lớn hơn, cần cân nhắc**
+**Cần người dùng quyết:** micro ảo từ điện thoại (cần driver có chữ ký, XL); làm mịn da (shader GPU có mặt nạ mặt, M).
 
-7. **Xóa phông, thay nền, làm mờ riêng tư cho Android và webcam.**
-   - **Ưu tiên chạy trên điện thoại** cho nguồn điện thoại: Android có MediaPipe Selfie Segmentation (giấy phép MIT/Apache, kiểm lại trong model card); iPhone có Vision `VNGeneratePersonSegmentationRequest`, cho phép PC chỉnh độ mạnh. PC vẫn nhẹ, và lệnh đi qua `set`/`caps` sẵn có.
-   - **Webcam thì phải chạy trên PC:** ONNX Runtime + DirectML với một mô hình tách người có giấy phép MIT/Apache, chỉ chạy khi có app đang dùng camera.
-   - Đây cũng là mục "AI background blur" trong Open work mục 5.
-8. **Bộ lọc LUT 3D** bằng shader D3D11; ta tự làm vài LUT mẫu.
-9. **Micro từ điện thoại:**
-   - **Bước 1:** thêm loại bản ghi âm thanh vào giao thức (AAC hoặc Opus), lọc ồn ngay trên điện thoại.
-   - **Bước 2 (khó):** micro ảo trên Windows cần driver âm thanh có chữ ký. Cần quyết định riêng trước khi làm.
+**Không làm:** trình soạn cảnh, phát RTMP/chat, chuyển cảnh, nền do AI tạo, ghi ngang + dọc cùng lúc. OBS đã lo các việc này.
 
-**Không nên làm** (để OBS lo, hoặc trái với hướng tối giản và "không qua máy chủ"): trình soạn cảnh đầy đủ, phát RTMP và chat, nền do AI tạo, ghi ngang và dọc cùng lúc.
+### Giao diện: học mẫu tương tác, không chép bố cục
+
+Giữ ba khung hiện có, Mica và màu xanh riêng. Không dùng bố cục tổng thể, màu tím, biểu tượng hay tên mẫu của Camo, không đưa ảnh của Camo vào repo.
+- Mỗi hiệu ứng một dòng: công tắc + thanh trượt + % trên cùng hàng.
+- Chế độ dạng nút chia đoạn: Nền (Tắt / Xóa phông / Riêng tư / Thay nền), Khung (Tay / Tự động).
+- Chip hồ sơ đầu ra cạnh trạng thái camera ảo: "Họp · 1080p30", "Quay · 4K30", "Tự động".
+- Nút ghi thành viên thuốc đỏ có đồng hồ khi đang ghi.
+- Thêm thẻ **Hiệu ứng** vào bảng bên phải.
+- **Riêng của Cam Studio:** mỗi hiệu ứng có nhãn nơi chạy ("Chạy trên điện thoại" / "PC · chỉ khi có app dùng"). Sự nhẹ là bản sắc, nên cho người dùng thấy.
 
 ## Nguồn
 
