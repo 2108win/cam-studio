@@ -57,8 +57,6 @@ public sealed partial class MainWindow
             PhoneControls.Children.Add(new TextBlock { Text = "Chưa có thông tin camera điện thoại.", TextWrapping = TextWrapping.Wrap });
             return;
         }
-        if (!IsCapturing)
-            PhoneControls.Children.Add(Hint("Bật Camera ảo để chỉnh trực tiếp. Thay đổi được áp dụng ngay trên điện thoại."));
 
         // Lenses, zoom, flash and exposure bias are the sections above; these are the manual controls.
 
@@ -118,10 +116,10 @@ public sealed partial class MainWindow
                 "backgroundReplacement" => "Thay nền",
                 _ => kv.Key,
             });
-            var button = new Button { Content = "Mở hiệu ứng hệ thống trên điện thoại", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+            var button = new Button { Content = "Hiệu ứng trên điện thoại", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+            ToolTipService.SetToolTip(button, string.Join(", ", names) + " do hệ điều hành điều khiển: bật trong bảng mở ra trên điện thoại.");
             button.Click += (_, _) => Engine.PhoneSend("{\"type\":\"showSystemEffects\"}");
             PhoneControls.Children.Add(button);
-            PhoneControls.Children.Add(Hint(string.Join(", ", names) + " do hệ điều hành điều khiển: bật trong bảng vừa mở trên điện thoại."));
         }
 
         _phoneReadout = new TextBlock { Style = Res<Style>("InspectorHintStyle"), Margin = new Thickness(0, 10, 0, 0) };

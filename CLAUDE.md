@@ -168,10 +168,19 @@ Gotchas:
 - **PC UI (redone 2026-10-18, cards and sections 2026-10-19):** three panes. Left: one card per
   device, built in code (`BuildSourceList`, `MainWindow.Sources.cs`): a phone's routes (USB /
   Wi‑Fi chips) and its shared screen fold into the phone's card. Middle: the header (name, mode,
-  virtual camera state) and the preview. Right: the inspector, one scrolling page of `Expander`
-  sections, no tabs: Ống kính, Khung hình, Ánh sáng, Màu sắc, Chỉnh tay, Chi tiết (the last two
-  refresh only while expanded: `UpdatePaneActivity`). It folds away under 1180 px. Settings is a
-  `ContentDialog`. The accent is our own blue (`SystemAccentColor*` in App.xaml).
+  virtual camera state), the preview, and under it the camera bar of a phone (lens chips, front /
+  back, flash, exposure bias in a flyout). Right: the inspector, one scrolling page of `Expander`
+  sections, no tabs: Khung hình, Màu sắc (8 presets = the four slider values in a `Tag`; tracks
+  drawn as gradients through `Slider.Resources`), Chỉnh tay, Chi tiết (the last two refresh only
+  while expanded: `UpdatePaneActivity`). Explanations sit behind (i) buttons (`InfoButtonStyle`).
+  It folds away under 1180 px. Settings is a `ContentDialog`.
+- **Accent:** WinUI's controls take it from the `SystemAccentColor*` ramp in App.xaml (dark theme:
+  Light2, light theme: Dark1). Overriding `AccentFillColorDefaultBrush` in App.xaml reaches only
+  our own XAML, not the controls (their brushes are `StaticResource` inside XamlControlsResources).
+- **Glyphs:** check each one exists in `segmdl2.ttf` (Windows 10 has no Segoe Fluent Icons).
+- **Khởi động lại** (left pane, tray): starts `CamStudio.exe --after <pid>` and exits (engine given
+  4 s). `Program.Main` waits for that pid (kills it after 10 s), else the single-instance key would
+  hand the new process to the old one. Apps using the camera lose it and must turn it on again.
   `UpdateStatus` → `UpdateOverlayVisibility` must not call `UpdatePaneActivity` (it calls
   `UpdateStatus`: stack overflow).
 - A brush looked up in code (`Application.Current.Resources[...]`) follows the Windows theme, not

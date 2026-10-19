@@ -16,6 +16,7 @@ public static partial class Program
     private static int Main(string[] args)
     {
         WinRT.ComWrappersSupport.InitializeComWrappers();
+        WaitForPrevious(args);
 
         var main = AppInstance.FindOrRegisterForKey("CamStudio.Main");
         if (!main.IsCurrent)
@@ -31,6 +32,27 @@ public static partial class Program
             new App();
         });
         return 0;
+    }
+
+    // "--after <pid>" (Khởi động lại): the old Cam Studio is still closing. Wait for it, so this one
+    // becomes the instance instead of handing its activation to the old one. One that hangs is
+    // ended: that is what the restart is for.
+    private static void WaitForPrevious(string[] args)
+    {
+        int at = Array.IndexOf(args, "--after");
+        if (at < 0 || at + 1 >= args.Length || !int.TryParse(args[at + 1], out int pid)) return;
+        try
+        {
+            using var old = System.Diagnostics.Process.GetProcessById(pid);
+            if (!string.Equals(old.MainModule?.FileName, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) return;
+            if (old.WaitForExit(10000)) return;
+            old.Kill();
+            old.WaitForExit(3000);
+        }
+        catch (Exception)
+        {
+            // Already gone, or not ours to touch.
+        }
     }
 
     // Redirect on a worker thread while this STA thread keeps pumping COM,

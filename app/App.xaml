@@ -7,16 +7,49 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- WinUI's controls take their accent from the SystemAccentColor ramp below (dark theme:
+                 Light2, light theme: Dark1); brushes overridden here would reach only our own XAML. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="SourceTileBrush" Color="#1F4A8CFF" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="SourceTileBrush" Color="#161F5FD6" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
 
-            <!-- Cam Studio's own accent (the README's blue), whatever the Windows accent is: a red
-                 Windows accent made selected chips look like errors. Red stays for "live". -->
-            <Color x:Key="SystemAccentColor">#FF0A6ED1</Color>
-            <Color x:Key="SystemAccentColorLight1">#FF2F86DC</Color>
-            <Color x:Key="SystemAccentColorLight2">#FF5FA3E6</Color>
-            <Color x:Key="SystemAccentColorLight3">#FF96C3F0</Color>
-            <Color x:Key="SystemAccentColorDark1">#FF085CB0</Color>
-            <Color x:Key="SystemAccentColorDark2">#FF064A8F</Color>
-            <Color x:Key="SystemAccentColorDark3">#FF04386D</Color>
+            <!-- Cam Studio's own accent, whatever the Windows accent is (a red Windows accent made
+                 selected chips look like errors). One royal blue in both themes; red stays for
+                 "live", green / amber for the connection dots. -->
+            <Color x:Key="SystemAccentColor">#FF2F6FEB</Color>
+            <Color x:Key="SystemAccentColorLight1">#FF3D7FF5</Color>
+            <Color x:Key="SystemAccentColorLight2">#FF4A8CFF</Color>
+            <Color x:Key="SystemAccentColorLight3">#FF8DB6FF</Color>
+            <Color x:Key="SystemAccentColorDark1">#FF1F5FD6</Color>
+            <Color x:Key="SystemAccentColorDark2">#FF1A4FB0</Color>
+            <Color x:Key="SystemAccentColorDark3">#FF123E8F</Color>
+
+            <!-- Colour slider tracks: what each slider does, drawn on the slider itself. -->
+            <LinearGradientBrush x:Key="BrightnessTrackBrush" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#FF151515" Offset="0" />
+                <GradientStop Color="#FFF4F4F4" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="ContrastTrackBrush" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#FF9C9C9C" Offset="0" />
+                <GradientStop Color="#FF8A8A8A" Offset="0.45" />
+                <GradientStop Color="#FF050505" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="SaturationTrackBrush" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#FF8C8C8C" Offset="0" />
+                <GradientStop Color="#FFB98A9F" Offset="0.5" />
+                <GradientStop Color="#FFFF3F7A" Offset="1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="TemperatureTrackBrush" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#FF3E8BFF" Offset="0" />
+                <GradientStop Color="#FFE6E6E6" Offset="0.5" />
+                <GradientStop Color="#FFFF9330" Offset="1" />
+            </LinearGradientBrush>
+
             <SolidColorBrush x:Key="LiveBrush" Color="#FFE5484D" />
 
             <!-- One row of the source list (left pane), Windows Settings navigation style. -->
@@ -63,8 +96,8 @@
             <Style x:Key="IconTileStyle" TargetType="Border">
                 <Setter Property="Width" Value="36" />
                 <Setter Property="Height" Value="36" />
-                <Setter Property="CornerRadius" Value="9" />
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Background" Value="{ThemeResource SourceTileBrush}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
             <Style x:Key="IconTileSelectedStyle" TargetType="Border" BasedOn="{StaticResource IconTileStyle}">
@@ -72,7 +105,7 @@
             </Style>
             <Style x:Key="TileGlyphStyle" TargetType="FontIcon">
                 <Setter Property="FontSize" Value="16" />
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
             </Style>
             <Style x:Key="TileGlyphSelectedStyle" TargetType="FontIcon" BasedOn="{StaticResource TileGlyphStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
@@ -89,6 +122,74 @@
                 <Setter Property="Padding" Value="4,0" />
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <!-- (i) next to a heading: the explanation, on hover and on click (touch). -->
+            <Style x:Key="InfoButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+                <Setter Property="Width" Value="24" />
+                <Setter Property="Height" Value="24" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="InfoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="MaxWidth" Value="280" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <!-- A colour preset: a swatch and a name. -->
+            <Style x:Key="PresetChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="2,8,2,6" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="MinWidth" Value="0" />
+            </Style>
+            <Style x:Key="SwatchStyle" TargetType="Ellipse">
+                <Setter Property="Width" Value="24" />
+                <Setter Property="Height" Value="24" />
+                <Setter Property="Stroke" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="StrokeThickness" Value="1" />
+            </Style>
+            <Style x:Key="PresetLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,5,0,0" />
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            </Style>
+            <Style x:Key="SliderValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <!-- The camera bar under the preview: lenses, front / back, flash, exposure. -->
+            <Style x:Key="CameraBarStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="22" />
+                <Setter Property="Padding" Value="6" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="BarIconButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+                <Setter Property="MinWidth" Value="36" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="9,0" />
+                <Setter Property="CornerRadius" Value="16" />
+            </Style>
+            <Style x:Key="BarIconToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+                <Setter Property="MinWidth" Value="36" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="9,0" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+            <Style x:Key="BarDividerStyle" TargetType="Border">
+                <Setter Property="Width" Value="1" />
+                <Setter Property="Height" Value="20" />
+                <Setter Property="Margin" Value="6,0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </Style>
             <!-- Inspector sections (right pane): one Expander each, no tabs. -->
             <Style x:Key="SectionExpanderStyle" TargetType="Expander">
@@ -208,10 +309,12 @@
 
             <!-- A phone lens (0.6×, 1×, Macro…) in the inspector's focal-length row. -->
             <Style x:Key="LensChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-                <Setter Property="MinWidth" Value="52" />
-                <Setter Property="Height" Value="34" />
+                <Setter Property="MinWidth" Value="48" />
+                <Setter Property="Height" Value="32" />
                 <Setter Property="Padding" Value="12,0" />
-                <Setter Property="CornerRadius" Value="17" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
 

@@ -42,6 +42,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -52,10 +53,15 @@
                 <Button Grid.Column="1" Style="{StaticResource ToolButtonStyle}" Click="Refresh_Click" ToolTipService.ToolTip="Tìm lại thiết bị">
                     <FontIcon Glyph="&#xE72C;" Style="{StaticResource ToolIconStyle}" />
                 </Button>
-                <Button Grid.Column="3" Style="{StaticResource SubtleButtonStyle}" Height="40" Padding="12,0" CornerRadius="6" Click="Settings_Click">
+                <Button Grid.Column="2" Style="{StaticResource ToolButtonStyle}" Click="Restart_Click"
+                        ToolTipService.ToolTip="Khởi động lại Cam Studio: khi hình bị treo, giật, hoặc camera không nhận">
+                    <FontIcon Glyph="&#xE777;" Style="{StaticResource ToolIconStyle}" />
+                </Button>
+                <Button Grid.Column="4" Style="{StaticResource SubtleButtonStyle}" Height="40" Padding="12,0" CornerRadius="6" Click="Settings_Click"
+                        ToolTipService.ToolTip="Cài đặt">
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE713;" FontSize="16" />
-                        <TextBlock Text="Cài đặt" />
+                        <TextBlock x:Name="SettingsLabel" Text="Cài đặt" />
                     </StackPanel>
                 </Button>
             </Grid>
@@ -70,10 +76,11 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Grid Padding="20,14,20,20" RowSpacing="14">
+                <Grid Padding="20,14,20,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <!-- Header: the source, its mode, the virtual camera's state, the inspector. -->
@@ -129,7 +136,7 @@
                     </Grid>
 
                     <!-- ============ Preview ============ -->
-                    <Border x:Name="PreviewHost" Grid.Row="1" CornerRadius="12" Background="#FF0E0E10"
+                    <Border x:Name="PreviewHost" Grid.Row="1" Margin="0,14,0,0" CornerRadius="12" Background="#FF0E0E10"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             SizeChanged="PreviewHost_SizeChanged">
                         <Grid>
@@ -147,7 +154,7 @@
                                            TextWrapping="Wrap" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="#E6FFFFFF" />
                                 <TextBlock x:Name="PlaceholderHint" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                                            Foreground="#B3FFFFFF" Visibility="Collapsed"
-                                           Text="Mở app Cam Studio trên điện thoại (cùng mạng Wi‑Fi, hoặc cắm cáp USB), hoặc cắm webcam. Nguồn sẽ tự hiện ở bên trái và lên hình." />
+                                           Text="Mở app Cam Studio trên điện thoại (Wi‑Fi hoặc cáp USB), hoặc cắm webcam." />
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                     <Button x:Name="PlaceholderStart" Style="{StaticResource AccentButtonStyle}" Click="PlaceholderStart_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -192,63 +199,96 @@
                             </InfoBar>
                         </Grid>
                     </Border>
+
+                    <!-- ============ Camera bar (a phone): lenses, front / back, flash, exposure ============ -->
+                    <Border x:Name="CameraBar" Grid.Row="2" Style="{StaticResource CameraBarStyle}" Margin="0,12,0,0" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <!-- One chip per lens on this side (0.6× 1× 2× Macro), built in UpdateCameraOverlay. -->
+                            <StackPanel x:Name="LensChips" Orientation="Horizontal" Spacing="2" />
+                            <Border x:Name="BarDivider" Style="{StaticResource BarDividerStyle}" />
+                            <Button x:Name="FacingButton" Style="{StaticResource BarIconButtonStyle}" Click="FacingButton_Click"
+                                    ToolTipService.ToolTip="Đổi camera trước / sau">
+                                <FontIcon Glyph="&#xE89E;" FontSize="16" />
+                            </Button>
+                            <ToggleButton x:Name="FlashButton" Style="{StaticResource BarIconToggleStyle}" Click="FlashButton_Click"
+                                          ToolTipService.ToolTip="Đèn flash">
+                                <FontIcon Glyph="&#xE945;" FontSize="16" />
+                            </ToggleButton>
+                            <Button x:Name="ExposureButton" Style="{StaticResource BarIconButtonStyle}" ToolTipService.ToolTip="Bù sáng">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE706;" FontSize="16" />
+                                    <TextBlock x:Name="BiasText" Text="0 EV" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <Flyout Placement="Top">
+                                        <StackPanel Width="260" Spacing="4">
+                                            <TextBlock Text="Bù sáng" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                            <Slider x:Name="BiasSlider" Minimum="-2" Maximum="2" StepFrequency="0.1"
+                                                    ValueChanged="BiasSlider_ValueChanged" IsThumbToolTipEnabled="False" />
+                                            <TextBlock Style="{StaticResource InspectorHintStyle}" Margin="0"
+                                                       Text="Bấm vào một điểm trên hình để lấy nét và đo sáng ở đó." />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </Grid>
 
                 <!-- ============ Inspector (right) ============ -->
-                <!-- One scrolling page of sections (Expander), no tabs: lenses, the frame, light,
-                     colour, the phone's manual controls, details. Sections a source has nothing for
-                     are hidden (UpdateOverlayVisibility). -->
+                <!-- One scrolling page of sections (Expander), no tabs: the frame, colour, the
+                     phone's manual controls, details. A section a source has nothing for is hidden
+                     (UpdateOverlayVisibility). Explanations sit behind (i) buttons. -->
                 <Grid x:Name="InspectorPane" Grid.Column="1" Width="340"
                       BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,14,14,20">
                         <StackPanel Spacing="8">
 
-                            <!-- Ống kính: a phone's lenses, front / back -->
-                            <Expander x:Name="LensSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
-                                <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <FontIcon Glyph="&#xE722;" Style="{StaticResource SectionIconStyle}" />
-                                        <TextBlock Text="Ống kính" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Expander.Header>
-                                <StackPanel Spacing="10">
-                                    <!-- One chip per lens on this side (0.6× 1× 2× Macro), built in UpdateCameraOverlay. -->
-                                    <StackPanel x:Name="LensChips" Orientation="Horizontal" Spacing="6" />
-                                    <Button x:Name="FacingButton" HorizontalAlignment="Left" Padding="10,4" Click="FacingButton_Click"
-                                            ToolTipService.ToolTip="Đổi camera trước / sau">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <FontIcon Glyph="&#xE89E;" FontSize="13" />
-                                            <TextBlock Text="Trước / sau" />
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
-                            </Expander>
-
                             <!-- Khung hình: automatic framing, zoom, rotation, aspect -->
                             <Expander x:Name="FrameSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
                                 <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <FontIcon Glyph="&#xE7A8;" Style="{StaticResource SectionIconStyle}" />
-                                        <TextBlock Text="Khung hình" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <FontIcon Glyph="&#xE7A8;" Style="{StaticResource SectionIconStyle}" />
+                                            <TextBlock Text="Khung hình" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Expander.Header>
                                 <StackPanel>
                                     <!-- Only while a source runs: framing and zoom need a picture. -->
                                     <StackPanel x:Name="ZoomGroup">
                                         <Grid>
-                                            <TextBlock Text="Tự căn khung" VerticalAlignment="Center" />
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <TextBlock Text="Tự căn khung" Style="{StaticResource BodyTextBlockStyle}" VerticalAlignment="Center" />
+                                                <Button Style="{StaticResource InfoButtonStyle}" ToolTipService.ToolTip="Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Cho webcam và camera điện thoại, không cho màn hình hay cửa sổ.">
+                                                    <FontIcon Glyph="&#xE946;" FontSize="13" />
+                                                    <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Cho webcam và camera điện thoại, không cho màn hình hay cửa sổ." /></Flyout></Button.Flyout>
+                                                </Button>
+                                            </StackPanel>
                                             <ToggleSwitch x:Name="AutoFrameToggle" HorizontalAlignment="Right" OnContent="" OffContent="" MinWidth="0"
-                                                          Toggled="AutoFrameToggle_Toggled"
-                                                          ToolTipService.ToolTip="Tự zoom và giữ người ở giữa khung, theo khuôn mặt. Cho webcam và camera điện thoại" />
+                                                          Toggled="AutoFrameToggle_Toggled" />
                                         </Grid>
-                                        <TextBlock x:Name="AutoFrameHint" Style="{StaticResource InspectorHintStyle}" Margin="0,0,0,0" />
+                                        <TextBlock x:Name="AutoFrameHint" Style="{StaticResource InspectorHintStyle}" Margin="0,0,0,2" />
 
-                                        <TextBlock Text="Thu phóng" Style="{StaticResource InspectorSubheadStyle}" />
-                                        <Grid ColumnSpacing="6">
+                                        <Grid>
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <TextBlock Text="Thu phóng" Style="{StaticResource InspectorSubheadStyle}" VerticalAlignment="Center" />
+                                                <Button Style="{StaticResource InfoButtonStyle}">
+                                                    <FontIcon Glyph="&#xE946;" FontSize="13" />
+                                                    <Button.Flyout><Flyout><TextBlock x:Name="ZoomHint" Style="{StaticResource InfoTextStyle}" Text="Thu phóng trên máy tính. Kéo trên hình để chọn khung, nhấp đúp để đặt lại." /></Flyout></Button.Flyout>
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock x:Name="ZoomValueText" Text="1.0×" Style="{StaticResource SliderValueStyle}" Margin="0,6,0,0"
+                                                       FontWeight="SemiBold" />
+                                        </Grid>
+                                        <Grid ColumnSpacing="4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <Button Click="ZoomOut_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Thu nhỏ">
@@ -259,10 +299,7 @@
                                             <Button Grid.Column="2" Click="ZoomIn_Click" Style="{StaticResource SubtleButtonStyle}" Padding="6" ToolTipService.ToolTip="Phóng to">
                                                 <FontIcon Glyph="&#xE8A3;" FontSize="14" />
                                             </Button>
-                                            <TextBlock x:Name="ZoomValueText" Grid.Column="3" Text="1.0×" Width="40" VerticalAlignment="Center"
-                                                       TextAlignment="Right" FontWeight="SemiBold" />
                                         </Grid>
-                                        <TextBlock x:Name="ZoomHint" Style="{StaticResource InspectorHintStyle}" />
                                     </StackPanel>
 
                                     <TextBlock Text="Xoay và lật" Style="{StaticResource InspectorSubheadStyle}" />
@@ -295,7 +332,13 @@
                                         </Button>
                                     </Grid>
 
-                                    <TextBlock Text="Tỉ lệ khung" Style="{StaticResource InspectorSubheadStyle}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <TextBlock Text="Tỉ lệ khung" Style="{StaticResource InspectorSubheadStyle}" VerticalAlignment="Center" />
+                                        <Button Style="{StaticResource InfoButtonStyle}" ToolTipService.ToolTip="Cắt ở giữa khung, không làm méo hình.">
+                                            <FontIcon Glyph="&#xE946;" FontSize="13" />
+                                            <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Cắt ở giữa khung, không làm méo hình." /></Flyout></Button.Flyout>
+                                        </Button>
+                                    </StackPanel>
                                     <!-- One choice of five, as a segmented row (Tag = AppSettings.Aspect). -->
                                     <Grid x:Name="AspectChips" ColumnSpacing="4">
                                         <Grid.ColumnDefinitions>
@@ -313,45 +356,11 @@
                                         <ToggleButton Tag="4" Grid.Column="4" Content="9:16" Style="{StaticResource SegmentToggleStyle}" Padding="0" Click="AspectChip_Click"
                                                       ToolTipService.ToolTip="Dọc, như điện thoại" />
                                     </Grid>
-                                    <TextBlock Style="{StaticResource InspectorHintStyle}" Text="Cắt ở giữa khung, không làm méo hình." />
                                 </StackPanel>
                             </Expander>
 
-                            <!-- Ánh sáng: a phone's torch and exposure bias -->
-                            <Expander x:Name="LightSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
-                                <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <FontIcon Glyph="&#xE706;" Style="{StaticResource SectionIconStyle}" />
-                                        <TextBlock Text="Ánh sáng" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Expander.Header>
-                                <StackPanel Spacing="8">
-                                    <ToggleButton x:Name="FlashButton" Style="{StaticResource SegmentToggleStyle}" Click="FlashButton_Click"
-                                                  ToolTipService.ToolTip="Bật / tắt đèn flash của điện thoại">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE945;" FontSize="14" />
-                                            <TextBlock Text="Đèn flash" />
-                                        </StackPanel>
-                                    </ToggleButton>
-                                    <StackPanel x:Name="ExposureButton">
-                                        <TextBlock Text="Bù sáng" Style="{StaticResource InspectorSubheadStyle}" Margin="0,4,0,2" />
-                                        <Grid ColumnSpacing="10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <Slider x:Name="BiasSlider" Minimum="-2" Maximum="2" StepFrequency="0.1"
-                                                    ValueChanged="BiasSlider_ValueChanged" IsThumbToolTipEnabled="False" />
-                                            <TextBlock x:Name="BiasText" Grid.Column="1" Text="0 EV" Width="48" TextAlignment="Right" VerticalAlignment="Center" />
-                                        </Grid>
-                                        <TextBlock Style="{StaticResource InspectorHintStyle}"
-                                                   Text="Bấm vào một điểm trên hình để lấy nét và đo sáng ở đó." />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Expander>
-
-                            <!-- Màu sắc -->
-                            <Expander x:Name="ColorSection" Style="{StaticResource SectionExpanderStyle}">
+                            <!-- Màu sắc: presets, then the four sliders, each track showing what it does -->
+                            <Expander x:Name="ColorSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
                                 <Expander.Header>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -366,15 +375,187 @@
                                     </Grid>
                                 </Expander.Header>
                                 <StackPanel>
-                                    <Slider x:Name="BrightnessSlider" Header="Độ sáng" Minimum="-100" Maximum="100" StepFrequency="1"
-                                            ValueChanged="AdjustSlider_ValueChanged" />
-                                    <Slider x:Name="ContrastSlider" Header="Tương phản" Minimum="-100" Maximum="100" StepFrequency="1"
-                                            ValueChanged="AdjustSlider_ValueChanged" />
-                                    <Slider x:Name="SaturationSlider" Header="Độ bão hòa màu" Minimum="-100" Maximum="100" StepFrequency="1"
-                                            ValueChanged="AdjustSlider_ValueChanged" />
-                                    <Slider x:Name="TemperatureSlider" Header="Nhiệt độ màu (lạnh ↔ ấm)" Minimum="-100" Maximum="100" StepFrequency="1"
-                                            ValueChanged="AdjustSlider_ValueChanged" />
-                                    <HyperlinkButton Content="Đặt lại màu" HorizontalAlignment="Right" Padding="6,2" Margin="0,4,0,0" Click="AdjustReset_Click" />
+                                    <Grid x:Name="PresetGrid" ColumnSpacing="6" RowSpacing="6" Margin="0,2,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <ToggleButton Tag="0,0,0,0" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Tự nhiên">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFC9D3DD" Offset="0" />
+                                                            <GradientStop Color="#FF6F8091" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Tự nhiên" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Column="1" Tag="18,6,6,0" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Sáng">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFFFF7DE" Offset="0" />
+                                                            <GradientStop Color="#FFFFCF6B" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Sáng" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Column="2" Tag="4,4,8,40" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Ấm">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFFFCA85" Offset="0" />
+                                                            <GradientStop Color="#FFE8692E" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Ấm" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Column="3" Tag="0,4,0,-35" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Lạnh">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFB3DAFF" Offset="0" />
+                                                            <GradientStop Color="#FF2F6FEB" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Lạnh" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Row="1" Tag="2,14,40,4" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Rực rỡ">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFFF5FA2" Offset="0" />
+                                                            <GradientStop Color="#FF7B5CFF" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Rực rỡ" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Row="1" Grid.Column="1" Tag="8,-14,-12,8" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Dịu">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFF3E6DC" Offset="0" />
+                                                            <GradientStop Color="#FFC4AC9E" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Dịu" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Row="1" Grid.Column="2" Tag="-6,22,-18,12" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Điện ảnh">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FF1F7F86" Offset="0" />
+                                                            <GradientStop Color="#FFF09A4A" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Điện ảnh" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <ToggleButton Grid.Row="1" Grid.Column="3" Tag="0,12,-100,0" Style="{StaticResource PresetChipStyle}" Click="Preset_Click" ToolTipService.ToolTip="Đen trắng">
+                                            <StackPanel>
+                                                <Ellipse Style="{StaticResource SwatchStyle}">
+                                                    <Ellipse.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#FFFFFFFF" Offset="0" />
+                                                            <GradientStop Color="#FF1A1A1A" Offset="1" />
+                                                        </LinearGradientBrush>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="Đen trắng" Style="{StaticResource PresetLabelStyle}" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                    </Grid>
+                                    <Grid Margin="0,10,0,0">
+                                        <TextBlock Text="Độ sáng" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="BrightnessValue" Text="0" Style="{StaticResource SliderValueStyle}" />
+                                    </Grid>
+                                    <Slider x:Name="BrightnessSlider" Minimum="-100" Maximum="100" StepFrequency="1" IsThumbToolTipEnabled="False"
+                                            ValueChanged="AdjustSlider_ValueChanged">
+                                        <Slider.Resources>
+                                            <StaticResource x:Key="SliderTrackFill" ResourceKey="BrightnessTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPointerOver" ResourceKey="BrightnessTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPressed" ResourceKey="BrightnessTrackBrush" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="Transparent" />
+                                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                        </Slider.Resources>
+                                    </Slider>
+                                    <Grid Margin="0,10,0,0">
+                                        <TextBlock Text="Tương phản" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ContrastValue" Text="0" Style="{StaticResource SliderValueStyle}" />
+                                    </Grid>
+                                    <Slider x:Name="ContrastSlider" Minimum="-100" Maximum="100" StepFrequency="1" IsThumbToolTipEnabled="False"
+                                            ValueChanged="AdjustSlider_ValueChanged">
+                                        <Slider.Resources>
+                                            <StaticResource x:Key="SliderTrackFill" ResourceKey="ContrastTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPointerOver" ResourceKey="ContrastTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPressed" ResourceKey="ContrastTrackBrush" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="Transparent" />
+                                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                        </Slider.Resources>
+                                    </Slider>
+                                    <Grid Margin="0,10,0,0">
+                                        <TextBlock Text="Độ bão hòa" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="SaturationValue" Text="0" Style="{StaticResource SliderValueStyle}" />
+                                    </Grid>
+                                    <Slider x:Name="SaturationSlider" Minimum="-100" Maximum="100" StepFrequency="1" IsThumbToolTipEnabled="False"
+                                            ValueChanged="AdjustSlider_ValueChanged">
+                                        <Slider.Resources>
+                                            <StaticResource x:Key="SliderTrackFill" ResourceKey="SaturationTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPointerOver" ResourceKey="SaturationTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPressed" ResourceKey="SaturationTrackBrush" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="Transparent" />
+                                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                        </Slider.Resources>
+                                    </Slider>
+                                    <Grid Margin="0,10,0,0">
+                                        <TextBlock Text="Nhiệt độ màu" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="TemperatureValue" Text="0" Style="{StaticResource SliderValueStyle}" />
+                                    </Grid>
+                                    <Slider x:Name="TemperatureSlider" Minimum="-100" Maximum="100" StepFrequency="1" IsThumbToolTipEnabled="False"
+                                            ValueChanged="AdjustSlider_ValueChanged">
+                                        <Slider.Resources>
+                                            <StaticResource x:Key="SliderTrackFill" ResourceKey="TemperatureTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPointerOver" ResourceKey="TemperatureTrackBrush" />
+                                            <StaticResource x:Key="SliderTrackFillPressed" ResourceKey="TemperatureTrackBrush" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="Transparent" />
+                                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                        </Slider.Resources>
+                                    </Slider>
+                                    <HyperlinkButton Content="Đặt lại" HorizontalAlignment="Right" Padding="6,2" Margin="0,6,0,0" Click="AdjustReset_Click" />
                                 </StackPanel>
                             </Expander>
 
@@ -382,10 +563,16 @@
                             <Expander x:Name="ManualSection" Style="{StaticResource SectionExpanderStyle}"
                                       Expanding="Section_Expanding" Collapsed="Section_Collapsed">
                                 <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <FontIcon Glyph="&#xE9E9;" Style="{StaticResource SectionIconStyle}" />
-                                        <TextBlock Text="Chỉnh tay" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <FontIcon Glyph="&#xE9E9;" Style="{StaticResource SectionIconStyle}" />
+                                            <TextBlock Text="Chỉnh tay" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Expander.Header>
                                 <!-- Built by BuildPhoneControls from what this lens supports. -->
                                 <StackPanel x:Name="PhoneControls" Spacing="6" />
@@ -465,7 +652,13 @@
                     <ToggleSwitch x:Name="CloseToTrayToggle" Header="Khi đóng cửa sổ"
                                   OnContent="Chạy tiếp ở khay" OffContent="Thoát hẳn" Toggled="CloseToTrayToggle_Toggled" />
 
-                    <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,0" />
+                    <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,12,0,0">
+                        <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource InfoButtonStyle}" ToolTipService.ToolTip="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen; gọi xong tự về cỡ gốc. Chọn 1080p nếu muốn khung luôn ngang.">
+                            <FontIcon Glyph="&#xE946;" FontSize="13" />
+                            <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen; gọi xong tự về cỡ gốc. Chọn 1080p nếu muốn khung luôn ngang." /></Flyout></Button.Flyout>
+                        </Button>
+                    </StackPanel>
                     <ComboBox x:Name="OutputSizeCombo" Header="Kích thước" HorizontalAlignment="Stretch"
                               SelectionChanged="OutputSizeCombo_SelectionChanged">
                         <x:String>Tự động (nét nhất)</x:String>
@@ -473,8 +666,6 @@
                         <x:String>1080p · 1920 × 1080</x:String>
                         <x:String>720p · 1280 × 720</x:String>
                     </ComboBox>
-                    <TextBlock Style="{StaticResource InspectorHintStyle}" Margin="0"
-                               Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen, gọi xong tự về cỡ gốc." />
 
                     <TextBlock Text="Cập nhật" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,0" />
                     <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật"

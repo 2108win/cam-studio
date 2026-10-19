@@ -277,7 +277,9 @@ public sealed partial class MainWindow : Window
 
     private bool _shutDown;
 
-    private void Shutdown()
+    // engineTimeoutMs: how long the engine may take to stop (a restart does not wait for a stuck
+    // one: the process ends anyway, and Windows frees the camera with it).
+    private void Shutdown(int engineTimeoutMs = System.Threading.Timeout.Infinite)
     {
         if (_shutDown) return;
         _shutDown = true;
@@ -285,7 +287,58 @@ public sealed partial class MainWindow : Window
         _statusTimer.Stop();
         CloseScreenWindows();
         _tray.Dispose();
-        Engine.cs_shutdown();
+        if (engineTimeoutMs < 0) Engine.cs_shutdown();
+        else System.Threading.Tasks.Task.Run(Engine.cs_shutdown).Wait(engineTimeoutMs);
+    }
+
+    private async void Restart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_consumers.Count > 0 || Engine.GetStatus().ConsumerActive != 0)
+        {
+            var ask = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = "Khởi động lại Cam Studio?",
+                Content = $"{(_consumers.Count > 0 ? string.Join(", ", _consumers) : "Ứng dụng đang dùng camera")} sẽ mất hình vài giây. Sau đó bật lại camera trong ứng dụng đó.",
+                PrimaryButtonText = "Khởi động lại",
+                CloseButtonText = "Hủy",
+                DefaultButton = ContentDialogButton.Primary,
+                RequestedTheme = RootGrid.ActualTheme,
+            };
+            try
+            {
+                if (await ask.ShowAsync() != ContentDialogResult.Primary) return;
+            }
+            catch (Exception)
+            {
+                return; // another dialog is open
+            }
+        }
+        RestartApp();
+    }
+
+    // Everything from scratch: cameras, phones, the virtual camera. The new process waits until
+    // this one is gone (Program.Main, --after), else it would hand itself to this one and quit.
+    public void RestartApp()
+    {
+        if (_exiting) return;
+        string args = $"--after {Environment.ProcessId}" + (AppWindow.IsVisible ? "" : " --tray");
+        try
+        {
+            using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, args)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = AppContext.BaseDirectory,
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowError("Không khởi động lại được: " + ex.Message);
+            return;
+        }
+        _exiting = true;
+        Shutdown(engineTimeoutMs: 4000);
+        Environment.Exit(0);
     }
 
     private IReadOnlyList<TrayIcon.MenuItem?> BuildTrayMenu()
@@ -317,6 +370,7 @@ public sealed partial class MainWindow : Window
             items.AddRange(update);
             items.Add(null);
         }
+        items.Add(new("Khởi động lại Cam Studio", () => DispatcherQueue.TryEnqueue(RestartApp)));
         items.Add(new("Thoát", () => DispatcherQueue.TryEnqueue(ExitApp)));
         return items;
     }
@@ -334,6 +388,7 @@ public sealed partial class MainWindow : Window
         ContrastSlider.Value = _settings.Contrast;
         SaturationSlider.Value = _settings.Saturation;
         TemperatureSlider.Value = _settings.Temperature;
+        UpdateColorUi();
         ThemeCombo.SelectedIndex = _settings.Theme;
         AutostartToggle.IsOn = Autostart.IsEnabled;
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
@@ -721,26 +776,28 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            FacingButton.Visibility = Visibility.Collapsed;
+            FacingButton.Visibility = FlashButton.Visibility = ExposureButton.Visibility = Visibility.Collapsed;
         }
         ConfigureZoomSlider();
         UpdateOverlayVisibility();
         if (_phoneOpen) BuildPhoneControls(); // another lens: other controls
     }
 
-    // The Camera tab shows what this source has: lenses and light for a phone, zoom for any
-    // running source, the manual controls once the phone's caps are known.
+    // What this source has: the camera bar under the preview (a phone's lenses, front / back,
+    // flash, exposure), zoom for any running source, the manual controls once the phone's caps
+    // are known.
     private void UpdateOverlayVisibility()
     {
         var status = Engine.GetStatus();
         bool running = (EngineState)status.State == EngineState.Running && status.NoSource == 0;
         // A phone keeps its lens chips while stopped, so a lens can be picked
         // (or a failed one left) before starting.
-        bool lensPicker = _isPhone && (LensChips.Children.Count > 0 || FacingButton.Visibility == Visibility.Visible);
-        LensSection.Visibility = lensPicker ? Visibility.Visible : Visibility.Collapsed;
+        bool chips = _isPhone && LensChips.Children.Count > 0;
+        bool tools = _isPhone && (FacingButton.Visibility == Visibility.Visible || FlashButton.Visibility == Visibility.Visible ||
+                                  ExposureButton.Visibility == Visibility.Visible);
+        CameraBar.Visibility = chips || tools ? Visibility.Visible : Visibility.Collapsed;
+        BarDivider.Visibility = chips && tools ? Visibility.Visible : Visibility.Collapsed;
         ZoomGroup.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        LightSection.Visibility = running && _isPhone && (FlashButton.Visibility == Visibility.Visible || ExposureButton.Visibility == Visibility.Visible)
-            ? Visibility.Visible : Visibility.Collapsed;
         ManualSection.Visibility = _isPhone && _phoneCaps is not null ? Visibility.Visible : Visibility.Collapsed;
         // Not UpdatePaneActivity: it calls UpdateStatus, which calls here.
         _phoneOpen = InspectorPane.Visibility == Visibility.Visible && ManualSection.IsExpanded && ManualSection.Visibility == Visibility.Visible;
@@ -1144,16 +1201,61 @@ public sealed partial class MainWindow : Window
         _settings.Contrast = (int)ContrastSlider.Value;
         _settings.Saturation = (int)SaturationSlider.Value;
         _settings.Temperature = (int)TemperatureSlider.Value;
+        UpdateColorUi();
         PushImage();
     }
 
-    private void AdjustReset_Click(object sender, RoutedEventArgs e)
+    private void AdjustReset_Click(object sender, RoutedEventArgs e) => ApplyColor(0, 0, 0, 0);
+
+    // A preset is just the four slider values, in its Tag: "brightness,contrast,saturation,temperature".
+    private void Preset_Click(object sender, RoutedEventArgs e)
     {
+        if (sender is not FrameworkElement { Tag: string tag }) return;
+        int[] v = Array.ConvertAll(tag.Split(','), int.Parse);
+        ApplyColor(v[0], v[1], v[2], v[3]);
+    }
+
+    private void ApplyColor(int brightness, int contrast, int saturation, int temperature)
+    {
+        bool was = _loading;
         _loading = true;
-        BrightnessSlider.Value = ContrastSlider.Value = SaturationSlider.Value = TemperatureSlider.Value = 0;
-        _loading = false;
-        _settings.Brightness = _settings.Contrast = _settings.Saturation = _settings.Temperature = 0;
+        BrightnessSlider.Value = brightness;
+        ContrastSlider.Value = contrast;
+        SaturationSlider.Value = saturation;
+        TemperatureSlider.Value = temperature;
+        _loading = was;
+        _settings.Brightness = brightness;
+        _settings.Contrast = contrast;
+        _settings.Saturation = saturation;
+        _settings.Temperature = temperature;
+        UpdateColorUi();
         PushImage();
+    }
+
+    private static string Signed(int v) => v > 0 ? $"+{v}" : v < 0 ? $"−{-v}" : "0";
+
+    // The values beside the sliders, the preset that matches (checked, and named in the folded
+    // header), or "Tùy chỉnh".
+    private void UpdateColorUi()
+    {
+        BrightnessValue.Text = Signed(_settings.Brightness);
+        ContrastValue.Text = Signed(_settings.Contrast);
+        SaturationValue.Text = _settings.Saturation <= -100 ? "Đen trắng" : Signed(_settings.Saturation);
+        TemperatureValue.Text = _settings.Temperature switch
+        {
+            > 0 => $"Ấm {Signed(_settings.Temperature)}",
+            < 0 => $"Lạnh {Signed(_settings.Temperature)}",
+            _ => "Trung tính",
+        };
+        string current = $"{_settings.Brightness},{_settings.Contrast},{_settings.Saturation},{_settings.Temperature}";
+        string? name = null;
+        foreach (var chip in PresetGrid.Children.OfType<ToggleButton>())
+        {
+            bool match = (string)chip.Tag == current;
+            chip.IsChecked = match;
+            if (match) name = ToolTipService.GetToolTip(chip) as string;
+        }
+        ColorSummary.Text = name ?? "Tùy chỉnh";
     }
 
     // The zoom and centre the engine shows now: automatic framing's while it runs, else the user's.
@@ -1294,28 +1396,33 @@ public sealed partial class MainWindow : Window
     private void UpdateAutoFrameHint()
     {
         ZoomSlider.IsEnabled = !AutoFramingOwnsZoom; // the source may have changed since
-        string text;
+        // A short status line; the detail (the crop's size) in its tooltip.
+        string text, detail = "";
         if (!_settings.AutoFrame)
-            text = "Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Chỉ chạy khi đang có hình.";
+            text = "";
         else if (!FramingSource)
-            text = "Chỉ dùng cho webcam và camera điện thoại, không dùng cho màn hình hay cửa sổ.";
+            text = "Chỉ cho webcam và camera điện thoại";
         else
         {
             var f = Engine.GetFraming();
             var s = Engine.GetStatus();
             if (f.Available == 0)
-                text = "Windows trên máy này không có nhận diện khuôn mặt (bản N cần Media Feature Pack).";
+            {
+                text = "Windows thiếu nhận diện khuôn mặt";
+                detail = "Bản Windows N cần cài Media Feature Pack.";
+            }
             else if (f.Available < 0)
-                text = "Nhận diện khuôn mặt bị lỗi nhiều lần. Tắt rồi bật lại Tự căn khung để thử lại.";
+                text = "Lỗi nhận diện: tắt rồi bật lại";
             else if (f.Active == 0 || s.PictureWidth == 0 || s.PictureHeight == 0)
-                text = "Bắt đầu khi có hình.";
+                text = "Chờ có hình";
             else
             {
                 int cw = (int)Math.Round(s.PictureWidth / f.Zoom), ch = (int)Math.Round(s.PictureHeight / f.Zoom);
-                string who = f.Faces switch { 0 => "Không thấy ai", 1 => "Đang theo 1 người", _ => $"Đang theo {f.Faces} người" };
-                text = $"{who} · {f.Zoom:0.0}× · dùng {cw} × {ch} của {s.PictureWidth} × {s.PictureHeight}";
-                if (Math.Min(cw, ch) >= 720) text += " · nét";
-                else if (HasLargerMode(s)) text += ". Chọn độ phân giải lớn hơn (như 4K) để zoom nét hơn.";
+                string who = f.Faces switch { 0 => "Không thấy ai", _ => $"{f.Faces} người" };
+                bool sharp = Math.Min(cw, ch) >= 720;
+                text = $"{who} · {f.Zoom:0.0}×{(sharp ? " · nét" : "")}";
+                detail = $"Dùng {cw} × {ch} của {s.PictureWidth} × {s.PictureHeight}.";
+                if (!sharp && HasLargerMode(s)) detail += " Chọn độ phân giải lớn hơn (như 4K) để zoom nét hơn.";
                 if (AutoFramingOwnsZoom)
                 {
                     bool was = _loading;
@@ -1326,7 +1433,9 @@ public sealed partial class MainWindow : Window
                 }
             }
         }
-        AutoFrameHint.Text = text;
+        if (AutoFrameHint.Text != text) AutoFrameHint.Text = text;
+        AutoFrameHint.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(AutoFrameHint, detail.Length > 0 ? detail : null);
     }
 
     // This source (this lens, for a phone) has a mode with more pixels than the one in use.
@@ -1411,6 +1520,7 @@ public sealed partial class MainWindow : Window
     {
         double w = e.NewSize.Width;
         SourcesColumn.Width = new GridLength(w < 980 ? 228 : 284);
+        SettingsLabel.Visibility = w < 980 ? Visibility.Collapsed : Visibility.Visible; // the icon alone fits
         if (!_inspectorByUser) ShowInspector(w >= 1180);
     }
 
@@ -1572,10 +1682,8 @@ public sealed partial class MainWindow : Window
         PlaceholderHint.Visibility = howTo;
         PlaceholderAdd.Visibility = howTo;
         UpdateSelectedSubtitle(s);
-        // What the folded sections hold, at a glance.
+        // What the folded section holds, at a glance.
         DetailsSummary.Text = running ? $"{s.Fps:0} fps · {s.Width} × {s.Height}" : "";
-        ColorSummary.Text = _settings.Brightness != 0 || _settings.Contrast != 0 || _settings.Saturation != 0 || _settings.Temperature != 0
-            ? "Đã chỉnh" : "";
 
         // The camera-usage list reads the registry: refresh it every 3 s, or
         // every tick while the details are open.
