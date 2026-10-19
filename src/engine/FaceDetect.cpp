@@ -13,6 +13,7 @@
 #include <winrt/Windows.Media.h>
 #include <winrt/Windows.Media.FaceAnalysis.h>
 
+#include <chrono>
 #include <cstring>
 
 #pragma comment(lib, "windowsapp")
@@ -149,6 +150,12 @@ void FaceDetector::Worker()
                     buffer.Close();
                 }
                 const winrt::Windows::Media::VideoFrame frame = winrt::Windows::Media::VideoFrame::CreateWithSoftwareBitmap(bitmap);
+                // The tracker follows faces over time and needs each frame's time; without it,
+                // ProcessNextFrameAsync fails with E_FAIL on every frame (measured 2026-10-19).
+                const auto now = std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(
+                    std::chrono::steady_clock::now().time_since_epoch());
+                frame.RelativeTime(now);
+                frame.SystemRelativeTime(now);
                 for (const faces::DetectedFace& face : tracker.ProcessNextFrameAsync(frame).get())
                 {
                     const imaging::BitmapBounds b = face.FaceBox();

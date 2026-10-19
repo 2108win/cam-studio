@@ -25,7 +25,7 @@ it once everything is tested.
 | auto/busy/ping | yes | auto yes; busy (two PCs) **no** |
 | PC connector, seamless switch, size "Tự động" | yes | yes (with `camstudio-verify`, not Discord) |
 | PC window as the camera source | yes | yes (test window) |
-| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | **compiled on Windows 2026-10-19** (engine + app, 0 warnings) | `framing-check` 37/0, `frame-check` 375/0, protocol ALL PASS on Windows; **not run on a device** |
+| **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | **compiled on Windows 2026-10-19** (engine + app, 0 warnings) | `framing-check` 37/0, `frame-check` 375/0, protocol ALL PASS; **OBSBOT: follows a face** (1.1× at 1080p, "nét"), Redmi with nobody in view: "Không thấy ai". Fix needed first: FaceTracker wants `RelativeTime` on each frame, else E_FAIL every frame |
 | PC camera always on, automatic source pick | yes | yes |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
@@ -51,7 +51,7 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-- **"Tự căn khung" on Windows (first):** built 2026-10-19, checks pass; still to try on a device: turn it on with the
+- **"Tự căn khung" on Windows:** built and seen working 2026-10-19 (OBSBOT, dev build run from `app/bin`). Still to try: the
   OBSBOT and a phone at 4K: it follows a face, goes wide after ~4 s with nobody, the hint shows
   the crop size. Measure "Chi tiết › Cam Studio dùng" (the whole app; the tracker has its own
   thread) and `processMs` with it off and on, at 4K and 1080p (framed means a crop-scale every
