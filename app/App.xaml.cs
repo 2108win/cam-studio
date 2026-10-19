@@ -17,18 +17,20 @@ public partial class App : Application
     {
         // Command line: --device <index|name> selects a camera and starts it;
         // --tray starts hidden and resumes the last camera (autostart);
-        // --updated: opened again by the installer after an update.
+        // --updated: opened again by the installer after an update;
+        // --after <pid>: "Khởi động lại" (Program.Main waited for that process).
         string? device = null;
-        bool tray = false, updated = false;
+        bool tray = false, updated = false, restarted = false;
         string[] argv = Environment.GetCommandLineArgs();
         for (int i = 1; i < argv.Length; i++)
         {
             if (argv[i] == "--device" && i + 1 < argv.Length) device = argv[++i];
             else if (argv[i] == "--tray") tray = true;
             else if (argv[i] == "--updated") updated = true;
+            else if (argv[i] == "--after") restarted = true;
         }
 
-        _window = new MainWindow(new MainWindow.LaunchOptions(device, tray, updated));
+        _window = new MainWindow(new MainWindow.LaunchOptions(device, tray, updated, restarted));
         if (!tray) _window.Activate();
 
         // A second launch redirects here: bring the window forward.

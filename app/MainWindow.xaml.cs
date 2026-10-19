@@ -22,7 +22,7 @@ namespace CamStudio;
 
 public sealed partial class MainWindow : Window
 {
-    public sealed record LaunchOptions(string? Device, bool Tray, bool Updated = false);
+    public sealed record LaunchOptions(string? Device, bool Tray, bool Updated = false, bool Restarted = false);
 
     private sealed record FormatItem(int Index, CsFormat Format)
     {
@@ -78,7 +78,8 @@ public sealed partial class MainWindow : Window
 
         // Started with Windows (--tray): look for phones only after 20 s, so the PC boots first.
         // The camera itself is registered at once (cheap).
-        int hr = Engine.cs_init_delayed(options.Tray ? 20000 : 0);
+        // At login (--tray) phones are looked for after 20 s; a restart wants its picture back now.
+        int hr = Engine.cs_init_delayed(options.Tray && !options.Restarted ? 20000 : 0);
         if (hr < 0) throw new InvalidOperationException($"Engine init failed 0x{hr:X8}");
         Engine.cs_set_output_size(_settings.OutputSize);
         Engine.cs_set_auto_frame(_settings.AutoFrame ? 1 : 0);

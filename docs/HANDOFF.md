@@ -27,6 +27,7 @@ it once everything is tested.
 | PC window as the camera source | yes | yes (test window) |
 | **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | **compiled on Windows 2026-10-19** (engine + app, 0 warnings) | `framing-check` 37/0, `frame-check` 375/0, protocol ALL PASS; **OBSBOT: follows a face** (1.1× at 1080p, "nét"), Redmi with nobody in view: "Không thấy ai". Fix needed first: FaceTracker wants `RelativeTime` on each frame, else E_FAIL every frame |
 | PC camera always on, automatic source pick | yes | yes |
+| PC UI 2026-10-19: device cards, camera bar under the preview, colour presets, (i) help, **Khởi động lại** | yes | dev build: dark + light theme, 960 px window, presets, restart (visible, hidden `--tray`, and during a Discord call: Discord then needs its camera off/on once, picture back at once) |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
@@ -68,8 +69,10 @@ it once everything is tested.
 3. **Discord call:** turn the phone, switch sources, pause. **Seen 2026-10-19:** the phone turned
    portrait → landscape in a call keeps the portrait camera (fitted, `PlanOutput` with
    `consumerHolds`), so Discord shows a letterboxed/cropped landscape picture. A new size needs a
-   rebuild, which Discord does not survive. **The user chose a fixed 1080p** (Settings, like Camo):
-   verified in a Discord call 2026-10-19, the landscape picture fills the tile. A new size applies
+   rebuild, which Discord does not survive. **The user chose a fixed 1080p** (Settings, like Camo).
+   Verified 2026-10-19 (Redmi, dev build): with no app on it, a portrait picture keeps the camera
+   at 1920×1080 (no rebuild); in Discord portrait shows with side bars, landscape fills the tile,
+   the camera never drops. The size had been found back at "Tự động" once (cause unknown). A new size applies
    only once Discord has let go for 5 s (`kConsumerGraceMs`): toggling the camera off and on
    quickly keeps the old size, which is what confused the user first.
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
