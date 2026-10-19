@@ -52,9 +52,9 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-- **v0.1.7** (2026-10-19): built (`build/dist/CamStudio-Setup-0.1.7.exe`) and installed on the
-  user's PC, **not published** on GitHub (so no automatic update reaches anyone yet). Publish
-  with `scripts/publish-release.py` once the user says so.
+- **v0.1.7 published** (2026-10-20, tag on 9bdd907): installed on the user's PC; GitHub
+  `releases/latest` is v0.1.7, both digests match. Installed 0.1.6 PCs and the Redmi update
+  themselves from it (not yet watched on a device: the Redmi's update path is still untested).
 
 - **"Tự căn khung" on Windows:** built and seen working 2026-10-19 (OBSBOT, dev build run from `app/bin`). Still to try: the
   OBSBOT and a phone at 4K: it follows a face, goes wide after ~4 s with nobody, the hint shows
