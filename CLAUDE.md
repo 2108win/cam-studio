@@ -207,7 +207,9 @@ Windows 11.
 - **Tested** on Windows 11 only, through the forced path: x64 and x86 filters deliver live
   NV12/YUY2/I420 (consumer `--grab`), and the MF path still passes `camstudio-verify` (180/180 live).
   **Not tested on a real Windows 10 PC**, but **published in v0.1.6** (installer built here and
-  installed on the user's Win11 PC; the iPhone then streamed 2K/60). The `DllCanUnloadNow` is `S_FALSE`, so
+  installed on the user's Win11 PC; the iPhone then streamed 2K/60). **v0.1.7** (2026-10-19: new PC
+  interface, colour presets, restart button, face framing) is built and installed on the user's
+  PC, not published. The `DllCanUnloadNow` is `S_FALSE`, so
   once anything (even the Claude desktop app's device enumeration) loads the registered filter DLL it
   stays mapped and locks the file: rename the DLL aside before rebuilding, or unregister first.
 - **iPhone pairing (same day):** when the PC and phone hold **different** pairing keys (app

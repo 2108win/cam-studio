@@ -52,6 +52,10 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
+- **v0.1.7** (2026-10-19): built (`build/dist/CamStudio-Setup-0.1.7.exe`) and installed on the
+  user's PC, **not published** on GitHub (so no automatic update reaches anyone yet). Publish
+  with `scripts/publish-release.py` once the user says so.
+
 - **"Tự căn khung" on Windows:** built and seen working 2026-10-19 (OBSBOT, dev build run from `app/bin`). Still to try: the
   OBSBOT and a phone at 4K: it follows a face, goes wide after ~4 s with nobody, the hint shows
   the crop size. Measure "Chi tiết › Cam Studio dùng" (the whole app; the tracker has its own
