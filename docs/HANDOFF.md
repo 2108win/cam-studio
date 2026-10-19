@@ -68,8 +68,10 @@ it once everything is tested.
 3. **Discord call:** turn the phone, switch sources, pause. **Seen 2026-10-19:** the phone turned
    portrait → landscape in a call keeps the portrait camera (fitted, `PlanOutput` with
    `consumerHolds`), so Discord shows a letterboxed/cropped landscape picture. A new size needs a
-   rebuild, which Discord does not survive. Open: the user picks between keeping this, a fixed
-   landscape size (Settings › 1080p), or a rebuild on rotation (the app must re-enable the camera).
+   rebuild, which Discord does not survive. **The user chose a fixed 1080p** (Settings, like Camo):
+   verified in a Discord call 2026-10-19, the landscape picture fills the tile. A new size applies
+   only once Discord has let go for 5 s (`kConsumerGraceMs`): toggling the camera off and on
+   quickly keeps the old size, which is what confused the user first.
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
 5. **iPhone:** Apple Devices on Windows. PiP: install TestFlight build 20261018.1756 (it has PiP)
    or `scripts/ios-run.sh` on the Mac (ask first: it replaces the TestFlight install).
