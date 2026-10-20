@@ -34,9 +34,9 @@ it once everything is tested.
 | PC "Làm mịn da" (faces, guided filter) | yes | `frame-check` 379/0 (4 new); **not seen on a real face** |
 | PC: a hot phone drops to 1080p30 / 720p30 (`state.thermal`) | yes | fake phone `--thermal serious`: 720p60 → 720p30, warning; "Quên ghép đôi" on the fake phone: key gone, camera moved to the webcam; **not on a real hot phone** |
 | PC snapshot (PNG) and recording (MP4 H.264 + mic AAC) of the camera's picture | yes | OBSBOT: PNG 1920×1080, MP4 4.4 s and 17.7 s with the window hidden (~50 fps, sound track); **not tried: a phone source, paused while recording, no microphone, Windows 10** |
-| PC phone-app QR ("+" › Tải app cho điện thoại…, empty preview) | yes | encoder vectors pass, dialog seen; **not scanned with a phone yet** |
+| PC phone-app QR ("+" › Tải app cho điện thoại…, empty preview) | yes | 16/16 codes (versions 1–10, Vietnamese text) read back by zxing-cpp; **not scanned with a phone camera** |
 | PC pause picture (blurred last picture + text, card, own image, no signal) | yes | blurred card seen through `camstudio-verify --dump` (29 fps, 0 no-signal), resume live; **card / own image / Windows 10 path not looked at** |
-| PC global shortcuts (Ctrl+Alt+P pause, Ctrl+Alt+N next source; Settings › Phím tắt) | yes | pause/resume by shortcut, recording a new one; **not tried with the window hidden in a Discord call** |
+| PC global shortcuts (P pause, N next, C snapshot, R record, B effects, with Ctrl+Alt) | yes | hidden: with `camstudio-verify --hold` on the camera (no frame lost) and in standby (snapshot woke the webcam); a taken combination (Zalo's Ctrl+Alt+S) shows the warning. **Not in a real Discord call** |
 | PC source list: working sources first, "Chưa kết nối" below; right-click "Quên ghép đôi…" / "Xóa khỏi danh sách"; add by IP without a port | yes | order, menu, add + remove a test IP; **"Quên ghép đôi" not run** (needs re-pairing a real phone) |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |

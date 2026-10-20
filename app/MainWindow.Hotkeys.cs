@@ -27,7 +27,7 @@ public sealed partial class MainWindow
     {
         new(1, "Pause", "Tạm dừng / phát hình", Ctrl_Alt('P'), TogglePauseFromHotkey),
         new(2, "NextSource", "Chuyển sang nguồn kế tiếp", Ctrl_Alt('N'), NextSourceFromHotkey),
-        new(3, "Snapshot", "Chụp ảnh", Ctrl_Alt('S'), () => _ = TakeSnapshotAsync()),
+        new(3, "Snapshot", "Chụp ảnh", Ctrl_Alt('C'), () => _ = TakeSnapshotAsync()),
         new(4, "Record", "Bắt đầu / dừng ghi hình", Ctrl_Alt('R'), () => _ = ToggleRecordingAsync()),
         new(5, "Background", "Bật / tắt hiệu ứng nền", Ctrl_Alt('B'), ToggleBackgroundFromHotkey),
     };

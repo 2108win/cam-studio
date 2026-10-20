@@ -452,7 +452,7 @@ Windows 11.
   100 fps webcam gives ~50). A recording or a snapshot keeps the source out of standby
   (`SourceWanted`); paused, the pause picture is recorded. The microphone thread is never shut
   down while it reads (that hung `Stop`): it gets 1 s to see the stop flag. Updates wait for a
-  recording to end. Ctrl+Alt+S / Ctrl+Alt+R, the tray.
+  recording to end. Ctrl+Alt+C / Ctrl+Alt+R, the tray (not Ctrl+Alt+S: Zalo takes it).
 - **Phone app QR** (2026-10-20, `QrCode.cs`, `MainWindow.Download.cs`): our own encoder (byte mode,
   level M, versions 1–10), checked against Thonky's HELLO WORLD Reed–Solomon codewords and the
   ISO format strings. It encodes the GitHub `releases/latest` page (the APK's name has the
@@ -466,6 +466,11 @@ Windows 11.
   on a message-only window, so they work hidden and in a call. Ctrl+Alt+letter by default
   (Settings › Phím tắt: change, Backspace = off, a taken combination says so). Unregistered while
   a row records a new one. Hidden: a silent tray notification says what happened.
+  Testing with injected keys (keybd_event): a remote-desktop app in front (UltraViewer on the
+  user's PC) swallows Ctrl+Alt combos, so put a window of your own in front first. Zalo owns
+  Ctrl+Alt+S. Verified 2026-10-20: hidden + standby, Ctrl+Alt+C woke the webcam and saved a PNG
+  in 2.4 s; with `camstudio-verify --hold` as the app on the camera, pause/resume/record kept
+  1350/1350 live frames.
 - **List order and forgetting** (2026-10-20): sources that work first, phones that can't be used
   now under "Chưa kết nối". Right-click a phone: "Quên ghép đôi…" (deletes the key, closes its
   idle links) and "Xóa khỏi danh sách" (added by IP): `cs_phone_flags` / `cs_forget_phone`. A
