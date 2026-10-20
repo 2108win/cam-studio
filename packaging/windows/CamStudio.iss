@@ -68,7 +68,11 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; Flags: unchecked
 Name: "autostart"; Description: "{cm:StartWithWindows}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}\App"; Excludes: "CamStudioVCam.dll,CamStudioDShow64.dll,CamStudioDShow32.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}\App"; Excludes: "CamStudioVCam.dll,CamStudioDShow64.dll,CamStudioDShow32.dll,\adb\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; adb only when it changed: an adb server still running from App\adb (restarted by any adb client
+; after StopCameraUsers) locks adb.exe, and a file that cannot be replaced aborts the whole update
+; (2026-10-20: rolled back 0.1.8 on the user's PC, leaving new files out).
+Source: "{#SourceDir}\adb\*"; DestDir: "{app}\App\adb"; Flags: comparetimestamp recursesubdirs createallsubdirs
 ; The virtual camera lives next to the app folder and is registered for Frame Server
 ; (regserver = regsvr32 on install, unregister on uninstall). Windows 11 only.
 Source: "{#SourceDir}\CamStudioVCam.dll"; DestDir: "{app}"; Flags: ignoreversion regserver 64bit; Check: IsWindows11

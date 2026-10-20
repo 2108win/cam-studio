@@ -161,6 +161,11 @@ UAC, and the Android install path (needs a release newer than 0.1.4). **v0.1.5**
 tested the same way with its real setup and published; the PC updated itself to it.
 
 Gotchas:
+- **Never call the installed `Appdbdb.exe` while an update installs** (e.g. a loop watching the
+  phone): it restarts the adb server, the installer cannot replace adb.exe, and Inno rolls the
+  update back half-done (new files gone, the exe already new). That broke the 0.1.7 → 0.1.8
+  update on 2026-10-20; reinstalling with nothing touching adb fixed it. Since then adb is
+  installed only when it changed (`comparetimestamp`). Read Inno's log with `/LOG=<file>`.
 - The computer-use tool minimizes windows of apps it is not allowed to control, and Windows
   sends no frames for a minimized window: test the window source with a window you may control.
 - Windows keeps camera "in use" entries of apps killed while using it (and of old Discord

@@ -63,7 +63,9 @@ it once everything is tested.
 ## 3. Next steps (need someone at the phone or PC)
 
 - **v0.1.8 published** (2026-10-20, tag on d7ac5cd): both digests match; the installed 0.1.7
-  saw it within seconds ("Sẽ cập nhật lên 0.1.8 sau 15 giây"). The Redmi should offer it too.
+  saw it within seconds and updated, but the install rolled back half-done (adb.exe locked by a
+  test loop of ours, see CLAUDE.md Gotchas); reinstalled with `/LOG`: succeeded, 0.1.8 running.
+  The installer now skips an unchanged adb (next release). The Redmi should offer 0.1.8 too.
 - **v0.1.7 published** (2026-10-20, tag on 9bdd907): installed on the user's PC; GitHub
   `releases/latest` is v0.1.7, both digests match. Installed 0.1.6 PCs and the Redmi update
   themselves from it (not yet watched on a device: the Redmi's update path is still untested).
