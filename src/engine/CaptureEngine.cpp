@@ -1,4 +1,5 @@
 #include "CaptureEngine.h"
+#include "StillPicture.h"
 #include "AutoFrame.h"
 #include "FaceDetect.h"
 #include "FrameWriter.h"
@@ -192,6 +193,29 @@ public:
     }
 
     const std::wstring& Failure() const { return m_failure; }
+
+    // The camera's frame size now: what a still picture is rendered at.
+    uint32_t OutWidth()
+    {
+        m_writer.TryOpen();
+        return m_writer.Width();
+    }
+    uint32_t OutHeight() const { return m_writer.Height(); }
+
+    // A still picture (NV12, OutWidth x OutHeight) straight to the camera, as it is.
+    void WriteStill(const uint8_t* nv12, uint32_t w, uint32_t h)
+    {
+        m_writer.TryOpen();
+        if (!m_writer.IsOpen()) return;
+        m_writer.Write(nv12, static_cast<long>(w), w, h);
+        m_lastWriteTick = GetTickCount64();
+    }
+
+    bool CopyLatest(std::vector<uint8_t>& out, uint32_t& w, uint32_t& h)
+    {
+        m_writer.TryOpen();
+        return m_writer.CopyLatest(out, w, h);
+    }
 
     // Keeps the last picture on the camera while the next source opens (see FrameWriter::HoldFor).
     void Hold() { m_writer.HoldFor(kHoldMs); }
@@ -664,6 +688,16 @@ CaptureEngine::Status CaptureEngine::GetStatus() const
     return s;
 }
 
+void CaptureEngine::SetPausePicture(PauseKind kind, const std::wstring& text, const std::wstring& path)
+{
+    std::lock_guard lk(m_lock);
+    if (m_pause.kind == kind && m_pause.text == text && m_pause.path == path) return;
+    m_pause.kind = kind;
+    m_pause.text = text;
+    m_pause.path = path;
+    ++m_pause.gen;
+}
+
 CaptureEngine::Framing CaptureEngine::GetFraming() const
 {
     std::lock_guard lk(m_lock);
@@ -865,8 +899,13 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
             if (IsNoSource(cam))
             {
                 // No source (none found yet, or the picture is turned off): the camera stays
-                // registered, at the size it has, and apps that use it see "no signal". Only
-                // whether an app streams from it is watched (the app looks for a source then).
+                // registered, at the size it has, and apps that use it see "no signal", or the
+                // pause picture the app set. Only whether an app streams from it is watched
+                // (the app looks for a source then).
+                // The last picture, before anything else is written: a blurred pause picture.
+                std::vector<uint8_t> last;
+                uint32_t lastW = 0, lastH = 0;
+                if (!pipeline.CopyLatest(last, lastW, lastH)) last.clear();
                 if (!pipeline.Live())
                 {
                     const HRESULT hr = pipeline.Begin(format.width, format.height, format.fpsNum, format.fpsDen, MFVideoFormat_NV12);
@@ -882,17 +921,52 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                     m_status.fps = 0;
                 }
                 Notify();
+                std::vector<uint8_t> still;   // the pause picture, NV12 at the camera's size
+                uint32_t stillW = 0, stillH = 0, stillGen = ~0u;
+                ULONGLONG stillWritten = 0;
                 while (!Interrupted())
                 {
                     pipeline.Tick(); // a new size setting applies with no source too
                     const bool consumer = pipeline.ConsumerActive();
                     bool changed = false;
+                    PausePicture pause;
                     {
                         std::lock_guard lk(m_lock);
                         changed = m_status.consumerActive != consumer;
                         m_status.consumerActive = consumer;
+                        pause = m_pause;
                     }
                     if (changed) Notify();
+                    if (pause.kind != PauseKind::NoSignal)
+                    {
+                        // Rendered once per setting and size; written twice a second while an
+                        // app streams, else often enough to stay fresh (readers allow 2 s).
+                        const uint32_t w = pipeline.OutWidth(), h = pipeline.OutHeight();
+                        if (w && h && (pause.gen != stillGen || w != stillW || h != stillH))
+                        {
+                            stillGen = pause.gen;
+                            stillW = w;
+                            stillH = h;
+                            bool ok = false;
+                            if (pause.kind == PauseKind::Image) ok = still::LoadImageFill(pause.path, w, h, still);
+                            if (!ok)
+                                ok = still::RenderCard(pause.text, w, h, pause.kind == PauseKind::Blur && !last.empty() ? last.data() : nullptr,
+                                                       lastW, lastH, still);
+                            if (!ok) still.clear();
+                            stillWritten = 0;
+                        }
+                        const ULONGLONG now = GetTickCount64();
+                        if (!still.empty() && now - stillWritten >= (consumer ? 500u : 1500u))
+                        {
+                            pipeline.WriteStill(still.data(), stillW, stillH);
+                            stillWritten = now;
+                        }
+                    }
+                    else if (!still.empty())
+                    {
+                        still.clear(); // back to "no signal" in 2 s
+                        stillGen = ~0u;
+                    }
                     Sleep(200);
                 }
                 continue;

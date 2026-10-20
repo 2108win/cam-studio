@@ -39,12 +39,13 @@ add_library(CamStudioEngine SHARED
     src/engine/ScreenViewer.cpp
     src/engine/WindowSource.cpp
     src/engine/FaceDetect.cpp
+    src/engine/StillPicture.cpp
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)
 # mfsensorgroup (MFCreateVirtualCamera, Windows 11) is loaded at run time: see VirtualCameraApi().
 target_link_libraries(CamStudioEngine PRIVATE mfplat mfuuid mf mfreadwrite ole32 ws2_32 dnsapi bcrypt crypt32 cfgmgr32
-    windowsapp d3d11 dxgi dwmapi)
+    windowsapp d3d11 dxgi dwmapi d2d1 dwrite windowscodecs)
 # C++/WinRT is used in WindowSource.cpp (Windows.Graphics.Capture) and FaceDetect.cpp (FaceTracker) only.
 set_source_files_properties(src/engine/WindowSource.cpp src/engine/FaceDetect.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
 

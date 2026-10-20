@@ -296,6 +296,7 @@ public sealed partial class MainWindow
                        DeviceName(_cameras[_camera]) == name;
         if (current)
         {
+            ApplyPausePicture(paused: false);
             int sid = Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
             if (sid > 0) _expectSourceId = sid;
             _noSource = true;

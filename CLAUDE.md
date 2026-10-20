@@ -433,6 +433,11 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Pause picture** (2026-10-20, `StillPicture.cpp`, `MainWindow.Pause.cs`): while paused, apps see
+  the last picture blurred with "Quay lại ngay" (default), a card, the person's image (copied to
+  `%LOCALAPPDATA%\CamStudio\pause-image.*`) or the old "no signal". The app calls
+  `cs_set_pause_picture` before every `cs_switch_none` (NoSignal unless paused); the engine renders
+  it once (Direct2D) and writes it twice a second with an app on the camera, every 1.5 s without.
 - **Global shortcuts** (2026-10-20, `MainWindow.Hotkeys.cs`, `GlobalHotkeys.cs`): `RegisterHotKey`
   on a message-only window, so they work hidden and in a call. Ctrl+Alt+letter by default
   (Settings › Phím tắt: change, Backspace = off, a taken combination says so). Unregistered while

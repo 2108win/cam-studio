@@ -570,6 +570,12 @@ CS_API void cs_set_auto_frame(int32_t enabled)
     if (g_engine) g_engine->SetAutoFrame(enabled != 0);
 }
 
+CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_t* imagePath)
+{
+    if (!g_engine) return;
+    g_engine->SetPausePicture(static_cast<CaptureEngine::PauseKind>(std::clamp(kind, 0, 3)), text ? text : L"", imagePath ? imagePath : L"");
+}
+
 CS_API void cs_get_framing(CsFraming* out)
 {
     if (!out) return;

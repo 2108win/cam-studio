@@ -153,6 +153,14 @@ CS_API void cs_set_output_size(int32_t mode);
 // centre of CsImage while on. Runs only while the picture goes somewhere (an app on the camera,
 // or the preview on screen); off, it costs nothing.
 CS_API void cs_set_auto_frame(int32_t enabled);
+
+// What apps see while the camera has no source. The app sets it before pausing the picture
+// (cs_switch_none) and back to CS_PAUSE_NO_SIGNAL otherwise. Rendered once, not per frame.
+#define CS_PAUSE_NO_SIGNAL 0 // the camera's own grey "no signal"
+#define CS_PAUSE_CARD 1      // text (e.g. "Quay lại ngay") on a dark card
+#define CS_PAUSE_BLUR 2      // the last picture, blurred, with the text on it
+#define CS_PAUSE_IMAGE 3     // an image file filling the frame (the card if it can't be read)
+CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_t* imagePath);
 struct CsFraming
 {
     double zoom;          // the view shown now (1 .. maxZoom)

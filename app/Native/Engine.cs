@@ -135,6 +135,7 @@ internal static unsafe partial class Engine
     public const int PhoneManual = 1, PhonePaired = 2; // cs_phone_flags
     [LibraryImport(Dll)] public static partial int cs_phone_flags(int camera);
     [LibraryImport(Dll)] public static partial void cs_forget_phone(int camera, int what);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_pause_picture(int kind, string text, string imagePath);
     [LibraryImport(Dll)] public static partial int cs_start(int camera, int format, CsImage* image);
     [LibraryImport(Dll)] public static partial int cs_switch(int camera, int format, CsImage* image);
     [LibraryImport(Dll)] public static partial void cs_set_output_size(int mode);

@@ -675,6 +675,26 @@
                         <x:String>1080p · 1920 × 1080</x:String>
                         <x:String>720p · 1280 × 720</x:String>
                     </ComboBox>
+                    <!-- What apps see while paused (MainWindow.Pause.cs). -->
+                    <ComboBox x:Name="PauseKindCombo" Header="Khi tạm dừng hình, ứng dụng thấy" HorizontalAlignment="Stretch"
+                              SelectionChanged="PauseKindCombo_SelectionChanged">
+                        <x:String>Màn hình “không có tín hiệu”</x:String>
+                        <x:String>Thẻ chữ</x:String>
+                        <x:String>Hình cuối làm mờ, kèm chữ</x:String>
+                        <x:String>Ảnh của bạn</x:String>
+                    </ComboBox>
+                    <TextBox x:Name="PauseTextBox" Header="Chữ trên ảnh" PlaceholderText="Quay lại ngay" MaxLength="60"
+                             TextChanged="PauseTextBox_TextChanged" />
+                    <StackPanel x:Name="PauseImageRow" Orientation="Horizontal" Spacing="12">
+                        <Button Click="PauseImage_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconImage}" FontSize="16" />
+                                <TextBlock Text="Chọn ảnh…" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock x:Name="PauseImageName" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="260" />
+                    </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,16,0,0">
                         <TextBlock Text="Phím tắt" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />

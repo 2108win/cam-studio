@@ -132,6 +132,19 @@ public:
         if (m_event) SetEvent(m_event);
     }
 
+    // The latest picture on the camera (NV12, contiguous w x h): the paused camera blurs it.
+    bool CopyLatest(std::vector<uint8_t>& out, uint32_t& w, uint32_t& h) const
+    {
+        if (!m_header || !m_header->latest) return false;
+        w = m_header->width;
+        h = m_header->height;
+        if (!w || !h || CamStudioNv12Bytes(w, h) > m_header->frameBytes) return false;
+        out.resize(CamStudioNv12Bytes(w, h));
+        Nv12Scale(CamStudioSlot(m_header, static_cast<uint32_t>(m_header->latest & 3)), static_cast<long>(m_header->stride), w, h,
+                  out.data(), static_cast<long>(w), w, h);
+        return true;
+    }
+
     // Keeps the latest frame good for readers for `ms` more, so an app keeps showing it (frozen)
     // instead of "no signal" while the next source opens. Nothing is copied: the picture is
     // already in its slot, only its time moves (ahead of now: readers check the age with a

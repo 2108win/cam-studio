@@ -46,6 +46,9 @@ public sealed class AppSettings
     public int Saturation { get; set; }
     public int Temperature { get; set; }
     public int OutputSize { get; set; }    // "Kích thước camera ảo": 0 auto, 1 4K, 2 1080p, 3 720p
+    public int PauseKind { get; set; } = 2;  // what apps see while paused: 0 no signal, 1 card, 2 blurred last picture, 3 image
+    public string PauseText { get; set; } = "Quay lại ngay";
+    public string PauseImage { get; set; } = ""; // a copy in %LOCALAPPDATA%\CamStudio
     public bool AutoUpdate { get; set; } = true; // download new versions and install when no camera is in use
     public string AutoInstalledVersion { get; set; } = ""; // the version last installed by itself (never twice)
     // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
@@ -83,6 +86,9 @@ public sealed class AppSettings
         s.Saturation = Math.Clamp(Int("Saturation", 0), -100, 100);
         s.Temperature = Math.Clamp(Int("Temperature", 0), -100, 100);
         s.OutputSize = Math.Clamp(Int("OutputSize", 0), 0, 3);
+        s.PauseKind = Math.Clamp(Int("PauseKind", 2), 0, 3);
+        s.PauseText = key.GetValue("PauseText") as string ?? "Quay lại ngay";
+        s.PauseImage = key.GetValue("PauseImage") as string ?? "";
         s.AutoUpdate = Int("AutoUpdate", 1) != 0;
         s.AutoInstalledVersion = key.GetValue("AutoInstalledVersion") as string ?? "";
         using (var modes = key.OpenSubKey("Modes"))
@@ -126,6 +132,9 @@ public sealed class AppSettings
         key.SetValue("Saturation", Saturation, RegistryValueKind.DWord);
         key.SetValue("Temperature", Temperature, RegistryValueKind.DWord);
         key.SetValue("OutputSize", OutputSize, RegistryValueKind.DWord);
+        key.SetValue("PauseKind", PauseKind, RegistryValueKind.DWord);
+        key.SetValue("PauseText", PauseText);
+        key.SetValue("PauseImage", PauseImage);
         key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("AutoInstalledVersion", AutoInstalledVersion);
         using (var modes = key.CreateSubKey("Modes"))

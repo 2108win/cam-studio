@@ -88,6 +88,12 @@ public:
         ++m_layoutGen;
     }
 
+    // What apps see while the picture is paused (cs_set_pause_picture): the camera's own "no
+    // signal", a card with text, the last picture blurred with the text, or an image file.
+    // Applies whenever the camera has no source; the app sets NoSignal unless it paused.
+    enum class PauseKind : int { NoSignal = 0, Card = 1, Blur = 2, Image = 3 };
+    void SetPausePicture(PauseKind kind, const std::wstring& text, const std::wstring& path);
+
     // "Tự căn khung" (AutoFrame.h): webcams and phone cameras are zoomed and moved to keep the
     // faces in the shot. Screens and windows are never framed.
     void SetAutoFrame(bool on) { m_autoFrame = on; }
@@ -190,6 +196,15 @@ private:
     uint32_t m_sourceSeq = 0;  // last id handed out by Start()/Switch()
     uint32_t m_nextSourceId = 0;
     std::shared_ptr<phone::PhoneLink> m_blocking;
+
+    struct PausePicture
+    {
+        PauseKind kind = PauseKind::NoSignal;
+        std::wstring text;
+        std::wstring path;
+        uint32_t gen = 0; // bumped on every change: the picture is rendered again
+    };
+    PausePicture m_pause; // under m_lock
 
     // Last orientation each phone source reported (camera name + lens), so the
     // virtual camera published in standby already has the right shape and is

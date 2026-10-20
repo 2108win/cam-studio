@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window
     // (MaybeAutoPick, on every status tick: phones are found and connected in the background).
     private async void InitAsync(LaunchOptions options)
     {
+        ApplyPausePicture(paused: false);
         Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight); // the last size: no rebuild later
         SetToggleQuietly(true); // the picture is on: the first source feeds it
         if (options.Device is { } want)
@@ -396,6 +397,7 @@ public sealed partial class MainWindow : Window
         AutostartToggle.IsOn = Autostart.IsEnabled;
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
+        LoadPauseSettingsIntoUi();
         UpdateToolIndicators();
         UpdateAutoFrameHint();
     }
@@ -1031,6 +1033,7 @@ public sealed partial class MainWindow : Window
     // The picture off: the source closes, the camera stays (apps keep it and see "no signal").
     private void StopCapture()
     {
+        ApplyPausePicture(_paused);
         int id = Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
         if (id > 0) _expectSourceId = id;
         _noSource = true;
@@ -1673,7 +1676,11 @@ public sealed partial class MainWindow : Window
         {
             _cameraRetryAt = DateTime.UtcNow.AddSeconds(30);
             if (!_paused && (_camera >= 0 && _format >= 0 || _windowSource is not null)) StartCapture();
-            else Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
+            else
+            {
+                ApplyPausePicture(_paused);
+                Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
+            }
         }
         // Remember the camera's size: next launch publishes it at that size before any source.
         if (running && s.Width > 0 && (s.Width != _settings.LastWidth || s.Height != _settings.LastHeight))
@@ -1693,7 +1700,7 @@ public sealed partial class MainWindow : Window
         {
             EngineState.Starting => ("Đang khởi động…", "Đang khởi động", StatusAmber),
             // Always there for apps; with no source they see "no signal".
-            EngineState.Running when s.NoSource != 0 && _paused => ("Đã tạm dừng · ứng dụng thấy “không có tín hiệu”", "Đã tạm dừng hình", StatusGrey),
+            EngineState.Running when s.NoSource != 0 && _paused => ($"Đã tạm dừng · ứng dụng thấy {PauseSeen()}", "Đã tạm dừng hình", StatusGrey),
             EngineState.Running when s.NoSource != 0 => ("Chưa có nguồn hình · ứng dụng thấy “không có tín hiệu”", "Đang chờ nguồn hình", StatusAmber),
             // Standby: the camera is there for apps, the source sleeps until one opens it.
             EngineState.Running when s.Standby != 0 => ($"Sẵn sàng · chờ ứng dụng dùng · {s.Width} × {s.Height}", "Sẵn sàng (nguồn đang nghỉ, tự bật khi có ứng dụng dùng)", StatusGreen),
@@ -1721,7 +1728,7 @@ public sealed partial class MainWindow : Window
         {
             EngineState.Starting => "Đang khởi động camera…",
             EngineState.Waiting => "Đang chờ nguồn hình… Camera ảo vẫn bật",
-            EngineState.Running when s.NoSource != 0 && _paused => "Đã tạm dừng hình. Camera ảo vẫn có trong các ứng dụng",
+            EngineState.Running when s.NoSource != 0 && _paused => $"Đã tạm dừng hình. Ứng dụng đang thấy {PauseSeen()}",
             EngineState.Running when s.NoSource != 0 => "Đang chờ nguồn hình… Camera ảo vẫn có trong các ứng dụng",
             _ => "Camera ảo chưa chạy",
         };
