@@ -50,6 +50,10 @@ public sealed class AppSettings
     public string PauseText { get; set; } = "Quay lại ngay";
     public string PauseImage { get; set; } = ""; // a copy in %LOCALAPPDATA%\CamStudio
     public bool RecordMicrophone { get; set; } = true; // "Ghi hình" with the default microphone
+    public int BackgroundMode { get; set; }            // "Nền": 0 off, 1 blur, 2 image
+    public int LastBackgroundMode { get; set; } = 1;   // what Ctrl+Alt+B turns back on
+    public int BackgroundStrength { get; set; } = 60;  // blur, 0..100
+    public string BackgroundImage { get; set; } = "";  // a copy in %LOCALAPPDATA%\CamStudio
     public bool AutoUpdate { get; set; } = true; // download new versions and install when no camera is in use
     public string AutoInstalledVersion { get; set; } = ""; // the version last installed by itself (never twice)
     // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
@@ -91,6 +95,10 @@ public sealed class AppSettings
         s.PauseText = key.GetValue("PauseText") as string ?? "Quay lại ngay";
         s.PauseImage = key.GetValue("PauseImage") as string ?? "";
         s.RecordMicrophone = Int("RecordMicrophone", 1) != 0;
+        s.BackgroundMode = Math.Clamp(Int("BackgroundMode", 0), 0, 2);
+        s.LastBackgroundMode = Math.Clamp(Int("LastBackgroundMode", 1), 1, 2);
+        s.BackgroundStrength = Math.Clamp(Int("BackgroundStrength", 60), 0, 100);
+        s.BackgroundImage = key.GetValue("BackgroundImage") as string ?? "";
         s.AutoUpdate = Int("AutoUpdate", 1) != 0;
         s.AutoInstalledVersion = key.GetValue("AutoInstalledVersion") as string ?? "";
         using (var modes = key.OpenSubKey("Modes"))
@@ -138,6 +146,10 @@ public sealed class AppSettings
         key.SetValue("PauseText", PauseText);
         key.SetValue("PauseImage", PauseImage);
         key.SetValue("RecordMicrophone", RecordMicrophone ? 1 : 0, RegistryValueKind.DWord);
+        key.SetValue("BackgroundMode", BackgroundMode, RegistryValueKind.DWord);
+        key.SetValue("LastBackgroundMode", LastBackgroundMode, RegistryValueKind.DWord);
+        key.SetValue("BackgroundStrength", BackgroundStrength, RegistryValueKind.DWord);
+        key.SetValue("BackgroundImage", BackgroundImage);
         key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("AutoInstalledVersion", AutoInstalledVersion);
         using (var modes = key.CreateSubKey("Modes"))

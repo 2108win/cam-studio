@@ -404,6 +404,7 @@ public sealed partial class MainWindow : Window
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
         LoadPauseSettingsIntoUi();
         RecordMicToggle.IsOn = _settings.RecordMicrophone;
+        LoadBackgroundIntoUi();
         UpdateToolIndicators();
         UpdateAutoFrameHint();
     }
@@ -1718,9 +1719,12 @@ public sealed partial class MainWindow : Window
         };
         _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : "") + (_recording ? " · đang ghi hình" : ""));
 
+        CheckPhoneHeat();
+
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
         if (_recording) UpdateRecordingUi();
+        if (BackgroundSection.IsExpanded && _settings.BackgroundMode != BackgroundOff) UpdateBackgroundHint();
         RefreshSourcesIfChanged();
 
         StatusText.Text = text;

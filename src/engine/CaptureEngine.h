@@ -98,6 +98,18 @@ public:
     HRESULT StopRecording() { return m_recorder.Stop(); }
     const Recorder& Recording() const { return m_recorder; }
 
+    // "Nền": the person stays sharp; the background is blurred (strength 0..100) or replaced by
+    // an image. Cameras only (never a screen or a window), and only on frames that go somewhere.
+    enum class BackgroundMode : int { Off = 0, Blur = 1, Image = 2 };
+    void SetBackground(BackgroundMode mode, int strength, const std::wstring& image, const std::wstring& model);
+    struct BackgroundState
+    {
+        int available = 1;    // 1 works or not tried, 0 Windows ML / the model missing, -1 gave up
+        bool active = false;  // blending frames now
+        double inferMs = 0;   // the model's last run
+    };
+    BackgroundState GetBackground() const;
+
     // What apps see while the picture is paused (cs_set_pause_picture): the camera's own "no
     // signal", a card with text, the last picture blurred with the text, or an image file.
     // Applies whenever the camera has no source; the app sets NoSignal unless it paused.
@@ -217,6 +229,13 @@ private:
     PausePicture m_pause; // under m_lock
 
     Recorder m_recorder;
+
+    // Background effect settings (mode and strength read on every frame, the paths under m_lock).
+    std::atomic<int> m_bgMode{ 0 };
+    std::atomic<int> m_bgStrength{ 60 };
+    std::wstring m_bgImage, m_bgModel;
+    uint32_t m_bgGen = 0;
+    BackgroundState m_bgState; // under m_lock
     // A snapshot asked for: the next frame that goes to the camera is copied here.
     std::atomic<bool> m_snapWanted{ false };
     std::mutex m_snapLock;

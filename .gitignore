@@ -30,3 +30,6 @@ Thumbs.db
 .idea/
 *.user
 build-x86/
+
+# camstudio-fake-phone keeps its pairing keys in the folder it runs from
+fake-phone-*.key

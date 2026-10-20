@@ -4,7 +4,9 @@
 // caps with one 1280x720@30 H.264 mode, and a moving test pattern encoded
 // with the Windows H.264 encoder MFT.
 //
-//   camstudio-fake-phone [--port 47321]
+//   camstudio-fake-phone [--port 47321] [--thermal serious|critical]
+// --thermal: 5 s into a stream, "state" says the phone is that hot (the PC should then ask for
+// 30 fps or less, see MainWindow.Thermal.cs); the caps offer 30 and 60 fps for that.
 // Then in Cam Studio: "Thêm điện thoại theo địa chỉ IP…" -> 127.0.0.1:47321
 
 #include "../src/engine/Crypto.h"
@@ -190,10 +192,14 @@ bool Handshake()
     return true;
 }
 
+// The --thermal level, sent in "state" once a stream has run 5 s.
+std::string g_thermal;
+
 json::Value Caps()
 {
     json::Value fps = json::Value::MakeArray();
     fps.Push(30);
+    if (!g_thermal.empty()) fps.Push(60);
     json::Value codecs = json::Value::MakeArray();
     codecs.Push("h264");
     json::Value modes = json::Value::MakeArray();
@@ -238,6 +244,8 @@ void DrawFrame(std::vector<uint8_t>& nv12, uint32_t n)
 void StreamLoop()
 {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const ULONGLONG streamStart = GetTickCount64();
+    ULONGLONG lastState = 0;
     MFT_REGISTER_TYPE_INFO in{ MFMediaType_Video, MFVideoFormat_NV12 }, out{ MFMediaType_Video, MFVideoFormat_H264 };
     IMFActivate** acts = nullptr;
     UINT32 count = 0;
@@ -331,6 +339,11 @@ void StreamLoop()
             if (!SendSealed(3, d, len, t / 10, key ? 1 : 0)) g_streaming = false;
             cb->Unlock();
         }
+        if (!g_thermal.empty() && GetTickCount64() - streamStart > 5000 && GetTickCount64() - lastState > 1000)
+        {
+            lastState = GetTickCount64();
+            SendControl(json::Value::MakeObject().Set("type", "state").Set("thermal", g_thermal).Set("battery", 80).Set("charging", false));
+        }
         next += 1000 / kFps;
         const ULONGLONG now = GetTickCount64();
         if (next > now) Sleep(static_cast<DWORD>(next - now));
@@ -343,7 +356,10 @@ int main(int argc, char** argv)
 {
     int port = 47321;
     for (int i = 1; i + 1 < argc; ++i)
+    {
         if (std::string(argv[i]) == "--port") port = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--thermal") g_thermal = argv[i + 1];
+    }
 
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);

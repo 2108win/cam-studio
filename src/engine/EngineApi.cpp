@@ -576,6 +576,24 @@ CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_
     g_engine->SetPausePicture(static_cast<CaptureEngine::PauseKind>(std::clamp(kind, 0, 3)), text ? text : L"", imagePath ? imagePath : L"");
 }
 
+CS_API void cs_set_background(int32_t mode, int32_t strength, const wchar_t* imagePath, const wchar_t* modelPath)
+{
+    if (!g_engine) return;
+    g_engine->SetBackground(static_cast<CaptureEngine::BackgroundMode>(std::clamp(mode, 0, 2)), strength,
+                            imagePath ? imagePath : L"", modelPath ? modelPath : L"");
+}
+
+CS_API void cs_get_background(CsBackground* out)
+{
+    if (!out) return;
+    *out = {};
+    if (!g_engine) return;
+    const CaptureEngine::BackgroundState s = g_engine->GetBackground();
+    out->available = s.available;
+    out->active = s.active ? 1 : 0;
+    out->inferMs = s.inferMs;
+}
+
 CS_API int32_t cs_snapshot(const wchar_t* path)
 {
     if (!g_engine || !path) return E_UNEXPECTED;

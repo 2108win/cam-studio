@@ -433,6 +433,10 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Hot phone** (2026-10-20, `MainWindow.Thermal.cs`): `state.thermal` serious → the best mode of
+  the same lens at ≤1080 (short side) and ≤30 fps, critical → ≤720; once per level and source,
+  the saved mode untouched, a warning bar. Tested with `camstudio-fake-phone --thermal serious`
+  (it then offers 30 and 60 fps and sends the state 5 s into a stream): 720p60 → 720p30.
 - **Snapshot and recording** (2026-10-20, `Recorder.cpp`, `MainWindow.Record.cs`): what the camera
   shows (settings, framing, colour), PNG to Pictures\Cam Studio, MP4 (H.264 through the GPU's MFT,
   AAC from the default microphone, timed by sample count) to Videos\Cam Studio. Up to 60 fps (a

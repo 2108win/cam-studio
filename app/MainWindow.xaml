@@ -411,6 +411,53 @@
                                 </StackPanel>
                             </Expander>
 
+                            <!-- Nền: blur or replace the background (MainWindow.Background.cs) -->
+                            <Expander x:Name="BackgroundSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
+                                <Expander.Header>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <FontIcon Glyph="{StaticResource IconBackgroundEffect}" Style="{StaticResource SectionIconStyle}" />
+                                            <TextBlock Text="Nền" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="BackgroundSummary" Grid.Column="1" Style="{StaticResource SectionSummaryStyle}" />
+                                    </Grid>
+                                </Expander.Header>
+                                <StackPanel>
+                                    <Grid x:Name="BackgroundChips" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <ToggleButton Tag="0" Style="{StaticResource SegmentToggleStyle}" Click="BackgroundChip_Click" Content="Tắt" />
+                                        <ToggleButton Tag="1" Grid.Column="1" Style="{StaticResource SegmentToggleStyle}" Click="BackgroundChip_Click"
+                                                      Content="Làm mờ" ToolTipService.ToolTip="Giữ người rõ nét, làm mờ phía sau" />
+                                        <ToggleButton Tag="2" Grid.Column="2" Style="{StaticResource SegmentToggleStyle}" Click="BackgroundChip_Click"
+                                                      Content="Ảnh nền" ToolTipService.ToolTip="Thay phía sau bằng một ảnh" />
+                                    </Grid>
+                                    <StackPanel x:Name="BackgroundStrengthRow">
+                                        <TextBlock Text="Độ mờ" Margin="0,12,0,0" />
+                                        <Slider x:Name="BackgroundStrengthSlider" Minimum="0" Maximum="100" StepFrequency="5" IsThumbToolTipEnabled="False"
+                                                ValueChanged="BackgroundStrength_ValueChanged" />
+                                    </StackPanel>
+                                    <StackPanel x:Name="BackgroundImageRow" Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
+                                        <Button Click="BackgroundImage_Click">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconImage}" FontSize="16" />
+                                                <TextBlock Text="Chọn ảnh…" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBlock x:Name="BackgroundImageName" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="150" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="BackgroundHint" Style="{StaticResource InspectorHintStyle}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Expander>
+
                             <!-- Màu sắc: presets, then the four sliders, each track showing what it does -->
                             <Expander x:Name="ColorSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
                                 <Expander.Header>

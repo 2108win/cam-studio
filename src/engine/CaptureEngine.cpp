@@ -1,4 +1,5 @@
 #include "CaptureEngine.h"
+#include "Segmenter.h"
 #include "StillPicture.h"
 #include "AutoFrame.h"
 #include "FaceDetect.h"
@@ -487,10 +488,19 @@ private:
                 frame = owned;
                 framePitch = static_cast<long>(l.outWidth);
             }
+            if (BackgroundOn() && !owned)
+            {
+                m_output.resize(CamStudioNv12Bytes(l.outWidth, l.outHeight));
+                Nv12Scale(frame, framePitch, l.outWidth, l.outHeight, m_output.data(), static_cast<long>(l.outWidth), l.outWidth, l.outHeight);
+                frame = owned = m_output.data();
+                framePitch = static_cast<long>(l.outWidth);
+            }
             picY = frame;
             picUv = frame + static_cast<size_t>(framePitch) * l.outHeight;
             picPitch = framePitch;
         }
+        if (BackgroundOn()) ApplyBackground(const_cast<uint8_t*>(picY), const_cast<uint8_t*>(picUv), picPitch, l.destWidth, l.destHeight);
+        else if (m_segmenter) StopBackground();
 
         if (toCamera)
         {
@@ -510,6 +520,62 @@ private:
     {
         m_framer.Reset();
         ++m_framingGen;
+        if (m_segmenter) m_segmenter->Reset(); // the old mask stays until the first new one
+    }
+
+    // "Nền" (Segmenter.h): on for a camera source with the setting on.
+    bool BackgroundOn() const { return m_framingSource && m_engine.m_bgMode != 0; }
+
+    void ApplyBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h)
+    {
+        std::wstring imagePath;
+        uint32_t gen = 0;
+        if (!m_segmenter)
+        {
+            m_segmenter = std::make_unique<Segmenter>();
+            std::lock_guard lk(m_engine.m_lock);
+            m_segmenter->SetModel(m_engine.m_bgModel);
+        }
+        {
+            std::lock_guard lk(m_engine.m_lock);
+            imagePath = m_engine.m_bgImage;
+            gen = m_engine.m_bgGen;
+        }
+        const double now = QpcMs();
+        if (m_segmenter->Due(now)) m_segmenter->Offer(y, uv, pitch, w, h, now); // the picture as it is
+        const bool changed = m_segmenter->TakeMask(m_mask);
+        const int available = m_segmenter->State();
+        bool active = false;
+        if (!m_mask.empty())
+        {
+            const uint8_t* image = nullptr;
+            if (m_engine.m_bgMode == static_cast<int>(BackgroundMode::Image))
+            {
+                if (gen != m_bgImageGen || w != m_bgImageW || h != m_bgImageH)
+                {
+                    m_bgImageGen = gen;
+                    m_bgImageW = w;
+                    m_bgImageH = h;
+                    if (!still::LoadImageFill(imagePath, w, h, m_bgImageNv12)) m_bgImageNv12.clear();
+                }
+                if (!m_bgImageNv12.empty()) image = m_bgImageNv12.data();
+            }
+            BlendBackground(y, uv, pitch, w, h, m_mask, changed, m_engine.m_bgStrength, image, m_bgScratch);
+            active = true;
+        }
+        std::lock_guard lk(m_engine.m_lock);
+        m_engine.m_bgState.available = available;
+        m_engine.m_bgState.active = active;
+        m_engine.m_bgState.inferMs = m_segmenter->InferMs();
+    }
+
+    // Turned off, or not a camera any more: the model's thread ends.
+    void StopBackground()
+    {
+        m_segmenter.reset();
+        m_mask.clear();
+        std::lock_guard lk(m_engine.m_lock);
+        m_engine.m_bgState.active = false;
     }
 
     // "Tự căn khung": now and then the detector gets a grey copy of this oriented frame, and the
@@ -594,6 +660,13 @@ private:
     uint32_t m_framedShape[5] = {};
     bool m_framingSource = false;
     bool m_framingOn = false;
+
+    // Background effect (ApplyBackground).
+    std::unique_ptr<Segmenter> m_segmenter;
+    std::vector<uint8_t> m_mask;
+    BackgroundScratch m_bgScratch;
+    std::vector<uint8_t> m_bgImageNv12;
+    uint32_t m_bgImageGen = ~0u, m_bgImageW = 0, m_bgImageH = 0;
 };
 
 // ---- Engine control ------------------------------------------------------------------
@@ -742,6 +815,25 @@ HRESULT CaptureEngine::StartRecording(const std::wstring& path, bool microphone)
     const HRESULT hr = m_recorder.Start(path, w, h, fps, microphone);
     Notify();
     return hr;
+}
+
+void CaptureEngine::SetBackground(BackgroundMode mode, int strength, const std::wstring& image, const std::wstring& model)
+{
+    {
+        std::lock_guard lk(m_lock);
+        if (image != m_bgImage) ++m_bgGen;
+        m_bgImage = image;
+        m_bgModel = model;
+        if (mode == BackgroundMode::Off) m_bgState.active = false;
+    }
+    m_bgStrength = std::clamp(strength, 0, 100);
+    m_bgMode = static_cast<int>(mode);
+}
+
+CaptureEngine::BackgroundState CaptureEngine::GetBackground() const
+{
+    std::lock_guard lk(m_lock);
+    return m_bgState;
 }
 
 void CaptureEngine::SetPausePicture(PauseKind kind, const std::wstring& text, const std::wstring& path)

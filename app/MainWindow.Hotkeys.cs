@@ -29,6 +29,7 @@ public sealed partial class MainWindow
         new(2, "NextSource", "Chuyển sang nguồn kế tiếp", Ctrl_Alt('N'), NextSourceFromHotkey),
         new(3, "Snapshot", "Chụp ảnh", Ctrl_Alt('S'), () => _ = TakeSnapshotAsync()),
         new(4, "Record", "Bắt đầu / dừng ghi hình", Ctrl_Alt('R'), () => _ = ToggleRecordingAsync()),
+        new(5, "Background", "Bật / tắt hiệu ứng nền", Ctrl_Alt('B'), ToggleBackgroundFromHotkey),
     };
 
     private static int Ctrl_Alt(char key) => GlobalHotkeys.Pack(GlobalHotkeys.ModControl | GlobalHotkeys.ModAlt, key);

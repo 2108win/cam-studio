@@ -162,6 +162,20 @@ CS_API void cs_set_auto_frame(int32_t enabled);
 #define CS_PAUSE_IMAGE 3     // an image file filling the frame (the card if it can't be read)
 CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_t* imagePath);
 
+// "Nền": the person stays sharp and the background is blurred (strength 0..100) or replaced by
+// an image. Cameras only. model: the segmentation model (Assets\Models\pphumanseg.onnx).
+#define CS_BACKGROUND_OFF 0
+#define CS_BACKGROUND_BLUR 1
+#define CS_BACKGROUND_IMAGE 2
+CS_API void cs_set_background(int32_t mode, int32_t strength, const wchar_t* imagePath, const wchar_t* modelPath);
+struct CsBackground
+{
+    int32_t available; // 1 works (or not tried yet), 0 Windows ML or the model is missing, -1 gave up
+    int32_t active;    // blending frames now
+    double inferMs;    // the model's last run
+};
+CS_API void cs_get_background(CsBackground* out);
+
 // "Chụp ảnh": what the camera shows, as a PNG at path. Blocks up to 4 s. HRESULT.
 CS_API int32_t cs_snapshot(const wchar_t* path);
 // "Ghi hình": what the camera shows, at its size now, to an MP4 at path (H.264, the GPU's encoder
