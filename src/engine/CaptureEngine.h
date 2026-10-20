@@ -102,11 +102,15 @@ public:
     // an image. Cameras only (never a screen or a window), and only on frames that go somewhere.
     enum class BackgroundMode : int { Off = 0, Blur = 1, Image = 2 };
     void SetBackground(BackgroundMode mode, int strength, const std::wstring& image, const std::wstring& model);
+    // "Làm mịn da" (SkinSmooth.h): 0 off, 1..100. Cameras only.
+    void SetSmoothing(int strength) { m_smoothing = std::clamp(strength, 0, 100); }
+
     struct BackgroundState
     {
         int available = 1;    // 1 works or not tried, 0 Windows ML / the model missing, -1 gave up
         bool active = false;  // blending frames now
         double inferMs = 0;   // the model's last run
+        int faces = -1;       // skin smoothing: faces in the last look (-1 off, -2 no face tracker)
     };
     BackgroundState GetBackground() const;
 
@@ -233,6 +237,7 @@ private:
     // Background effect settings (mode and strength read on every frame, the paths under m_lock).
     std::atomic<int> m_bgMode{ 0 };
     std::atomic<int> m_bgStrength{ 60 };
+    std::atomic<int> m_smoothing{ 0 };
     std::wstring m_bgImage, m_bgModel;
     uint32_t m_bgGen = 0;
     BackgroundState m_bgState; // under m_lock

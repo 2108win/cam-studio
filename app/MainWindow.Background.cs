@@ -28,6 +28,9 @@ public sealed partial class MainWindow
     private void LoadBackgroundIntoUi()
     {
         BackgroundStrengthSlider.Value = _settings.BackgroundStrength;
+        SkinSlider.Value = _settings.SkinSmoothing;
+        Engine.cs_set_smoothing(_settings.SkinSmoothing);
+        UpdateSkinHint();
         ShowBackgroundMode();
         PushBackground();
     }
@@ -39,12 +42,13 @@ public sealed partial class MainWindow
         BackgroundStrengthRow.Visibility = _settings.BackgroundMode == BackgroundBlur ? Visibility.Visible : Visibility.Collapsed;
         BackgroundImageRow.Visibility = _settings.BackgroundMode == BackgroundImage ? Visibility.Visible : Visibility.Collapsed;
         BackgroundImageName.Text = File.Exists(_settings.BackgroundImage) ? "Đã chọn ảnh" : "Chưa chọn ảnh: tạm làm mờ";
-        BackgroundSummary.Text = _settings.BackgroundMode switch
+        string background = _settings.BackgroundMode switch
         {
-            BackgroundBlur => "Làm mờ",
-            BackgroundImage => "Ảnh",
+            BackgroundBlur => "Làm mờ nền",
+            BackgroundImage => "Ảnh nền",
             _ => "",
         };
+        BackgroundSummary.Text = string.Join(" · ", new[] { background, _settings.SkinSmoothing > 0 ? "Mịn da" : "" }.Where(t => t.Length > 0));
         UpdateBackgroundHint();
     }
 
@@ -75,6 +79,36 @@ public sealed partial class MainWindow
         ShowBackgroundMode(); // a chip clicked again stays on
         PushBackground();
         if (mode == BackgroundImage && !File.Exists(_settings.BackgroundImage)) BackgroundImage_Click(sender, e);
+    }
+
+    // "Làm mịn da": faces only, found by Windows' face tracker (the one "Tự căn khung" uses).
+    private void SkinSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.SkinSmoothing = (int)Math.Round(e.NewValue);
+        _settings.Save();
+        Engine.cs_set_smoothing(_settings.SkinSmoothing);
+        UpdateSkinHint();
+        ShowBackgroundMode();
+    }
+
+    private void UpdateSkinHint()
+    {
+        SkinValue.Text = _settings.SkinSmoothing == 0 ? "Tắt" : _settings.SkinSmoothing.ToString();
+        if (_settings.SkinSmoothing == 0)
+        {
+            SkinHint.Text = "Chỉ làm mịn vùng mặt, giữ nét mắt và viền.";
+            return;
+        }
+        Engine.cs_get_background(out var state);
+        SkinHint.Text = state.Faces switch
+        {
+            -2 => "Máy này thiếu bộ nhận khuôn mặt của Windows.",
+            -1 => "Bật khi có ứng dụng dùng camera hoặc cửa sổ này đang mở.",
+            0 => "Chưa thấy khuôn mặt nào.",
+            1 => "Đang làm mịn 1 khuôn mặt.",
+            _ => $"Đang làm mịn {state.Faces} khuôn mặt.",
+        };
     }
 
     private void BackgroundStrength_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)

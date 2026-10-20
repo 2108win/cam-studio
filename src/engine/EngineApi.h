@@ -168,11 +168,14 @@ CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_
 #define CS_BACKGROUND_BLUR 1
 #define CS_BACKGROUND_IMAGE 2
 CS_API void cs_set_background(int32_t mode, int32_t strength, const wchar_t* imagePath, const wchar_t* modelPath);
+// "Làm mịn da": 0 off, 1..100. Faces only (Windows' face tracker), cameras only.
+CS_API void cs_set_smoothing(int32_t strength);
 struct CsBackground
 {
     int32_t available; // 1 works (or not tried yet), 0 Windows ML or the model is missing, -1 gave up
     int32_t active;    // blending frames now
     double inferMs;    // the model's last run
+    int32_t faces;     // skin smoothing: faces seen now (-1 off, -2 Windows has no face tracker)
 };
 CS_API void cs_get_background(CsBackground* out);
 

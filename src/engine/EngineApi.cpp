@@ -583,6 +583,11 @@ CS_API void cs_set_background(int32_t mode, int32_t strength, const wchar_t* ima
                             imagePath ? imagePath : L"", modelPath ? modelPath : L"");
 }
 
+CS_API void cs_set_smoothing(int32_t strength)
+{
+    if (g_engine) g_engine->SetSmoothing(strength);
+}
+
 CS_API void cs_get_background(CsBackground* out)
 {
     if (!out) return;
@@ -592,6 +597,7 @@ CS_API void cs_get_background(CsBackground* out)
     out->available = s.available;
     out->active = s.active ? 1 : 0;
     out->inferMs = s.inferMs;
+    out->faces = s.faces;
 }
 
 CS_API int32_t cs_snapshot(const wchar_t* path)

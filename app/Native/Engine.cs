@@ -84,6 +84,7 @@ public struct CsBackground
     public int Available; // 1 works (or not tried yet), 0 Windows ML / the model missing, -1 gave up
     public int Active;    // blending frames now
     public double InferMs;
+    public int Faces;     // skin smoothing: faces seen now (-1 off, -2 Windows has no face tracker)
 }
 
 // Mirrors CsFraming: what "Tự căn khung" shows now.
@@ -147,6 +148,7 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_pause_picture(int kind, string text, string imagePath);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_background(int mode, int strength, string imagePath, string modelPath);
     [LibraryImport(Dll)] public static partial void cs_get_background(out CsBackground state);
+    [LibraryImport(Dll)] public static partial void cs_set_smoothing(int strength);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_snapshot(string path);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_record_start(string path, int microphone);
     [LibraryImport(Dll)] public static partial int cs_record_stop();

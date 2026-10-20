@@ -411,7 +411,7 @@
                                 </StackPanel>
                             </Expander>
 
-                            <!-- Nền: blur or replace the background (MainWindow.Background.cs) -->
+                            <!-- Hiệu ứng: blur or replace the background, smooth the skin (MainWindow.Background.cs) -->
                             <Expander x:Name="BackgroundSection" Style="{StaticResource SectionExpanderStyle}" IsExpanded="True">
                                 <Expander.Header>
                                     <Grid>
@@ -421,12 +421,13 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
                                             <FontIcon Glyph="{StaticResource IconBackgroundEffect}" Style="{StaticResource SectionIconStyle}" />
-                                            <TextBlock Text="Nền" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                            <TextBlock Text="Hiệu ứng" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                         </StackPanel>
                                         <TextBlock x:Name="BackgroundSummary" Grid.Column="1" Style="{StaticResource SectionSummaryStyle}" />
                                     </Grid>
                                 </Expander.Header>
                                 <StackPanel>
+                                    <TextBlock Text="Nền" Style="{StaticResource InspectorSubheadStyle}" Margin="0,0,0,8" />
                                     <Grid x:Name="BackgroundChips" ColumnSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -455,6 +456,14 @@
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="150" />
                                     </StackPanel>
                                     <TextBlock x:Name="BackgroundHint" Style="{StaticResource InspectorHintStyle}" Margin="0,8,0,0" />
+
+                                    <Grid Margin="0,16,0,0">
+                                        <TextBlock Text="Làm mịn da" Style="{StaticResource InspectorSubheadStyle}" Margin="0" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="SkinValue" Style="{StaticResource SliderValueStyle}" />
+                                    </Grid>
+                                    <Slider x:Name="SkinSlider" Minimum="0" Maximum="100" StepFrequency="5" IsThumbToolTipEnabled="False"
+                                            ValueChanged="SkinSlider_ValueChanged" AutomationProperties.Name="Làm mịn da" />
+                                    <TextBlock x:Name="SkinHint" Style="{StaticResource InspectorHintStyle}" Margin="0,0,0,0" />
                                 </StackPanel>
                             </Expander>
 

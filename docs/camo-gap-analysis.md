@@ -139,7 +139,7 @@ Ký hiệu: **Có**, **Một phần**, **Chưa**. Gói Camo "không rõ" là ch�
 
 Tự căn khung, bộ màu (2026-10-19); ghi hình MP4 + chụp ảnh, ảnh khi tạm dừng, phím tắt toàn
 cục, tự hạ chế độ khi điện thoại nóng, làm mờ / thay nền trên PC cho mọi camera (cần tệp mô
-hình: chưa chạy thử), mã QR tải app. Các bảng dưới là trạng thái trước đó.
+hình PP-HumanSeg), làm mịn da, mã QR tải app. Các bảng dưới là trạng thái trước đó.
 
 ## Đề xuất (cập nhật 2026-10-19)
 

@@ -4,6 +4,7 @@
 // so on Apple silicon build for x86_64 (runs under Rosetta):
 //   clang++ -std=c++20 -arch x86_64 -O1 -Wall -Wextra -o build/frame-check tools/frame_check.cpp && build/frame-check
 #include "../src/engine/ImageSettings.h"
+#include "../src/engine/SkinSmooth.h"
 
 #include <cmath>
 #include <cstdio>
@@ -400,6 +401,59 @@ void TestView()
 }
 } // namespace
 
+// "Làm mịn da": noise inside the face is evened out, a hard edge across it stays, and nothing
+// outside the face's ellipse changes.
+void TestSkinSmooth()
+{
+    const uint32_t w = 640, h = 480;
+    std::vector<uint8_t> y(static_cast<size_t>(w) * h);
+    uint32_t seed = 12345;
+    auto noise = [&] { seed = seed * 1103515245u + 12345u; return static_cast<int>((seed >> 16) % 13) - 6; }; // -6..6
+    for (uint32_t r = 0; r < h; ++r)
+        for (uint32_t c = 0; c < w; ++c)
+            y[static_cast<size_t>(r) * w + c] = static_cast<uint8_t>((c < 320 ? 120 : 200) + noise()); // an edge at x = 320
+    const std::vector<uint8_t> before = y;
+    const FaceRect face{ 0.35, 0.3, 0.3, 0.4 }; // centred on the edge
+    SkinScratch scratch;
+    SmoothFace(y.data(), static_cast<long>(w), w, h, face, 80, scratch);
+
+    auto spread = [&](const std::vector<uint8_t>& p, uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1) {
+        double sum = 0, sq = 0;
+        int n = 0;
+        for (uint32_t r = y0; r < y1; ++r)
+            for (uint32_t c = x0; c < x1; ++c)
+            {
+                const double v = p[static_cast<size_t>(r) * w + c];
+                sum += v;
+                sq += v * v;
+                ++n;
+            }
+        const double mean = sum / n;
+        return std::sqrt(std::max(0.0, sq / n - mean * mean));
+    };
+    // Skin left of the edge, well inside the face.
+    const double noiseBefore = spread(before, 260, 300, 200, 260), noiseAfter = spread(y, 260, 300, 200, 260);
+    Check(noiseAfter < noiseBefore * 0.6, "skin: noise " + std::to_string(noiseBefore) + " -> " + std::to_string(noiseAfter));
+    // The edge: a few pixels either side keep their levels.
+    auto mean = [&](uint32_t x0, uint32_t x1) {
+        double s = 0;
+        for (uint32_t r = 220; r < 240; ++r)
+            for (uint32_t c = x0; c < x1; ++c) s += y[static_cast<size_t>(r) * w + c];
+        return s / (20.0 * (x1 - x0));
+    };
+    Check(std::fabs(mean(310, 316) - 120) < 6 && std::fabs(mean(324, 330) - 200) < 6,
+          "skin: the edge stays (" + std::to_string(mean(310, 316)) + ", " + std::to_string(mean(324, 330)) + ")");
+    // Outside the ellipse: untouched.
+    bool same = true;
+    for (uint32_t r = 0; r < 40; ++r)
+        for (uint32_t c = 0; c < w; ++c) same = same && y[static_cast<size_t>(r) * w + c] == before[static_cast<size_t>(r) * w + c];
+    Check(same, "skin: outside the face unchanged");
+    // Off does nothing.
+    std::vector<uint8_t> off = before;
+    SmoothFace(off.data(), static_cast<long>(w), w, h, face, 0, scratch);
+    Check(off == before, "skin: strength 0 changes nothing");
+}
+
 int main()
 {
     TestPlan();
@@ -410,6 +464,7 @@ int main()
     TestBgraToNv12();
     TestNv12ToBgraScaled();
     TestView();
+    TestSkinSmooth();
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

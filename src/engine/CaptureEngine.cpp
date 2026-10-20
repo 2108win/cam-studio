@@ -1,5 +1,6 @@
 #include "CaptureEngine.h"
 #include "Segmenter.h"
+#include "SkinSmooth.h"
 #include "StillPicture.h"
 #include "AutoFrame.h"
 #include "FaceDetect.h"
@@ -499,6 +500,19 @@ private:
             picUv = frame + static_cast<size_t>(framePitch) * l.outHeight;
             picPitch = framePitch;
         }
+        if (SmoothingOn() && !owned && !l.fitted)
+        {
+            // The source's own buffer is never written.
+            m_output.resize(CamStudioNv12Bytes(l.outWidth, l.outHeight));
+            Nv12Scale(frame, framePitch, l.outWidth, l.outHeight, m_output.data(), static_cast<long>(l.outWidth), l.outWidth, l.outHeight);
+            frame = owned = m_output.data();
+            framePitch = static_cast<long>(l.outWidth);
+            picY = frame;
+            picUv = frame + static_cast<size_t>(framePitch) * l.outHeight;
+            picPitch = framePitch;
+        }
+        if (SmoothingOn()) ApplySmoothing(const_cast<uint8_t*>(picY), picPitch, l.destWidth, l.destHeight);
+        else if (m_smoothDetector) StopSmoothing();
         if (BackgroundOn()) ApplyBackground(const_cast<uint8_t*>(picY), const_cast<uint8_t*>(picUv), picPitch, l.destWidth, l.destHeight);
         else if (m_segmenter && !BackgroundWanted()) StopBackground();
         else if (m_segmenter && m_bgReported != m_segmenter->State())
@@ -577,6 +591,49 @@ private:
         m_engine.m_bgState.available = available;
         m_engine.m_bgState.active = active;
         m_engine.m_bgState.inferMs = m_segmenter->InferMs();
+    }
+
+    // "Làm mịn da": faces are looked for in the picture itself (its own detector, 5 times a
+    // second), so their boxes need no mapping; frames between looks reuse the last boxes.
+    bool SmoothingOn() const { return m_framingSource && m_engine.m_smoothing > 0; }
+
+    void ApplySmoothing(uint8_t* y, long pitch, uint32_t w, uint32_t h)
+    {
+        if (!m_smoothDetector) m_smoothDetector = std::make_unique<FaceDetector>();
+        const double now = QpcMs();
+        if (w != m_smoothW || h != m_smoothH)
+        {
+            m_smoothW = w;
+            m_smoothH = h;
+            ++m_smoothGen; // boxes found in another shape are dropped
+            m_smoothFaces.clear();
+        }
+        if (m_smoothDetector->Due(now)) m_smoothDetector->Offer(y, pitch, w, h, m_smoothGen, now);
+        std::vector<FaceRect> found;
+        if (m_smoothDetector->TakeResult(m_smoothGen, found))
+        {
+            m_smoothFaces.swap(found);
+            m_smoothFacesAt = now;
+        }
+        if (now - m_smoothFacesAt > 1500) m_smoothFaces.clear(); // nobody seen for a while
+        const int strength = m_engine.m_smoothing;
+        for (const FaceRect& face : m_smoothFaces) SmoothFace(y, pitch, w, h, face, strength, m_skinScratch);
+        const int faces = m_smoothDetector->State() == 1 ? static_cast<int>(m_smoothFaces.size()) : -2;
+        if (faces != m_smoothReported)
+        {
+            m_smoothReported = faces;
+            std::lock_guard lk(m_engine.m_lock);
+            m_engine.m_bgState.faces = faces;
+        }
+    }
+
+    void StopSmoothing()
+    {
+        m_smoothDetector.reset();
+        m_smoothFaces.clear();
+        m_smoothReported = -1;
+        std::lock_guard lk(m_engine.m_lock);
+        m_engine.m_bgState.faces = -1;
     }
 
     // Turned off, or not a camera any more: the model's thread ends.
@@ -679,6 +736,14 @@ private:
     std::vector<uint8_t> m_bgImageNv12;
     uint32_t m_bgImageGen = ~0u, m_bgImageW = 0, m_bgImageH = 0;
     int m_bgReported = 1; // the segmenter state last put in the engine's status
+
+    // Skin smoothing (ApplySmoothing).
+    std::unique_ptr<FaceDetector> m_smoothDetector;
+    std::vector<FaceRect> m_smoothFaces;
+    double m_smoothFacesAt = -1e9;
+    uint32_t m_smoothGen = 0, m_smoothW = 0, m_smoothH = 0;
+    int m_smoothReported = -1;
+    SkinScratch m_skinScratch;
 };
 
 // ---- Engine control ------------------------------------------------------------------

@@ -433,13 +433,15 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
-- **"Nền" background effect** (2026-10-20, `Segmenter.cpp`, `MainWindow.Background.cs`): **written,
-  never run with a model.** Needs `app/Assets/Models/pphumanseg.onnx` (OpenCV Zoo PP-HumanSeg
-  2023mar, Apache 2.0, 6.2 MB, input 1×3×192×192 RGB (x/255−0.5)/0.5) + its LICENSE; the user
-  has not yet agreed to the download. Unknown: whether inbox Windows ML takes its opset (Windows
-  10 even less sure), which output channel is the person (code assumes 1), the per-frame cost.
-  Cameras only; the model runs ~15/s on its own thread, frames blend with the last mask; a model
-  that fails stays off (no frame copy) until "Tắt".
+- **"Hiệu ứng" › Nền** (2026-10-20, `Segmenter.cpp`, `MainWindow.Background.cs`): blur or an image
+  behind the person. Model `app/Assets/Models/pphumanseg.onnx` (OpenCV Zoo PP-HumanSeg 2023mar,
+  Apache 2.0, opset 11, IR 8, output softmax; channel 1 = person, checked: an empty room blurs
+  whole). Inbox Windows ML on Win11 runs it on the GPU in ~1–2 ms; at 1080p100 the frame work
+  went 3.1 → 5.4 ms; RAM +~130 MB once loaded (DirectML stays mapped). Windows 10: untested.
+  Dark furniture can pass as a person. Cameras only; a model that fails stays off until "Tắt".
+- **"Hiệu ứng" › Làm mịn da** (`SkinSmooth.h`): a self-guided filter on luma inside each face's
+  ellipse, faces from its own FaceTracker on the output picture (5/s). `frame-check` covers it
+  (noise down, edge kept, outside untouched). Not yet seen on a real face.
 - **Hot phone** (2026-10-20, `MainWindow.Thermal.cs`): `state.thermal` serious → the best mode of
   the same lens at ≤1080 (short side) and ≤30 fps, critical → ≤720; once per level and source,
   the saved mode untouched, a warning bar. Tested with `camstudio-fake-phone --thermal serious`

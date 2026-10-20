@@ -1725,6 +1725,7 @@ public sealed partial class MainWindow : Window
         if (!IsOnScreen) return;
         if (_recording) UpdateRecordingUi();
         if (BackgroundSection.IsExpanded && _settings.BackgroundMode != BackgroundOff) UpdateBackgroundHint();
+        if (BackgroundSection.IsExpanded && _settings.SkinSmoothing > 0) UpdateSkinHint();
         RefreshSourcesIfChanged();
 
         StatusText.Text = text;
