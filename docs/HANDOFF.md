@@ -63,6 +63,13 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
+- **v0.1.9 built, not published** (2026-10-21, commit 32b4fb6): `build\dist` holds
+  `CamStudio-Setup-0.1.9.exe` (sha256 5188ff9d…) and `CamStudio-0.1.9-android.apk` (versionCode 11,
+  RECORD_AUDIO + FOREGROUND_SERVICE_MICROPHONE, sha256 b3ace86f…). Before publishing, on the Redmi
+  (one `adb install -r` of that APK, no adb loops): mic denied → the camera still streams (screen
+  off too) and the PC shows `micDenied`; mic allowed → sound arrives, also with the screen off; the
+  pairing survives the upgrade. With VB-Cable installed: the tone into CABLE Input, captured back
+  from CABLE Output. Android 14+ foreground-service rules are not exercised on Android 12.
 - **v0.1.8 published** (2026-10-20, tag on d7ac5cd): both digests match; the installed 0.1.7
   saw it within seconds and updated, but the install rolled back half-done (adb.exe locked by a
   test loop of ours, see CLAUDE.md Gotchas); reinstalled with `/LOG`: succeeded, 0.1.8 running.
