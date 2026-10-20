@@ -92,6 +92,7 @@ public sealed partial class MainWindow : Window
         _tray.Activated += () => DispatcherQueue.TryEnqueue(ShowFromTray);
         _tray.BuildMenu = BuildTrayMenu;
         SetupHotkeys();
+        SetupPhoneAppCode();
 
         // 30 fps is plenty for an on-screen preview.
         _previewTimer = DispatcherQueue.CreateTimer();
@@ -1737,6 +1738,7 @@ public sealed partial class MainWindow : Window
         var howTo = state == EngineState.Running && s.NoSource != 0 && !_paused ? Visibility.Visible : Visibility.Collapsed;
         PlaceholderHint.Visibility = howTo;
         PlaceholderAdd.Visibility = howTo;
+        PlaceholderQrRow.Visibility = howTo;
         UpdateSelectedSubtitle(s);
         // What the folded section holds, at a glance.
         DetailsSummary.Text = running ? $"{s.Fps:0} fps · {s.Width} × {s.Height}" : "";

@@ -46,9 +46,24 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Button Style="{StaticResource ToolButtonStyle}" Click="AddPhone_Click" AutomationProperties.Name="Thêm điện thoại theo IP"
-                        ToolTipService.ToolTip="Thêm điện thoại theo IP: khi điện thoại không tự hiện, nhập địa chỉ hiện trên app Cam Studio của điện thoại">
+                <Button Style="{StaticResource ToolButtonStyle}" AutomationProperties.Name="Thêm điện thoại"
+                        ToolTipService.ToolTip="Thêm điện thoại">
                     <FontIcon Glyph="{StaticResource IconAdd}" Style="{StaticResource ToolIconStyle}" />
+                    <Button.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedLeft">
+                            <MenuFlyoutItem Text="Tải app cho điện thoại…" Click="PhoneApp_Click">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconQrCode}" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Thêm điện thoại theo IP…" Click="AddPhone_Click"
+                                            ToolTipService.ToolTip="Khi điện thoại không tự hiện: nhập địa chỉ hiện trên app Cam Studio của điện thoại">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconPhone}" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </Button.Flyout>
                 </Button>
                 <Button Grid.Column="1" Style="{StaticResource ToolButtonStyle}" Click="Refresh_Click" AutomationProperties.Name="Tìm lại thiết bị"
                         ToolTipService.ToolTip="Tìm lại thiết bị">
@@ -164,6 +179,13 @@
                                 <TextBlock x:Name="PlaceholderHint" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                                            Foreground="#B3FFFFFF" Visibility="Collapsed"
                                            Text="Mở app Cam Studio trên điện thoại (Wi‑Fi hoặc cáp USB), hoặc cắm webcam." />
+                                <!-- No source yet: scan to get the phone app (MainWindow.Download.cs). -->
+                                <StackPanel x:Name="PlaceholderQrRow" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" Visibility="Collapsed">
+                                    <Border x:Name="PlaceholderQr" />
+                                    <TextBlock VerticalAlignment="Center" MaxWidth="200" TextWrapping="Wrap" Foreground="#B3FFFFFF"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Text="Chưa có app trên điện thoại? Quét mã để tải app Cam Studio cho Android." />
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                     <Button x:Name="PlaceholderStart" Style="{StaticResource AccentButtonStyle}" Click="PlaceholderStart_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="8">

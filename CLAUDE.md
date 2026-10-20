@@ -433,6 +433,10 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Phone app QR** (2026-10-20, `QrCode.cs`, `MainWindow.Download.cs`): our own encoder (byte mode,
+  level M, versions 1–10), checked against Thonky's HELLO WORLD Reed–Solomon codewords and the
+  ISO format strings. It encodes the GitHub `releases/latest` page (the APK's name has the
+  version). "+" › "Tải app cho điện thoại…", and the empty preview with no source.
 - **Pause picture** (2026-10-20, `StillPicture.cpp`, `MainWindow.Pause.cs`): while paused, apps see
   the last picture blurred with "Quay lại ngay" (default), a card, the person's image (copied to
   `%LOCALAPPDATA%\CamStudio\pause-image.*`) or the old "no signal". The app calls
