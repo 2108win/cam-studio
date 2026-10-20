@@ -433,6 +433,13 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **"Nền" background effect** (2026-10-20, `Segmenter.cpp`, `MainWindow.Background.cs`): **written,
+  never run with a model.** Needs `app/Assets/Models/pphumanseg.onnx` (OpenCV Zoo PP-HumanSeg
+  2023mar, Apache 2.0, 6.2 MB, input 1×3×192×192 RGB (x/255−0.5)/0.5) + its LICENSE; the user
+  has not yet agreed to the download. Unknown: whether inbox Windows ML takes its opset (Windows
+  10 even less sure), which output channel is the person (code assumes 1), the per-frame cost.
+  Cameras only; the model runs ~15/s on its own thread, frames blend with the last mask; a model
+  that fails stays off (no frame copy) until "Tắt".
 - **Hot phone** (2026-10-20, `MainWindow.Thermal.cs`): `state.thermal` serious → the best mode of
   the same lens at ≤1080 (short side) and ≤30 fps, critical → ≤720; once per level and source,
   the saved mode untouched, a warning bar. Tested with `camstudio-fake-phone --thermal serious`

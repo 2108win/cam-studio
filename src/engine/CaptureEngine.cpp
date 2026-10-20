@@ -500,7 +500,15 @@ private:
             picPitch = framePitch;
         }
         if (BackgroundOn()) ApplyBackground(const_cast<uint8_t*>(picY), const_cast<uint8_t*>(picUv), picPitch, l.destWidth, l.destHeight);
-        else if (m_segmenter) StopBackground();
+        else if (m_segmenter && !BackgroundWanted()) StopBackground();
+        else if (m_segmenter && m_bgReported != m_segmenter->State())
+        {
+            // The model failed after the last blend: say so (Windows ML missing, an operator it lacks).
+            m_bgReported = m_segmenter->State();
+            std::lock_guard lk(m_engine.m_lock);
+            m_engine.m_bgState.available = m_bgReported;
+            m_engine.m_bgState.active = false;
+        }
 
         if (toCamera)
         {
@@ -523,8 +531,10 @@ private:
         if (m_segmenter) m_segmenter->Reset(); // the old mask stays until the first new one
     }
 
-    // "Nền" (Segmenter.h): on for a camera source with the setting on.
-    bool BackgroundOn() const { return m_framingSource && m_engine.m_bgMode != 0; }
+    // "Nền" (Segmenter.h): wanted for a camera source with the setting on; on while the model
+    // works. A model that failed stays failed (no copy, no blend) until the setting is turned off.
+    bool BackgroundWanted() const { return m_framingSource && m_engine.m_bgMode != 0; }
+    bool BackgroundOn() const { return BackgroundWanted() && (!m_segmenter || m_segmenter->State() == 1); }
 
     void ApplyBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h)
     {
@@ -573,6 +583,7 @@ private:
     void StopBackground()
     {
         m_segmenter.reset();
+        m_bgReported = 1;
         m_mask.clear();
         std::lock_guard lk(m_engine.m_lock);
         m_engine.m_bgState.active = false;
@@ -667,6 +678,7 @@ private:
     BackgroundScratch m_bgScratch;
     std::vector<uint8_t> m_bgImageNv12;
     uint32_t m_bgImageGen = ~0u, m_bgImageW = 0, m_bgImageH = 0;
+    int m_bgReported = 1; // the segmenter state last put in the engine's status
 };
 
 // ---- Engine control ------------------------------------------------------------------
