@@ -7,6 +7,7 @@
 
 #include "../common/MfDevices.h"
 #include "ImageSettings.h"
+#include "AudioOut.h"
 #include "Recorder.h"
 
 #include <algorithm>
@@ -102,6 +103,20 @@ public:
     // an image. Cameras only (never a screen or a window), and only on frames that go somewhere.
     enum class BackgroundMode : int { Off = 0, Blur = 1, Image = 2 };
     void SetBackground(BackgroundMode mode, int strength, const std::wstring& image, const std::wstring& model);
+    // "Micro điện thoại" (AudioOut.h): ask a phone camera for its microphone and play it into
+    // target (an output device's endpoint id, or "wav:<path>"); empty: off. Applies at once.
+    void SetPhoneAudio(const std::wstring& target);
+    // An app uses a microphone now: a phone camera source stays open with nobody on the camera
+    // (a call with the camera off still needs the phone's sound). See SourceWanted.
+    void SetAudioWanted(bool wanted) { m_audioWanted = wanted; }
+    struct PhoneAudioState
+    {
+        bool asked = false;     // the phone streams and was asked for its sound
+        bool receiving = false; // sound arrived in the last second
+        std::wstring problem;   // why not ("" when fine)
+    };
+    PhoneAudioState GetPhoneAudio() const;
+
     // "Làm mịn da" (SkinSmooth.h): 0 off, 1..100. Cameras only.
     void SetSmoothing(int strength) { m_smoothing = std::clamp(strength, 0, 100); }
 
@@ -238,6 +253,13 @@ private:
     std::atomic<int> m_bgMode{ 0 };
     std::atomic<int> m_bgStrength{ 60 };
     std::atomic<int> m_smoothing{ 0 };
+
+    // The phone's microphone (SetPhoneAudio); target and gen under m_lock.
+    std::wstring m_audioTarget;
+    std::atomic<uint32_t> m_audioGen{ 0 };
+    std::atomic<bool> m_audioWanted{ false };
+    std::atomic<bool> m_phoneCameraSource{ false }; // the source now is a phone's camera
+    PhoneAudioState m_audioState; // under m_lock
     std::wstring m_bgImage, m_bgModel;
     uint32_t m_bgGen = 0;
     BackgroundState m_bgState; // under m_lock

@@ -262,6 +262,10 @@
                                     AutomationProperties.Name="Đổi camera trước / sau" ToolTipService.ToolTip="Đổi camera trước / sau">
                                 <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconCameraSwitch}" FontSize="16" />
                             </Button>
+                            <ToggleButton x:Name="MicButton" Style="{StaticResource BarIconToggleStyle}" Click="MicButton_Click" Visibility="Collapsed"
+                                          AutomationProperties.Name="Micro điện thoại">
+                                <FontIcon x:Name="MicIcon" FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconMicOff}" FontSize="16" />
+                            </ToggleButton>
                             <ToggleButton x:Name="FlashButton" Style="{StaticResource BarIconToggleStyle}" Click="FlashButton_Click"
                                           AutomationProperties.Name="Đèn flash" ToolTipService.ToolTip="Đèn flash">
                                 <FontIcon x:Name="FlashIcon" FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconFlash}" FontSize="16" />
@@ -804,6 +808,13 @@
                     </StackPanel>
                     <!-- Built by BuildHotkeyRows (MainWindow.Hotkeys.cs). -->
                     <StackPanel x:Name="HotkeyRows" Spacing="8" />
+
+                    <TextBlock Text="Micro điện thoại" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
+                    <ComboBox x:Name="PhoneAudioCombo" Header="Tiếng micro điện thoại phát vào" HorizontalAlignment="Stretch"
+                              SelectionChanged="PhoneAudioCombo_SelectionChanged" />
+                    <TextBlock x:Name="PhoneAudioHint" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton Content="Tải VB-Audio Virtual Cable (miễn phí)" Click="CableLink_Click" Padding="0,2" />
 
                     <TextBlock Text="Ghi hình" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
                     <ToggleSwitch x:Name="RecordMicToggle" Header="Tiếng khi ghi hình" OnContent="Ghi kèm tiếng micro mặc định" OffContent="Chỉ ghi hình"

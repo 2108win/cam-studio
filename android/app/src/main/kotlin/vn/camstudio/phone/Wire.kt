@@ -17,6 +17,7 @@ object Wire {
     const val KIND_CONTROL = 1
     const val KIND_VIDEO_CONFIG = 2
     const val KIND_VIDEO_FRAME = 3
+    const val KIND_AUDIO = 4 // docs/protocol.md 5.1: the microphone, only when the PC asked
 
     const val FLAG_KEYFRAME = 1
 

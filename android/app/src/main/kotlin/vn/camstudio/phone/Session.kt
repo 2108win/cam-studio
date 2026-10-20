@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.security.interfaces.ECPublicKey
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -67,6 +68,9 @@ class Session(
     // ---- adaptive sending (section 6) ----------------------------------------------
     private class Out(val kind: Int, val data: ByteArray, val ptsUs: Long, val flags: Int, val queuedAt: Long)
     private val queue = LinkedBlockingDeque<Out>()
+    /** The microphone's chunks: sent before any video, never dropped for congestion. */
+    private val audioQueue = LinkedBlockingDeque<Out>()
+    @Volatile private var mic: MicCapture? = null
     private var sender: Thread? = null
     private var targetBitrate = 8_000_000
     private var currentBitrate = 8_000_000
@@ -181,14 +185,22 @@ class Session(
             if (msg.kind != Wire.KIND_CONTROL) continue
             val json = msg.json()
             when (json.optString("type")) {
-                "getCaps" -> sendControl(source.caps(store))
+                "getCaps" -> sendControl(source.caps(store).also { caps ->
+                    // The phone's microphone, for the camera (docs/protocol.md 5.1).
+                    if (source is CameraSource && MicCapture.available(context)) caps.put("audio", JSONObject()
+                        .put("format", "pcm16").put("channels", 1).put("rates", JSONArray().put(48_000)))
+                })
                 "start" -> startStream(json)
                 "stop" -> {
                     stopStream()
                     sendControl(JSONObject().put("type", "stopped").put("reason", "pc"))
                     ui.status(false, "Đã kết nối với $pcName")
                 }
-                "set" -> if (streaming) source.set(json)
+                "set" -> if (streaming) {
+                    if (json.has("audio")) sendControl(JSONObject().put("type", "state").put("audio",
+                        if (json.optBoolean("audio")) startMic() else { stopMic(); JSONObject().put("on", false) }))
+                    source.set(json)
+                }
                 "keyframe" -> if (streaming) source.requestKeyframe()
                 "stats" -> onStats(json)
                 "showSystemEffects" -> sendError("unsupported", "Android không có bảng hiệu ứng video hệ thống")
@@ -236,14 +248,42 @@ class Session(
             return sendError(e.code, e.message ?: e.code)
         }
         streaming = true
+        if (json.optBoolean("audio")) started.message.put("audio", startMic())
         sendControl(started.message)
         ui.status(true, "Đang phát ${started.label} → $pcName")
     }
 
     private fun stopStream() {
+        stopMic()
         if (streaming) source.stop()
         streaming = false
         queue.clear()
+    }
+
+    // ---- microphone (docs/protocol.md 5.1) -----------------------------------------------
+
+    /** What "started" / "state" say about it: {"on", "rate", "channels"} or {"on": false, "error"}. */
+    private fun startMic(): JSONObject {
+        mic?.let { return JSONObject().put("on", true).put("rate", it.rate).put("channels", 1).put("format", "pcm16") }
+        val m = MicCapture(context) { data, ptsUs ->
+            if (!closed) {
+                audioQueue.offerLast(Out(Wire.KIND_AUDIO, data, ptsUs, 0, System.nanoTime()))
+                while (audioQueue.size > 50) audioQueue.pollFirst() // half a second behind: let it go
+            }
+        }
+        val error = m.start()
+        if (error != null) {
+            ui.status(streaming, MicCapture.message(error))
+            return JSONObject().put("on", false).put("error", error).put("message", MicCapture.message(error))
+        }
+        mic = m
+        return JSONObject().put("on", true).put("rate", m.rate).put("channels", 1).put("format", "pcm16")
+    }
+
+    private fun stopMic() {
+        mic?.stop()
+        mic = null
+        audioQueue.clear()
     }
 
     /** Called by CameraService when the phone is turned. */
@@ -269,7 +309,13 @@ class Session(
         var lastRaise = System.nanoTime()
         try {
             while (!closed) {
-                val out = queue.poll(1, TimeUnit.SECONDS)
+                // Sound first: 10 ms chunks must not wait behind a video frame.
+                val sound = audioQueue.pollFirst()
+                if (sound != null) {
+                    ch.send(sound.kind, sound.data, 0, sound.data.size, sound.ptsUs, 0)
+                    continue
+                }
+                val out = queue.poll(if (mic != null) 5L else 1000L, TimeUnit.MILLISECONDS)
                 val now = System.nanoTime()
                 if (out != null) {
                     if (out.kind == Wire.KIND_VIDEO_FRAME) {

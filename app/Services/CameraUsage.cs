@@ -12,11 +12,14 @@ namespace CamStudio.Services;
 // ones, so we leave out Cam Studio itself (it holds the physical camera).
 public static class CameraUsage
 {
-    private const string Root = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam";
+    private const string Root = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\";
 
     /// Only apps whose process still runs: an app killed while using a camera (or an older
     /// version of it, e.g. Discord's app-1.0.9260 folder) leaves its entry "in use" for good.
-    public static List<string> RunningAppsInUse() => Find(runningOnly: true);
+    public static List<string> RunningAppsInUse() => Find(runningOnly: true, "webcam");
+
+    /// The same for microphones: a call with the camera off still holds one ("Micro điện thoại").
+    public static List<string> RunningAppsUsingMicrophone() => Find(runningOnly: true, "microphone");
 
     private static bool IsRunning(string exePath)
     {
@@ -37,10 +40,10 @@ public static class CameraUsage
         return false;
     }
 
-    private static List<string> Find(bool runningOnly)
+    private static List<string> Find(bool runningOnly, string capability)
     {
         var result = new List<string>();
-        using var root = Registry.CurrentUser.OpenSubKey(Root);
+        using var root = Registry.CurrentUser.OpenSubKey(Root + capability);
         if (root is null) return result;
 
         foreach (string name in root.GetSubKeyNames())

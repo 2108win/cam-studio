@@ -44,4 +44,6 @@ internal static class Icons
     public const string Open = "\uE026";
     public const string VideoOffLarge = "\uE027";
     public const string PhoneLarge = "\uE028";
+    public const string Mic = "\uE029";
+    public const string MicOff = "\uE02A";
 }

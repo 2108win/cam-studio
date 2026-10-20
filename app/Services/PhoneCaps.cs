@@ -54,6 +54,7 @@ public sealed class PhoneCaps
     }
 
     public bool HasSystemEffects => Effects.Values.Any(v => v == "system");
+    public bool HasAudio;   // caps.audio: the phone can send its microphone (docs/protocol.md 5.1)
 
     public static PhoneCaps? Parse(string json)
     {
@@ -86,6 +87,7 @@ public sealed class PhoneCaps
                     caps.Lenses.Add(lens);
                 }
             }
+            caps.HasAudio = root.TryGetProperty("audio", out var audio) && audio.ValueKind == JsonValueKind.Object;
             if (root.TryGetProperty("effects", out var effects) && effects.ValueKind == JsonValueKind.Object)
             {
                 foreach (var e in effects.EnumerateObject())

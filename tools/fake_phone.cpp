@@ -4,7 +4,9 @@
 // caps with one 1280x720@30 H.264 mode, and a moving test pattern encoded
 // with the Windows H.264 encoder MFT.
 //
-//   camstudio-fake-phone [--port 47321] [--thermal serious|critical]
+//   camstudio-fake-phone [--port 47321] [--thermal serious|critical] [--audio]
+// --audio: the caps offer a microphone; asked for it ("audio" in start, or "set"), the phone sends
+// a 440 Hz tone as AUDIO records (48 kHz mono 16-bit, 10 ms each), as the real apps send their mic.
 // --thermal: 5 s into a stream, "state" says the phone is that hot (the PC should then ask for
 // 30 fps or less, see MainWindow.Thermal.cs); the caps offer 30 and 60 fps for that.
 // Then in Cam Studio: "Thêm điện thoại theo địa chỉ IP…" -> 127.0.0.1:47321
@@ -28,6 +30,7 @@
 #include <wrl/client.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
@@ -194,12 +197,35 @@ bool Handshake()
 
 // The --thermal level, sent in "state" once a stream has run 5 s.
 std::string g_thermal;
+bool g_audioCap = false;                // --audio
+std::atomic<bool> g_audioOn{ false };   // the PC asked for the microphone
+
+// The "microphone": a 440 Hz tone, 10 ms a record, while the PC wants it.
+void AudioLoop()
+{
+    std::vector<int16_t> chunk(480);
+    uint64_t n = 0;
+    ULONGLONG next = GetTickCount64();
+    while (g_streaming)
+    {
+        if (g_audioOn)
+        {
+            for (auto& s : chunk) s = static_cast<int16_t>(8000 * std::sin(2 * 3.14159265358979 * 440 * static_cast<double>(n++) / 48000));
+            SendSealed(4, reinterpret_cast<const uint8_t*>(chunk.data()), chunk.size() * 2, static_cast<int64_t>(n * 1000000 / 48000));
+        }
+        next += 10;
+        const ULONGLONG now = GetTickCount64();
+        if (next > now) Sleep(static_cast<DWORD>(next - now));
+    }
+}
 
 json::Value Caps()
 {
     json::Value fps = json::Value::MakeArray();
     fps.Push(30);
     if (!g_thermal.empty()) fps.Push(60);
+    json::Value audio = json::Value::MakeArray();
+    audio.Push(48000);
     json::Value codecs = json::Value::MakeArray();
     codecs.Push("h264");
     json::Value modes = json::Value::MakeArray();
@@ -217,7 +243,8 @@ json::Value Caps()
     return json::Value::MakeObject().Set("type", "caps")
         .Set("device", json::Value::MakeObject().Set("name", "Fake Phone").Set("os", "android"))
         .Set("lenses", lenses).Set("modes", modes)
-        .Set("effects", json::Value::MakeObject().Set("cinematic", "none"));
+        .Set("effects", json::Value::MakeObject().Set("cinematic", "none"))
+        .Set("audio", g_audioCap ? json::Value::MakeObject().Set("format", "pcm16").Set("channels", 1).Set("rates", audio) : json::Value());
 }
 
 // Moving test pattern: colour gradient, a sweeping white box, frame counter bars.
@@ -360,6 +387,8 @@ int main(int argc, char** argv)
         if (std::string(argv[i]) == "--port") port = atoi(argv[i + 1]);
         if (std::string(argv[i]) == "--thermal") g_thermal = argv[i + 1];
     }
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == "--audio") g_audioCap = true;
 
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -383,7 +412,7 @@ int main(int argc, char** argv)
         if (g_sock == INVALID_SOCKET) break;
         BOOL nd = TRUE;
         setsockopt(g_sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&nd), sizeof(nd));
-        std::thread streamer;
+        std::thread streamer, sound;
         try
         {
             if (Handshake())
@@ -399,14 +428,30 @@ int main(int argc, char** argv)
                             msg["fps"].Int(), msg["codec"].Str().c_str());
                         g_streaming = false;
                         if (streamer.joinable()) streamer.join();
+                        if (sound.joinable()) sound.join();
+                        g_audioOn = g_audioCap && msg["audio"].Bool();
+                        printf("start: audio %s\n", g_audioOn ? "on" : "off");
                         SendControl(json::Value::MakeObject().Set("type", "started").Set("lens", "cam0")
-                            .Set("width", kWidth).Set("height", kHeight).Set("fps", kFps).Set("codec", "h264").Set("orientation", 0));
+                            .Set("width", kWidth).Set("height", kHeight).Set("fps", kFps).Set("codec", "h264").Set("orientation", 0)
+                            .Set("audio", g_audioOn ? json::Value::MakeObject().Set("on", true).Set("rate", 48000).Set("channels", 1)
+                                                    : json::Value::MakeObject().Set("on", false)));
                         g_streaming = true;
                         streamer = std::thread(StreamLoop);
+                        sound = std::thread(AudioLoop);
                     }
                     else if (type == "stop") g_streaming = false;
                     else if (type == "keyframe") g_forceKey = true;
-                    else if (type == "set") printf("set: %s\n", msg.Dump().c_str());
+                    else if (type == "set")
+                    {
+                        printf("set: %s\n", msg.Dump().c_str());
+                        if (!msg["audio"].IsNull() && g_audioCap)
+                        {
+                            g_audioOn = msg["audio"].Bool();
+                            SendControl(json::Value::MakeObject().Set("type", "state").Set("audio",
+                                g_audioOn.load() ? json::Value::MakeObject().Set("on", true).Set("rate", 48000).Set("channels", 1)
+                                                 : json::Value::MakeObject().Set("on", false)));
+                        }
+                    }
                     fflush(stdout);
                 }
             }
@@ -417,6 +462,7 @@ int main(int argc, char** argv)
         }
         g_streaming = false;
         if (streamer.joinable()) streamer.join();
+        if (sound.joinable()) sound.join();
         closesocket(g_sock);
         printf("PC disconnected\n");
         fflush(stdout);

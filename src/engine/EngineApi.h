@@ -179,6 +179,17 @@ struct CsBackground
 };
 CS_API void cs_get_background(CsBackground* out);
 
+// "Micro điện thoại" (docs/protocol.md 5.1): a phone camera's microphone played into an output
+// device (endpoint id from cs_audio_outputs, e.g. VB-Audio's "CABLE Input"), or "wav:<path>".
+// Empty or null: off. Never the speakers by default: the phone would hear itself.
+CS_API void cs_set_phone_audio(const wchar_t* target);
+// An app uses a microphone: a phone camera source stays open while hidden, for its sound.
+CS_API void cs_set_audio_wanted(int32_t wanted);
+// 1 sound arrives, 0 asked but nothing yet, -1 not asked; problem: why not.
+CS_API int32_t cs_phone_audio_state(wchar_t* problem, int32_t capacity);
+// Active output devices, one per line: "<endpoint id>\t<name>\n". Returns the length.
+CS_API int32_t cs_audio_outputs(wchar_t* buffer, int32_t capacity);
+
 // "Chụp ảnh": what the camera shows, as a PNG at path. Blocks up to 4 s. HRESULT.
 CS_API int32_t cs_snapshot(const wchar_t* path);
 // "Ghi hình": what the camera shows, at its size now, to an MP4 at path (H.264, the GPU's encoder

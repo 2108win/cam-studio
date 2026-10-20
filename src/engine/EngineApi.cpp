@@ -600,6 +600,31 @@ CS_API void cs_get_background(CsBackground* out)
     out->faces = s.faces;
 }
 
+CS_API void cs_set_phone_audio(const wchar_t* target)
+{
+    if (g_engine) g_engine->SetPhoneAudio(target ? target : L"");
+}
+
+CS_API void cs_set_audio_wanted(int32_t wanted)
+{
+    if (g_engine) g_engine->SetAudioWanted(wanted != 0);
+}
+
+CS_API int32_t cs_phone_audio_state(wchar_t* problem, int32_t capacity)
+{
+    if (!g_engine) return -1;
+    const CaptureEngine::PhoneAudioState s = g_engine->GetPhoneAudio();
+    CopyOut(s.problem, problem, capacity);
+    return !s.asked ? -1 : s.receiving ? 1 : 0;
+}
+
+CS_API int32_t cs_audio_outputs(wchar_t* buffer, int32_t capacity)
+{
+    std::wstring all;
+    for (const auto& [id, name] : AudioOut::Outputs()) all += id + L"\t" + name + L"\n";
+    return CopyOut(all, buffer, capacity);
+}
+
 CS_API int32_t cs_snapshot(const wchar_t* path)
 {
     if (!g_engine || !path) return E_UNEXPECTED;

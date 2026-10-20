@@ -149,6 +149,29 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_background(int mode, int strength, string imagePath, string modelPath);
     [LibraryImport(Dll)] public static partial void cs_get_background(out CsBackground state);
     [LibraryImport(Dll)] public static partial void cs_set_smoothing(int strength);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_phone_audio(string target);
+    [LibraryImport(Dll)] public static partial void cs_set_audio_wanted(int wanted);
+    [LibraryImport(Dll)] public static partial int cs_phone_audio_state(char* problem, int capacity);
+    [LibraryImport(Dll)] public static partial int cs_audio_outputs(char* buffer, int capacity);
+
+    // 1 sound arrives, 0 asked and waiting, -1 not asked; problem: why not.
+    public static int PhoneAudioState(out string problem)
+    {
+        char* buffer = stackalloc char[256];
+        int state = cs_phone_audio_state(buffer, 256);
+        problem = new string(buffer);
+        return state;
+    }
+
+    // "<id>\t<name>\n" per output device.
+    public static string AudioOutputs()
+    {
+        int n = cs_audio_outputs(null, 0);
+        if (n <= 0) return "";
+        var buffer = new char[n + 1];
+        fixed (char* p = buffer) cs_audio_outputs(p, n + 1);
+        return new string(buffer, 0, n);
+    }
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_snapshot(string path);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_record_start(string path, int microphone);
     [LibraryImport(Dll)] public static partial int cs_record_stop();

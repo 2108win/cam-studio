@@ -440,6 +440,16 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Micro điện thoại** (2026-10-21, docs/protocol.md 5.1, `AudioOut.cpp`, `MicCapture.kt`,
+  `MainWindow.PhoneMic.cs`): the phone's mic as AUDIO records (kind 4, PCM16), asked with `audio` in
+  `start` / `set`, gated by `caps.audio` (Android only; iOS not written). The PC plays it into an
+  output device, VB-Audio's "CABLE Input" by default (the user installs VB-Cable; we never ship or
+  install it), never the speakers by default. A phone camera source stays open while hidden when
+  an app uses a microphone (ConsentStore `microphone`, `cs_set_audio_wanted`), so a call with the
+  camera off keeps the sound; the phone then encodes video too (a later "audio-only start" would
+  save that). Tested: fake phone `--audio` → `wav:` target, 28 s of 440.0 Hz, no gap, `set`
+  off live. Android: `RECORD_AUDIO` asked at launch, the service adds type `microphone` only once
+  granted (else camera alone).
 - **"Hiệu ứng" › Nền** (2026-10-20, `Segmenter.cpp`, `MainWindow.Background.cs`): blur or an image
   behind the person. Model `app/Assets/Models/pphumanseg.onnx` (OpenCV Zoo PP-HumanSeg 2023mar,
   Apache 2.0, opset 11, IR 8, output softmax; channel 1 = person, checked: an empty room blurs

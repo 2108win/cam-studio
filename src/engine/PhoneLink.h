@@ -20,6 +20,7 @@ enum class Kind : uint8_t
     Control = 1,
     VideoConfig = 2,
     VideoFrame = 3,
+    Audio = 4, // the phone's microphone, 16-bit PCM (docs/protocol.md 5.1), only when asked
 };
 
 struct Message

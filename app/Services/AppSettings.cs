@@ -55,6 +55,8 @@ public sealed class AppSettings
     public int BackgroundStrength { get; set; } = 60;  // blur, 0..100
     public string BackgroundImage { get; set; } = "";  // a copy in %LOCALAPPDATA%\CamStudio
     public int SkinSmoothing { get; set; }              // "Làm mịn da": 0 off, 1..100
+    public bool PhoneMic { get; set; }                  // "Micro điện thoại": the phone's sound to the PC
+    public string PhoneAudioOutput { get; set; } = "";  // its output device's endpoint id ("": VB-Audio's cable)
     public bool AutoUpdate { get; set; } = true; // download new versions and install when no camera is in use
     public string AutoInstalledVersion { get; set; } = ""; // the version last installed by itself (never twice)
     // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
@@ -101,6 +103,8 @@ public sealed class AppSettings
         s.BackgroundStrength = Math.Clamp(Int("BackgroundStrength", 60), 0, 100);
         s.BackgroundImage = key.GetValue("BackgroundImage") as string ?? "";
         s.SkinSmoothing = Math.Clamp(Int("SkinSmoothing", 0), 0, 100);
+        s.PhoneMic = Int("PhoneMic", 0) != 0;
+        s.PhoneAudioOutput = key.GetValue("PhoneAudioOutput") as string ?? "";
         s.AutoUpdate = Int("AutoUpdate", 1) != 0;
         s.AutoInstalledVersion = key.GetValue("AutoInstalledVersion") as string ?? "";
         using (var modes = key.OpenSubKey("Modes"))
@@ -153,6 +157,8 @@ public sealed class AppSettings
         key.SetValue("BackgroundStrength", BackgroundStrength, RegistryValueKind.DWord);
         key.SetValue("BackgroundImage", BackgroundImage);
         key.SetValue("SkinSmoothing", SkinSmoothing, RegistryValueKind.DWord);
+        key.SetValue("PhoneMic", PhoneMic ? 1 : 0, RegistryValueKind.DWord);
+        key.SetValue("PhoneAudioOutput", PhoneAudioOutput);
         key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("AutoInstalledVersion", AutoInstalledVersion);
         using (var modes = key.CreateSubKey("Modes"))

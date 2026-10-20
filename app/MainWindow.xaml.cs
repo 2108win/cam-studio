@@ -404,6 +404,7 @@ public sealed partial class MainWindow : Window
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
         LoadPauseSettingsIntoUi();
         RecordMicToggle.IsOn = _settings.RecordMicrophone;
+        ApplyPhoneAudio();
         LoadBackgroundIntoUi();
         UpdateToolIndicators();
         UpdateAutoFrameHint();
@@ -800,6 +801,7 @@ public sealed partial class MainWindow : Window
             FlashButton.IsChecked = Sent("torch", 0.0) > 0;
             ShowFlashState();
             ExposureButton.Visibility = lens.Bias is null ? Visibility.Collapsed : Visibility.Visible;
+            UpdateMicButton();
             if (lens.Bias is { } b)
             {
                 bool was = _loading;
@@ -812,7 +814,7 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            FacingButton.Visibility = FlashButton.Visibility = ExposureButton.Visibility = Visibility.Collapsed;
+            FacingButton.Visibility = FlashButton.Visibility = ExposureButton.Visibility = MicButton.Visibility = Visibility.Collapsed;
         }
         ConfigureZoomSlider();
         UpdateOverlayVisibility();
@@ -830,7 +832,7 @@ public sealed partial class MainWindow : Window
         // (or a failed one left) before starting.
         bool chips = _isPhone && LensChips.Children.Count > 0;
         bool tools = _isPhone && (FacingButton.Visibility == Visibility.Visible || FlashButton.Visibility == Visibility.Visible ||
-                                  ExposureButton.Visibility == Visibility.Visible);
+                                  ExposureButton.Visibility == Visibility.Visible || MicButton.Visibility == Visibility.Visible);
         CameraBar.Visibility = chips || tools ? Visibility.Visible : Visibility.Collapsed;
         BarDivider.Visibility = chips && tools ? Visibility.Visible : Visibility.Collapsed;
         ZoomGroup.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
@@ -1582,6 +1584,7 @@ public sealed partial class MainWindow : Window
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
         BuildHotkeyRows();
+        FillPhoneAudioOutputs();
         SettingsDialog.XamlRoot = RootGrid.XamlRoot;
         try
         {
@@ -1720,10 +1723,12 @@ public sealed partial class MainWindow : Window
         _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : "") + (_recording ? " · đang ghi hình" : ""));
 
         CheckPhoneHeat();
+        UpdatePhoneAudioWanted();
 
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
         if (_recording) UpdateRecordingUi();
+        if (_settings.PhoneMic && MicButton.Visibility == Visibility.Visible) UpdateMicButton();
         if (BackgroundSection.IsExpanded && _settings.BackgroundMode != BackgroundOff) UpdateBackgroundHint();
         if (BackgroundSection.IsExpanded && _settings.SkinSmoothing > 0) UpdateSkinHint();
         RefreshSourcesIfChanged();

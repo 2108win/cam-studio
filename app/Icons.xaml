@@ -46,4 +46,6 @@
     <x:String x:Key="IconOpen">&#xE026;</x:String>
     <x:String x:Key="IconVideoOffLarge">&#xE027;</x:String>
     <x:String x:Key="IconPhoneLarge">&#xE028;</x:String>
+    <x:String x:Key="IconMic">&#xE029;</x:String>
+    <x:String x:Key="IconMicOff">&#xE02A;</x:String>
 </ResourceDictionary>

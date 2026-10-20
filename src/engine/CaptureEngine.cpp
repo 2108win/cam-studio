@@ -913,6 +913,22 @@ CaptureEngine::BackgroundState CaptureEngine::GetBackground() const
     return m_bgState;
 }
 
+void CaptureEngine::SetPhoneAudio(const std::wstring& target)
+{
+    {
+        std::lock_guard lk(m_lock);
+        if (m_audioTarget == target) return;
+        m_audioTarget = target;
+    }
+    ++m_audioGen;
+}
+
+CaptureEngine::PhoneAudioState CaptureEngine::GetPhoneAudio() const
+{
+    std::lock_guard lk(m_lock);
+    return m_audioState;
+}
+
 void CaptureEngine::SetPausePicture(PauseKind kind, const std::wstring& text, const std::wstring& path)
 {
     std::lock_guard lk(m_lock);
@@ -947,8 +963,10 @@ int CaptureEngine::ExpectedRotationLocked(const CameraDevice& cam, const NativeF
 
 bool CaptureEngine::SourceWanted(Pipeline& pipeline)
 {
-    // A recording or a snapshot needs the picture too (window hidden, no app on the camera).
-    return m_previewEnabled || pipeline.ConsumerActive() || m_recorder.Active() || m_snapWanted;
+    // A recording or a snapshot needs the picture too (window hidden, no app on the camera), and
+    // a call with the camera off still needs the phone's microphone.
+    return m_previewEnabled || pipeline.ConsumerActive() || m_recorder.Active() || m_snapWanted ||
+           (m_audioWanted && m_phoneCameraSource);
 }
 
 bool CaptureEngine::StillWanted(Pipeline& pipeline, ULONGLONG& idleSince)
@@ -1088,6 +1106,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
     {
         Pipeline pipeline(*this);
         CameraDevice webcam = cam; // found again after the webcam was unplugged
+        m_phoneCameraSource = cam.IsPhone() && format.phoneCamera != "screen";
         bool lost = false;
         bool begun = false;  // the pipeline knows this source's size
         bool stuck = false;  // this source cannot run (Fatal while the camera is up): wait for another
@@ -1112,6 +1131,7 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                 m_status.noSource = IsNoSource(cam);
                 if (m_status.state == State::Waiting) m_status.state = pipeline.Live() ? State::Running : State::Starting;
                 webcam = cam;
+                m_phoneCameraSource = cam.IsPhone() && format.phoneCamera != "screen";
                 lost = false;
                 begun = false;
                 stuck = false;
@@ -1440,11 +1460,51 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
         if (!ok) why = error.empty() ? L"Mất kết nối với điện thoại" : Widen(error);
         return ok && !Interrupted(); // a switch while it connected: the caller returns
     };
+    // The phone's microphone (AudioOut.h): asked for in "start", turned on and off with "set".
+    const bool phoneCamera = format.phoneCamera != "screen";
+    std::wstring audioTarget;
+    uint32_t audioGen = m_audioGen;
+    {
+        std::lock_guard lk(m_lock);
+        audioTarget = phoneCamera ? m_audioTarget : std::wstring();
+        m_audioState = {};
+        m_audioState.asked = !audioTarget.empty();
+    }
+    std::unique_ptr<AudioOut> audio = audioTarget.empty() ? nullptr : std::make_unique<AudioOut>(audioTarget);
+    uint32_t audioRate = 48000, audioChannels = 1;
+    std::wstring audioProblem;
+    ULONGLONG audioReported = 0;
+    struct AudioReset
+    {
+        CaptureEngine& e;
+        ~AudioReset()
+        {
+            std::lock_guard lk(e.m_lock);
+            e.m_audioState = {};
+        }
+    } audioReset{ *this };
     auto sendStart = [&] {
         return link.SendControl(json::Value::MakeObject()
             .Set("type", "start").Set("lens", format.phoneCamera)
             .Set("width", format.width).Set("height", format.height).Set("fps", fps)
-            .Set("codec", hevc ? "hevc" : "h264").Set("bitrateKbps", kbps));
+            .Set("codec", hevc ? "hevc" : "h264").Set("bitrateKbps", kbps)
+            .Set("audio", audio != nullptr));
+    };
+    // "started" / "state" say whether the phone's microphone runs, at what rate, or why not.
+    auto audioFrom = [&](const json::Value& v) {
+        const json::Value& a = v["audio"];
+        if (!a.IsObject()) return;
+        if (a["on"].Bool())
+        {
+            audioRate = static_cast<uint32_t>(std::clamp(a["rate"].Int(48000), 8000, 96000));
+            audioChannels = static_cast<uint32_t>(std::clamp(a["channels"].Int(1), 1, 2));
+            audioProblem.clear();
+        }
+        else if (audio)
+        {
+            audioProblem = Widen(a["message"].Str());
+            if (audioProblem.empty()) audioProblem = L"Điện thoại không gửi tiếng";
+        }
     };
 
     // An idle link kept by the connector may have died without anyone noticing (the phone
@@ -1557,10 +1617,37 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     {
         // Nobody needs the picture any more: the phone stops encoding and sending.
         if (!StillWanted(pipeline, idleSince)) { outcome = Outcome::Idle; break; }
+        // The microphone setting changed: tell the phone, open or close the output.
+        if (m_audioGen != audioGen && phoneCamera)
+        {
+            audioGen = m_audioGen;
+            std::wstring target;
+            {
+                std::lock_guard lk(m_lock);
+                target = m_audioTarget;
+            }
+            if (target != audioTarget)
+            {
+                const bool was = audio != nullptr;
+                audioTarget = target;
+                audio = target.empty() ? nullptr : std::make_unique<AudioOut>(target);
+                audioProblem.clear();
+                if (was != (audio != nullptr))
+                    link.SendControl(json::Value::MakeObject().Set("type", "set").Set("audio", audio != nullptr));
+            }
+        }
         phone::Message m;
         bool timedOut = false;
         const bool got = link.Receive(m, 500, timedOut);
         const ULONGLONG now = GetTickCount64();
+        if (now - audioReported >= 500)
+        {
+            audioReported = now;
+            std::lock_guard lk(m_lock);
+            m_audioState.asked = audio != nullptr;
+            m_audioState.receiving = audio && audio->Receiving();
+            m_audioState.problem = !audio ? std::wstring() : !audioProblem.empty() ? audioProblem : audio->Problem();
+        }
         if (!got && !timedOut)
         {
             outcome = lost(L"Mất kết nối với điện thoại");
@@ -1587,7 +1674,15 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
             if (type == "caps") link.SetCaps(v.Dump());
             // A turn of the phone changes the picture's shape: the pipeline applies the size
             // rule on the next frame (fit while an app uses the camera, else a new size).
-            if (type == "state" || type == "started") stateFrom(v);
+            if (type == "state" || type == "started")
+            {
+                stateFrom(v);
+                audioFrom(v);
+            }
+        }
+        else if (got && m.kind == phone::Kind::Audio)
+        {
+            if (audio) audio->Push(m.payload.data(), m.payload.size(), audioRate, audioChannels);
         }
         else if (got && m.kind == phone::Kind::VideoConfig)
         {

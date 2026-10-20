@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- The phone's sound for the PC, only when the PC asks (docs/protocol.md 5.5). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Home Wi‑Fi: TCP server for the PC and mDNS (_camstudio._tcp) advertising. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -10,6 +12,7 @@
          Screen sharing: one of type mediaProjection (docs/protocol.md 1.1). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- While the camera streams with the screen off: CPU awake, Wi‑Fi out of power saving. -->
@@ -17,6 +20,7 @@
     <!-- Updates from the GitHub releases (AppUpdater, docs/updates.md). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:label="Cam Studio"
@@ -40,7 +44,7 @@
         <service
             android:name=".CameraService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|microphone" />
 
         <service
             android:name=".ScreenService"

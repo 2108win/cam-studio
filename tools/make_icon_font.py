@@ -63,6 +63,8 @@ ICONS = [
     ("Open",             0xE026, "open_16"),
     ("VideoOffLarge",    0xE027, "video_off_48"),
     ("PhoneLarge",       0xE028, "phone_48"),
+    ("Mic",              0xE029, "mic_16"),
+    ("MicOff",           0xE02A, "mic_off_16"),
 ]
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

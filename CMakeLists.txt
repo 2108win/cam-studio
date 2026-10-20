@@ -42,6 +42,7 @@ add_library(CamStudioEngine SHARED
     src/engine/StillPicture.cpp
     src/engine/Recorder.cpp
     src/engine/Segmenter.cpp
+    src/engine/AudioOut.cpp
     src/engine/Discovery.cpp
     src/engine/UsbTransport.cpp
     src/engine/Crypto.cpp)

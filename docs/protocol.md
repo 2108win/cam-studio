@@ -152,6 +152,7 @@ u32  flags
 | 1 | CONTROL | hai chiều | JSON (mục 4) |
 | 2 | VIDEO_CONFIG | ĐT → PC | Thông tin khởi tạo bộ giải mã: SPS/PPS/VPS dạng **Annex‑B** (có mã bắt đầu `00 00 00 01`) |
 | 3 | VIDEO_FRAME | ĐT → PC | Một khung đã nén, **Annex‑B**. `flags & 1` = khung khóa |
+| 4 | AUDIO | ĐT → PC | Tiếng micro điện thoại: PCM 16‑bit little‑endian, xen kênh, thường 10 ms một bản ghi. Chỉ gửi khi PC xin (mục 5.1) |
 
 **iOS:** VideoToolbox xuất khung dạng AVCC (mỗi NAL có 4 byte độ dài ở đầu), còn SPS/PPS/VPS nằm trong `CMFormatDescription`. App iOS phải đổi sang Annex‑B trước khi gửi:
 - thay 4 byte độ dài bằng `00 00 00 01`;
@@ -286,9 +287,9 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | type | Trường | Ý nghĩa |
 |---|---|---|
 | `getCaps` | | Xin bảng khả năng camera (mục 5) |
-| `start` | `lens`, `width`, `height`, `fps`, `codec` (`h264`, `hevc`, `hevc10`), `bitrateKbps`, `hdr` (bool), `stabilization` | Bắt đầu phát |
+| `start` | `lens`, `width`, `height`, `fps`, `codec` (`h264`, `hevc`, `hevc10`), `bitrateKbps`, `hdr` (bool), `stabilization`, `audio` (bool, mục 5.1) | Bắt đầu phát |
 | `stop` | | Dừng phát; vẫn giữ kết nối |
-| `set` | các trường điều khiển ở mục 4.3 | Đổi thông số khi đang phát |
+| `set` | các trường điều khiển ở mục 4.3; `audio` (bool, mục 5.1) | Đổi thông số khi đang phát |
 | `keyframe` | | Xin một khung khóa (sau khi mất gói, hoặc khi bộ giải mã cần khởi tạo lại) |
 | `stats` | `recvFps`, `decodeMs`, `queueMs`, `lost` | Gửi mỗi giây để điện thoại tự chỉnh bitrate |
 | `showSystemEffects` | | Chỉ iOS: mở bảng hiệu ứng video của hệ thống (Xóa phông, Ánh sáng studio, Center Stage…) |
@@ -299,7 +300,7 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | type | Trường | Ý nghĩa |
 |---|---|---|
 | `caps` | mục 5 | Trả lời `getCaps`; gửi lại khi khả năng thay đổi |
-| `started` | `lens`, `width`, `height`, `fps`, `codec`, `hdr`, `orientation` | Đã bắt đầu phát với thông số **thực tế**. `orientation` = số độ **PC phải xoay ảnh theo chiều kim đồng hồ** để hình đứng thẳng (0/90/180/270). Điện thoại tính từ hướng cảm biến và hướng cầm máy, rồi gửi lại trong `state` mỗi khi người dùng xoay máy |
+| `started` | `lens`, `width`, `height`, `fps`, `codec`, `hdr`, `orientation`, `audio` (khi PC xin, mục 5.1) | Đã bắt đầu phát với thông số **thực tế**. `orientation` = số độ **PC phải xoay ảnh theo chiều kim đồng hồ** để hình đứng thẳng (0/90/180/270). Điện thoại tính từ hướng cảm biến và hướng cầm máy, rồi gửi lại trong `state` mỗi khi người dùng xoay máy |
 | `state` | trạng thái hiện tại của mọi trường ở mục 4.3, cộng `iso`, `exposureMs`, `lensPosition`, `wbKelvin`, `thermal` (`nominal`/`fair`/`serious`/`critical`), `battery` (0–100), `charging` | Gửi khi có thay đổi, tối đa 4 lần/giây |
 | `stopped` | `reason` | Đã dừng: do PC, app bị ẩn, máy quá nóng… |
 | `error` | `code`, `message` (tiếng Việt, để hiện cho người dùng) | Lỗi |
@@ -389,6 +390,28 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 - **Trên PC:** chỉ hiện nút điện ảnh cho những ống kính đó.
 - **Khi không bật được** (ví dụ chế độ đang phát không có định dạng điện ảnh): điện thoại để `cinematic: false` trong `state`, **không** gửi `error`, vì PC dừng phát khi nhận `error`.
 
+### 5.1 Micro điện thoại (`audio`)
+
+Để ứng dụng gọi trên PC nghe tiếng micro điện thoại. Windows không có micro ảo nếu không có driver
+được ký, nên PC phát tiếng này vào một thiết bị phát như "CABLE Input" của VB‑Audio Virtual Cable,
+rồi Discord, Zoom… chọn "CABLE Output" làm micro.
+
+- **`caps.audio`:** `{"format": "pcm16", "channels": 1, "rates": [48000]}` khi điện thoại gửi được
+  tiếng (hiện chỉ app Android, chỉ cho camera). Không có trường này: PC không hiện nút micro.
+- **PC xin:** `"audio": true` trong `start`; bật / tắt giữa chừng bằng `set` với `"audio": true|false`.
+  Điện thoại cũ bỏ qua trường này và không gửi gì.
+- **Điện thoại trả lời** trong `started` (nếu `start` có `audio`) và trong `state` (sau `set`):
+  - chạy: `"audio": {"on": true, "rate": 48000, "channels": 1, "format": "pcm16"}`. `rate` là tốc độ
+    **thực tế** (máy có thể không cho 48000: 44100 hay 16000), PC phát theo đúng số này;
+  - không chạy: `"audio": {"on": false, "error": "micDenied" | "micUnavailable", "message": "…"}`.
+    Không gửi `error` (PC dừng phát khi nhận `error`).
+- **Dữ liệu:** bản ghi AUDIO (`kind = 4`), `ptsMicros` là thời điểm thu. Điện thoại gửi tiếng trước
+  khung hình đang chờ, và không bỏ tiếng khi mạng nghẽn (mục 6); tiếng chậm quá ~0,5 s thì bỏ.
+- **PC:** bộ đệm ~60 ms, cắt bớt khi dồn quá ~150 ms, chèn im lặng khi thiếu. Không bao giờ mặc định
+  phát ra loa (điện thoại sẽ thu lại tiếng của chính nó).
+- **Android:** cần quyền `RECORD_AUDIO` (app xin khi mở), dịch vụ chạy nền thêm loại `microphone`
+  khi đã có quyền, nên tiếng vẫn đi khi tắt màn hình.
+
 **Quy tắc ghi `modes`:**
 - **Lọc theo bộ mã hóa:** chỉ ghi các kích thước mà camera xuất được **và** bộ mã hóa video phần cứng nhận được.
 - **Lọc theo tốc độ:** chỉ ghi các fps mà cả hai bên đều đạt được.
@@ -420,6 +443,8 @@ Mọi thông điệp đều có trường `"type"`. Bên nhận **bỏ qua** nh�
 | `thermal` | Máy quá nóng nên đã giảm chất lượng hoặc dừng |
 | `encoder` | Bộ mã hóa phần cứng bị lỗi |
 | `notPaired` | Nơi nhận kết nối không tự ghép đôi được (tiện ích chia sẻ màn hình của iPhone): ghép đôi trong app trước |
+
+Mã trong `audio.error` (mục 5.1, không phải `error`): `micDenied` (chưa cho quyền micro), `micUnavailable` (không mở được micro, ví dụ đang có cuộc gọi).
 
 ---
 

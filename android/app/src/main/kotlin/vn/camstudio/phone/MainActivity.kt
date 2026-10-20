@@ -192,6 +192,11 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             wanted += Manifest.permission.CAMERA
         }
+        // The microphone, for when the PC asks for the phone's sound (Cam Studio on the PC,
+        // Cài đặt › Micro điện thoại). Asked here: the PC may ask while the phone is locked.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            wanted += Manifest.permission.RECORD_AUDIO
+        }
         // The notifications ("Cam Studio sẵn sàng làm camera", with Dừng) need this on Android 13+.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -242,6 +247,9 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode != REQUEST_PERMISSIONS) return
+        // Allowed now: the running service takes the microphone type too (startForegroundCompat).
+        val mic = permissions.indexOf(Manifest.permission.RECORD_AUDIO)
+        if (mic >= 0 && grantResults.getOrNull(mic) == PackageManager.PERMISSION_GRANTED && CameraService.running) CameraService.start(this)
         val camera = permissions.indexOf(Manifest.permission.CAMERA)
         if (camera < 0) return // only the notifications were asked
         if (grantResults.getOrNull(camera) == PackageManager.PERMISSION_GRANTED) {
