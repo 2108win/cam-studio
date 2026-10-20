@@ -74,6 +74,12 @@
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
             </Style>
+            <!-- "Chưa kết nối": the sources that cannot be used now, under the ones that can. -->
+            <Style x:Key="ListSectionLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Margin" Value="4,12,0,0" />
+            </Style>
             <!-- A source card (left pane, 2026-10-19 look): one card per device, icon tile, name, state. -->
             <Style x:Key="SourceCardStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />

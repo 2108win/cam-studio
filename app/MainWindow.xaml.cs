@@ -604,27 +604,50 @@ public sealed partial class MainWindow : Window
         },
     };
 
+    // "192.168.1.23", or "192.168.1.23:47400" when the phone shows another port (47321 was taken).
+    private static bool ParsePhoneAddress(string text, out string host, out int port)
+    {
+        host = text.Trim();
+        port = 47321;
+        int colon = host.LastIndexOf(':');
+        if (colon >= 0)
+        {
+            if (!int.TryParse(host[(colon + 1)..], out port) || port is <= 0 or > 65535) return false;
+            host = host[..colon];
+        }
+        return host.Length > 0 && !host.Contains(' ');
+    }
+
     private async System.Threading.Tasks.Task AddPhoneByIpAsync()
     {
-        var box = new TextBox { PlaceholderText = "192.168.1.23:45678", Header = "Địa chỉ hiện trên màn hình app Cam Studio của điện thoại" };
+        var box = new TextBox { PlaceholderText = "192.168.1.23", Header = "Địa chỉ IP hiện trong app Cam Studio trên điện thoại" };
+        var problem = new TextBlock
+        {
+            Text = "Địa chỉ chưa đúng. Ví dụ: 192.168.1.23 (thêm :cổng nếu app hiện cổng khác 47321).",
+            TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed,
+            Foreground = (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"],
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+        };
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
             Title = "Thêm điện thoại theo địa chỉ IP",
-            Content = box,
+            Content = new StackPanel { Spacing = 8, Width = 360, Children = { box, problem } },
             PrimaryButtonText = "Thêm",
             CloseButtonText = "Hủy",
             DefaultButton = ContentDialogButton.Primary,
+            RequestedTheme = RootGrid.ActualTheme,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        string text = box.Text.Trim();
-        int colon = text.LastIndexOf(':');
-        if (colon <= 0 || !int.TryParse(text[(colon + 1)..], out int port) || port is <= 0 or > 65535)
+        // A wrong address keeps the dialog open and says why, under the field.
+        dialog.PrimaryButtonClick += (sender, args) =>
         {
-            ShowError("Địa chỉ phải có dạng IP:cổng, ví dụ 192.168.1.23:45678");
-            return;
-        }
-        string host = text[..colon];
+            if (ParsePhoneAddress(box.Text, out _, out _)) return;
+            problem.Visibility = Visibility.Visible;
+            args.Cancel = true;
+        };
+        box.TextChanged += (_, _) => problem.Visibility = Visibility.Collapsed;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        ParsePhoneAddress(box.Text, out string host, out int port);
         Engine.cs_add_phone(host, port);
         await RefreshCamerasAsync(host);
     }

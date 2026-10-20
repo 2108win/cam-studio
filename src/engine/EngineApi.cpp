@@ -445,6 +445,51 @@ CS_API void cs_add_phone(const wchar_t* host, int32_t port)
 
 namespace
 {
+// The id a phone source's pairing key is saved under: the hello id once connected, else the TXT
+// id (a screen advertises "<id>:screen", its hello says <id>).
+std::string PairingId(const CameraDevice& cam, const phone::Endpoint& e)
+{
+    std::string id = cam.phone ? cam.phone->DeviceId() : std::string();
+    if (id.empty()) id = e.deviceId;
+    if (id.size() > 7 && id.compare(id.size() - 7, 7, ":screen") == 0) id.resize(id.size() - 7);
+    return id;
+}
+} // namespace
+
+CS_API int32_t cs_phone_flags(int32_t camera)
+{
+    std::lock_guard lk(g_lock);
+    if (!ValidCamera(camera) || !g_cameras[camera].IsPhone()) return 0;
+    const phone::Endpoint& e = EndpointOf(camera);
+    return (e.manual ? CS_PHONE_MANUAL : 0) | (phone::HasPairKey(PairingId(g_cameras[camera], e)) ? CS_PHONE_PAIRED : 0);
+}
+
+CS_API void cs_forget_phone(int32_t camera, int32_t what)
+{
+    phone::Endpoint endpoint;
+    std::vector<std::shared_ptr<phone::PhoneLink>> links;
+    {
+        std::lock_guard lk(g_lock);
+        if (!ValidCamera(camera) || !g_cameras[camera].IsPhone()) return;
+        endpoint = EndpointOf(camera);
+        const std::string id = PairingId(g_cameras[camera], endpoint);
+        if (what & CS_PHONE_PAIRED)
+        {
+            phone::ForgetPairKey(id);
+            // Every route to this phone (Wi‑Fi, cable, its screen) still holds a session.
+            for (int32_t i = 0; i < static_cast<int32_t>(g_cameras.size()); ++i)
+                if (g_cameras[i].IsPhone() && g_cameras[i].phone &&
+                    (i == camera || (!id.empty() && PairingId(g_cameras[i], EndpointOf(i)) == id)))
+                    links.push_back(g_cameras[i].phone);
+        }
+    }
+    for (auto& link : links) link->Abort(); // the lease holder closes it
+    if ((what & CS_PHONE_MANUAL) && endpoint.manual) phone::RemoveManual(endpoint.host, endpoint.port);
+    if (g_connector) g_connector->Wake();
+}
+
+namespace
+{
 int32_t StartOrSwitch(int32_t camera, int32_t format, const CsImage* image, bool keepCamera)
 {
     CameraDevice cam;

@@ -433,6 +433,11 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **List order and forgetting** (2026-10-20): sources that work first, phones that can't be used
+  now under "Chưa kết nối". Right-click a phone: "Quên ghép đôi…" (deletes the key, closes its
+  idle links) and "Xóa khỏi danh sách" (added by IP): `cs_phone_flags` / `cs_forget_phone`. A
+  cable phone not connected in this run has no known id, so it has no "Quên ghép đôi". Add by IP
+  takes a bare IP (port 47321 by default).
 - **Automatic pick** (app, `MainWindow.Sources.cs`): the source picked last, else connected
   phones (cable, then Wi‑Fi), USB webcams, the built-in camera (`EnclosureLocation.Panel`). A
   better one replaces an automatic pick only while no app uses the camera; a source lost for

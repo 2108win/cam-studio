@@ -163,4 +163,7 @@ std::string ClientId();
 std::string ClientName();
 crypto::Bytes LoadPairKey(const std::string& deviceId);
 void SavePairKey(const std::string& deviceId, const crypto::Bytes& key);
+bool HasPairKey(const std::string& deviceId);
+// "Quên ghép đôi": the next connection pairs again (6-digit code on both sides).
+void ForgetPairKey(const std::string& deviceId);
 } // namespace phone

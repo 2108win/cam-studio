@@ -116,6 +116,15 @@ CS_API void cs_pairing_answer(int32_t accept);
 // "Add by IP" for networks where discovery does not work.
 CS_API void cs_add_phone(const wchar_t* host, int32_t port);
 
+// What can be forgotten about a source (a phone camera or screen; 0 for a webcam).
+#define CS_PHONE_MANUAL 1 // added by IP
+#define CS_PHONE_PAIRED 2 // a pairing key is saved for it
+CS_API int32_t cs_phone_flags(int32_t camera);
+// Forgets what (CS_PHONE_MANUAL: the added-by-IP entry; CS_PHONE_PAIRED: the pairing key, so the
+// next connection asks for the 6-digit code on both sides, and the phone's idle links close).
+// Switch the camera away from this phone first.
+CS_API void cs_forget_phone(int32_t camera, int32_t what);
+
 // Starts capture + virtual camera for a camera and an index from the last
 // cs_load_formats() of that camera (a fresh start: the camera is published again).
 // Returns the source id (> 0, see CsStatus.sourceId), or an HRESULT < 0.

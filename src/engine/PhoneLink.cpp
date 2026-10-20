@@ -149,6 +149,16 @@ void SavePairKey(const std::string& deviceId, const crypto::Bytes& key)
     LocalFree(out.pbData);
 }
 
+bool HasPairKey(const std::string& deviceId)
+{
+    return !deviceId.empty() && GetFileAttributesW(PairFile(deviceId).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+void ForgetPairKey(const std::string& deviceId)
+{
+    if (!deviceId.empty()) DeleteFileW(PairFile(deviceId).c_str());
+}
+
 // ---- connection --------------------------------------------------------------------------
 
 bool PhoneLink::Connect(const Endpoint& endpoint, const PairingCallback& onPairing, const PairingConfirm& confirm, std::string& error)

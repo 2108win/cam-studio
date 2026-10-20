@@ -46,6 +46,7 @@ std::vector<Endpoint> KnownPhones();
 
 // "Add by IP": remembered for this run and in %LOCALAPPDATA%\CamStudio\phones.txt.
 void AddManual(const std::string& host, uint16_t port);
+void RemoveManual(const std::string& host, uint16_t port);
 
 // Called (on a discovery thread, keep it short) when a phone appears, changes or leaves the
 // network list. Cable changes are not reported: the connector looks every 3 s anyway.

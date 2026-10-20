@@ -253,6 +253,22 @@ void AddManual(const std::string& host, uint16_t port)
     Changed();
 }
 
+void RemoveManual(const std::string& host, uint16_t port)
+{
+    {
+        std::lock_guard lk(g_lock);
+        LoadManualLocked();
+        const auto gone = std::remove_if(g_manual.begin(), g_manual.end(), [&](const Endpoint& m) {
+            return m.host == host && m.port == port;
+        });
+        if (gone == g_manual.end()) return;
+        g_manual.erase(gone, g_manual.end());
+        std::ofstream f(ManualFile(), std::ios::trunc);
+        for (const Endpoint& m : g_manual) f << m.host << ' ' << m.port << '\n';
+    }
+    Changed();
+}
+
 void SetOnChange(std::function<void()> onChange)
 {
     std::lock_guard lk(g_lock);

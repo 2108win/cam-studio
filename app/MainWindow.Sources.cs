@@ -75,8 +75,18 @@ public sealed partial class MainWindow
     private string _selectedBase = "";
     private static readonly Regex TransportSuffix = new(@"\s*\(([^()]*)\)$");
 
+    // A card's menu is open: rebuilding the list would close it (phones reconnect in the
+    // background all the time), so the list waits until it closes.
+    private bool _sourceMenuOpen, _sourceListStale;
+
     private void BuildSourceList()
     {
+        if (_sourceMenuOpen)
+        {
+            _sourceListStale = true;
+            return;
+        }
+        _sourceListStale = false;
         SourceList.Children.Clear();
         _selectedSubtitle = null;
         var quick = QuickSources();
@@ -96,7 +106,15 @@ public sealed partial class MainWindow
             }
             (_kinds[i] == 2 ? devices[d].Screens : devices[d].Cameras).Add(i);
         }
-        foreach (var (name, cameras, screens) in devices) SourceList.Children.Add(PhoneCard(name, cameras, screens, quick));
+        // A phone that cannot be used now (not reachable, busy with another PC) goes under
+        // "Chưa kết nối", below every source that works.
+        var later = new List<Button>();
+        foreach (var (name, cameras, screens) in devices)
+        {
+            var card = PhoneCard(name, cameras, screens, quick, out bool ready);
+            if (ready) SourceList.Children.Add(card);
+            else later.Add(card);
+        }
 
         for (int i = 0; i < _cameras.Count; i++)
         {
@@ -114,6 +132,11 @@ public sealed partial class MainWindow
             "Một cửa sổ trên máy tính làm nguồn của camera ảo");
         windowCard.Click += (_, _) => ShowWindowPicker(windowCard);
         SourceList.Children.Add(windowCard);
+        if (later.Count > 0)
+        {
+            SourceList.Children.Add(new TextBlock { Text = "Chưa kết nối", Style = Res<Style>("ListSectionLabelStyle") });
+            foreach (var card in later) SourceList.Children.Add(card);
+        }
         UpdateSelectedSubtitle(Engine.GetStatus());
     }
 
@@ -146,7 +169,7 @@ public sealed partial class MainWindow
 
     // A phone: its name, the route it is used (or would be used) through, "USB"/"Wi‑Fi" chips when
     // it is reachable both ways, and its shared screen with "Mở cửa sổ" / "Làm camera".
-    private Button PhoneCard(string name, List<int> cameras, List<int> screens, List<int> quick)
+    private Button PhoneCard(string name, List<int> cameras, List<int> screens, List<int> quick, out bool ready)
     {
         bool onCamera = _windowSource is null;
         int route = onCamera && cameras.Contains(_camera) ? _camera : cameras.OrderBy(RouteRank).DefaultIfEmpty(-1).First();
@@ -163,6 +186,7 @@ public sealed partial class MainWindow
             string transport = TransportOf(_cameras[route]);
             subtitle = JoinParts(transport == name ? "Thêm theo IP" : transport, StateText(1, state));
             dot = DotColor(1, state);
+            ready = selected || state is LinkState.Connected or LinkState.Connecting or LinkState.Elsewhere or LinkState.NeedsPairing;
             tooltip = (error.Length > 0 ? error : _cameras[route]) + QuickHint(quick, route);
         }
         else
@@ -170,6 +194,7 @@ public sealed partial class MainWindow
             var state = Engine.CameraState(screen, out string error);
             subtitle = "Chỉ chia sẻ màn hình";
             dot = state == LinkState.Unreachable ? DotColor(2, LinkState.Idle) : DotColor(2, state);
+            ready = selected || state is LinkState.Connected or LinkState.Connecting;
             tooltip = error.Length > 0 ? error : _cameras[screen];
         }
 
@@ -196,6 +221,7 @@ public sealed partial class MainWindow
         if (screen >= 0) extras.Children.Add(ScreenRow(screen, screenIsCamera));
 
         var card = SourceCard(Icons.Phone, name, subtitle, selected, dot, tooltip, extras.Children.Count > 0 ? extras : null);
+        card.ContextFlyout = PhoneMenu(name, route >= 0 ? route : screen);
         if (route >= 0)
         {
             int pick = route;
@@ -207,6 +233,90 @@ public sealed partial class MainWindow
             card.Click += (_, _) => OpenScreenWindow(s);
         }
         return card;
+    }
+
+    // Right-click on a phone: forget its pairing, or remove it if it was added by IP.
+    private MenuFlyout? PhoneMenu(string name, int cam)
+    {
+        int flags = Engine.cs_phone_flags(cam);
+        if (flags == 0) return null;
+        string id = _ids[cam];
+        var menu = new MenuFlyout();
+        menu.Opened += (_, _) => _sourceMenuOpen = true;
+        menu.Closed += (_, _) =>
+        {
+            _sourceMenuOpen = false;
+            if (_sourceListStale) BuildSourceList();
+        };
+        if ((flags & Engine.PhonePaired) != 0)
+        {
+            var forget = new MenuFlyoutItem { Text = "Quên ghép đôi…", Icon = MenuIcon(Icons.Delete) };
+            forget.Click += (_, _) => ForgetPhone(name, id, Engine.PhonePaired);
+            menu.Items.Add(forget);
+        }
+        if ((flags & Engine.PhoneManual) != 0)
+        {
+            var remove = new MenuFlyoutItem { Text = "Xóa khỏi danh sách", Icon = MenuIcon(Icons.Dismiss) };
+            remove.Click += (_, _) => ForgetPhone(name, id, Engine.PhoneManual);
+            menu.Items.Add(remove);
+        }
+        return menu;
+    }
+
+    private static FontIcon MenuIcon(string glyph) => new() { Glyph = glyph, FontFamily = Res<FontFamily>("IconFont") };
+
+    private async void ForgetPhone(string name, string id, int what)
+    {
+        if (what == Engine.PhonePaired)
+        {
+            var ask = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = $"Quên ghép đôi với {name}?",
+                Content = "Lần sau dùng điện thoại này, máy tính và điện thoại phải cùng xác nhận mã 6 số.",
+                PrimaryButtonText = "Quên",
+                CloseButtonText = "Hủy",
+                DefaultButton = ContentDialogButton.Close,
+                RequestedTheme = RootGrid.ActualTheme,
+            };
+            try
+            {
+                if (await ask.ShowAsync() != ContentDialogResult.Primary) return;
+            }
+            catch (Exception)
+            {
+                return; // another dialog is open
+            }
+        }
+        int cam = _ids.IndexOf(id); // the list may have changed while the dialog was open
+        if (cam < 0) return;
+        // The camera shows this phone (any route, or its screen): move it off first; another
+        // source is then picked by itself.
+        bool current = _windowSource is null && _camera >= 0 && _camera < _cameras.Count && _kinds[_camera] != 0 &&
+                       DeviceName(_cameras[_camera]) == name;
+        if (current)
+        {
+            int sid = Engine.cs_switch_none((int)_settings.LastWidth, (int)_settings.LastHeight);
+            if (sid > 0) _expectSourceId = sid;
+            _noSource = true;
+            _selectedId = null;
+            _camera = -1;
+            _format = -1;
+            _autoPick = true;
+            _settings.Save();
+            ClearPreview();
+        }
+        // Not the source picked last any more (any route of it, or its screen).
+        for (int i = 0; i < _cameras.Count; i++)
+            if (_kinds[i] != 0 && DeviceName(_cameras[i]) == name && _ids[i] == _settings.CameraId)
+            {
+                _settings.CameraId = "";
+                _settings.Save();
+            }
+        Engine.cs_forget_phone(cam, what);
+        ReadCameraList();
+        BuildSourceList();
+        UpdateStatus();
     }
 
     // The phone's shared screen: it opens in its own window (to share that window in a meeting
