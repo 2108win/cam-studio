@@ -113,6 +113,7 @@ public sealed partial class MainWindow
     {
         var apps = CameraUsage.RunningAppsInUse();
         if (apps.Count == 0 && Engine.GetStatus().ConsumerActive != 0) apps.Add("một ứng dụng");
+        if (_recording) apps.Add("Cam Studio (đang ghi hình)");
         return apps;
     }
 

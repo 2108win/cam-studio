@@ -136,6 +136,21 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial int cs_phone_flags(int camera);
     [LibraryImport(Dll)] public static partial void cs_forget_phone(int camera, int what);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_pause_picture(int kind, string text, string imagePath);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_snapshot(string path);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int cs_record_start(string path, int microphone);
+    [LibraryImport(Dll)] public static partial int cs_record_stop();
+    [LibraryImport(Dll)] public static partial long cs_record_status(int* hasAudio, char* problem, int capacity);
+
+    // ms recorded so far (0: not recording); why there is no sound, if so.
+    public static long RecordStatus(out bool hasAudio, out string problem)
+    {
+        int audio = 0;
+        char* buffer = stackalloc char[256];
+        long ms = cs_record_status(&audio, buffer, 256);
+        hasAudio = audio != 0;
+        problem = new string(buffer);
+        return ms;
+    }
     [LibraryImport(Dll)] public static partial int cs_start(int camera, int format, CsImage* image);
     [LibraryImport(Dll)] public static partial int cs_switch(int camera, int format, CsImage* image);
     [LibraryImport(Dll)] public static partial void cs_set_output_size(int mode);

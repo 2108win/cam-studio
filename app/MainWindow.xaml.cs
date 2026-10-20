@@ -290,6 +290,7 @@ public sealed partial class MainWindow : Window
         _previewTimer.Stop();
         _statusTimer.Stop();
         CloseScreenWindows();
+        if (_recording) Engine.cs_record_stop(); // a finished file, not a broken one
         _hotkeys?.Dispose();
         _tray.Dispose();
         if (engineTimeoutMs < 0) Engine.cs_shutdown();
@@ -366,6 +367,9 @@ public sealed partial class MainWindow : Window
             new((paused ? "Phát hình" : "Tạm dừng hình (camera ảo vẫn có)") + MenuShortcut("Pause"), () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = paused)),
             new("Lật ngang", () => DispatcherQueue.TryEnqueue(() => { MirrorButton.IsChecked = !_settings.Mirror; Mirror_Click(this, new RoutedEventArgs()); }), Checked: _settings.Mirror),
             null,
+            new("Chụp ảnh" + MenuShortcut("Snapshot"), () => DispatcherQueue.TryEnqueue(() => _ = TakeSnapshotAsync())),
+            new((_recording ? "Dừng ghi hình" : "Bắt đầu ghi hình") + MenuShortcut("Record"), () => DispatcherQueue.TryEnqueue(() => _ = ToggleRecordingAsync())),
+            null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
             null,
         });
@@ -399,6 +403,7 @@ public sealed partial class MainWindow : Window
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
         LoadPauseSettingsIntoUi();
+        RecordMicToggle.IsOn = _settings.RecordMicrophone;
         UpdateToolIndicators();
         UpdateAutoFrameHint();
     }
@@ -1711,10 +1716,11 @@ public sealed partial class MainWindow : Window
             EngineState.Waiting => ("Đang chờ nguồn hình…", "Đang chờ nguồn hình", StatusAmber),
             _ => ("Đang tắt", "Đã tắt", StatusGrey),
         };
-        _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : ""));
+        _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : "") + (_recording ? " · đang ghi hình" : ""));
 
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
+        if (_recording) UpdateRecordingUi();
         RefreshSourcesIfChanged();
 
         StatusText.Text = text;

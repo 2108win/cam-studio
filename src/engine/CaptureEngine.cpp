@@ -280,7 +280,7 @@ public:
     {
         m_writer.TryOpen();
         return m_writer.ConsumerActive() || (m_writer.IsOpen() && GetTickCount64() - m_lastWriteTick >= 1000) ||
-               m_engine.PreviewWanted();
+               m_engine.PreviewWanted() || m_engine.m_recorder.Active() || m_engine.m_snapWanted;
     }
 
     double LastFps() const { return m_lastFps; }
@@ -419,7 +419,9 @@ private:
         const ULONGLONG tick = GetTickCount64();
         const bool toCamera = m_writer.ConsumerActive() || (m_writer.IsOpen() && tick - m_lastWriteTick >= 1000);
         const bool toPreview = m_engine.PreviewDue();
-        if (!toCamera && !toPreview) return;
+        const bool toRecording = m_engine.m_recorder.Active();
+        const bool toSnapshot = m_engine.m_snapWanted;
+        if (!toCamera && !toPreview && !toRecording && !toSnapshot) return;
 
         const uint8_t* frame = data;
         uint8_t* owned = nullptr; // set once the frame lives in our own buffer
@@ -495,6 +497,8 @@ private:
             m_writer.Write(frame, framePitch, l.outWidth, l.outHeight);
             m_lastWriteTick = tick;
         }
+        if (toRecording) m_engine.m_recorder.Push(frame, framePitch, l.outWidth, l.outHeight);
+        if (toSnapshot) m_engine.OfferSnapshot(frame, framePitch, l.outWidth, l.outHeight);
         if (toPreview) m_engine.UpdatePreview(picY, picUv, picPitch, l.destWidth, l.destHeight);
         m_workMs += QpcMs() - t0;
         ++m_workFrames;
@@ -688,6 +692,58 @@ CaptureEngine::Status CaptureEngine::GetStatus() const
     return s;
 }
 
+void CaptureEngine::OfferSnapshot(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h)
+{
+    std::lock_guard lk(m_snapLock);
+    if (!m_snapWanted) return;
+    m_snap.resize(CamStudioNv12Bytes(w, h));
+    Nv12Scale(nv12, pitch, w, h, m_snap.data(), static_cast<long>(w), w, h);
+    m_snapW = w;
+    m_snapH = h;
+    m_snapWanted = false;
+    m_snapReady.notify_all();
+}
+
+HRESULT CaptureEngine::Snapshot(const std::wstring& path)
+{
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    {
+        std::unique_lock lk(m_snapLock);
+        m_snap.clear();
+        m_snapWanted = true;
+        m_snapReady.wait_for(lk, std::chrono::seconds(4), [this] { return !m_snapWanted; });
+        m_snapWanted = false;
+        frame.swap(m_snap);
+        w = m_snapW;
+        h = m_snapH;
+    }
+    if (frame.empty())
+    {
+        // No source ("no signal"): what the camera holds now, if it is fresh.
+        FrameWriter writer;
+        writer.UseLocal(VirtualCameraApi() == nullptr);
+        writer.TryOpen();
+        if (!writer.CopyLatestFresh(frame, w, h)) return HRESULT_FROM_WIN32(ERROR_NO_DATA);
+    }
+    return still::SavePng(path, frame.data(), w, h);
+}
+
+HRESULT CaptureEngine::StartRecording(const std::wstring& path, bool microphone)
+{
+    uint32_t w = 0, h = 0, fps = 30;
+    {
+        std::lock_guard lk(m_lock);
+        w = m_status.width;
+        h = m_status.height;
+        if (m_format.fpsNum && m_format.fpsDen) fps = (m_format.fpsNum + m_format.fpsDen / 2) / m_format.fpsDen;
+    }
+    if (!w || !h) return HRESULT_FROM_WIN32(ERROR_NOT_READY);
+    const HRESULT hr = m_recorder.Start(path, w, h, fps, microphone);
+    Notify();
+    return hr;
+}
+
 void CaptureEngine::SetPausePicture(PauseKind kind, const std::wstring& text, const std::wstring& path)
 {
     std::lock_guard lk(m_lock);
@@ -722,7 +778,8 @@ int CaptureEngine::ExpectedRotationLocked(const CameraDevice& cam, const NativeF
 
 bool CaptureEngine::SourceWanted(Pipeline& pipeline)
 {
-    return m_previewEnabled || pipeline.ConsumerActive();
+    // A recording or a snapshot needs the picture too (window hidden, no app on the camera).
+    return m_previewEnabled || pipeline.ConsumerActive() || m_recorder.Active() || m_snapWanted;
 }
 
 bool CaptureEngine::StillWanted(Pipeline& pipeline, ULONGLONG& idleSince)
@@ -956,11 +1013,13 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                             stillWritten = 0;
                         }
                         const ULONGLONG now = GetTickCount64();
-                        if (!still.empty() && now - stillWritten >= (consumer ? 500u : 1500u))
+                        if (!still.empty() && now - stillWritten >= (consumer || m_recorder.Active() ? 500u : 1500u))
                         {
                             pipeline.WriteStill(still.data(), stillW, stillH);
+                            m_recorder.Push(still.data(), static_cast<long>(stillW), stillW, stillH); // paused while recording
                             stillWritten = now;
                         }
+                        if (m_snapWanted && !still.empty()) OfferSnapshot(still.data(), static_cast<long>(stillW), stillW, stillH);
                     }
                     else if (!still.empty())
                     {

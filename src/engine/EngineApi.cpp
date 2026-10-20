@@ -576,6 +576,32 @@ CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_
     g_engine->SetPausePicture(static_cast<CaptureEngine::PauseKind>(std::clamp(kind, 0, 3)), text ? text : L"", imagePath ? imagePath : L"");
 }
 
+CS_API int32_t cs_snapshot(const wchar_t* path)
+{
+    if (!g_engine || !path) return E_UNEXPECTED;
+    return g_engine->Snapshot(path);
+}
+
+CS_API int32_t cs_record_start(const wchar_t* path, int32_t microphone)
+{
+    if (!g_engine || !path) return E_UNEXPECTED;
+    return g_engine->StartRecording(path, microphone != 0);
+}
+
+CS_API int32_t cs_record_stop()
+{
+    return g_engine ? g_engine->StopRecording() : S_FALSE;
+}
+
+CS_API int64_t cs_record_status(int32_t* hasAudio, wchar_t* problem, int32_t capacity)
+{
+    if (!g_engine) return 0;
+    const Recorder& r = g_engine->Recording();
+    if (hasAudio) *hasAudio = r.HasAudio() ? 1 : 0;
+    CopyOut(r.AudioProblem(), problem, capacity);
+    return r.ElapsedMs();
+}
+
 CS_API void cs_get_framing(CsFraming* out)
 {
     if (!out) return;

@@ -166,6 +166,34 @@ bool RenderCard(const std::wstring& text, uint32_t w, uint32_t h, const uint8_t*
     return c.ToNv12(w, h, nv12);
 }
 
+HRESULT SavePng(const std::wstring& path, const uint8_t* nv12, uint32_t w, uint32_t h)
+{
+    if (!nv12 || w < 2 || h < 2) return E_INVALIDARG;
+    std::vector<uint32_t> bgra(static_cast<size_t>(w) * h);
+    Nv12ToBgra(nv12, nv12 + static_cast<size_t>(w) * h, static_cast<long>(w), w, h, bgra.data(), w, h);
+    ComPtr<IWICImagingFactory> wic;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic));
+    ComPtr<IWICStream> stream;
+    if (SUCCEEDED(hr)) hr = wic->CreateStream(&stream);
+    if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE);
+    ComPtr<IWICBitmapEncoder> encoder;
+    if (SUCCEEDED(hr)) hr = wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
+    if (SUCCEEDED(hr)) hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+    ComPtr<IWICBitmapFrameEncode> frame;
+    if (SUCCEEDED(hr)) hr = encoder->CreateNewFrame(&frame, nullptr);
+    if (SUCCEEDED(hr)) hr = frame->Initialize(nullptr);
+    if (SUCCEEDED(hr)) hr = frame->SetSize(w, h);
+    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA; // alpha 255 everywhere (Nv12ToBgra)
+    if (SUCCEEDED(hr)) hr = frame->SetPixelFormat(&format);
+    if (SUCCEEDED(hr) && format != GUID_WICPixelFormat32bppBGRA) hr = WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT;
+    if (SUCCEEDED(hr)) hr = frame->WritePixels(h, w * 4, static_cast<UINT>(bgra.size() * 4), reinterpret_cast<BYTE*>(bgra.data()));
+    if (SUCCEEDED(hr)) hr = frame->Commit();
+    if (SUCCEEDED(hr)) hr = encoder->Commit();
+    stream.Reset();
+    if (FAILED(hr)) DeleteFileW(path.c_str()); // no half-written file left behind
+    return hr;
+}
+
 bool LoadImageFill(const std::wstring& path, uint32_t w, uint32_t h, std::vector<uint8_t>& nv12)
 {
     if (w < 2 || h < 2 || path.empty()) return false;

@@ -7,9 +7,11 @@
 
 #include "../common/MfDevices.h"
 #include "ImageSettings.h"
+#include "Recorder.h"
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <map>
 #include <mutex>
 #include <string>
@@ -87,6 +89,14 @@ public:
         m_outputSize = static_cast<int>(size);
         ++m_layoutGen;
     }
+
+    // "Chụp ảnh": the next frame the camera shows (or what it shows now with no source) as a PNG.
+    // Blocks up to 4 s: a closed source (standby) opens first.
+    HRESULT Snapshot(const std::wstring& path);
+    // "Ghi hình": what the camera shows, from now until StopRecording, to an MP4.
+    HRESULT StartRecording(const std::wstring& path, bool microphone);
+    HRESULT StopRecording() { return m_recorder.Stop(); }
+    const Recorder& Recording() const { return m_recorder; }
 
     // What apps see while the picture is paused (cs_set_pause_picture): the camera's own "no
     // signal", a card with text, the last picture blurred with the text, or an image file.
@@ -205,6 +215,15 @@ private:
         uint32_t gen = 0; // bumped on every change: the picture is rendered again
     };
     PausePicture m_pause; // under m_lock
+
+    Recorder m_recorder;
+    // A snapshot asked for: the next frame that goes to the camera is copied here.
+    std::atomic<bool> m_snapWanted{ false };
+    std::mutex m_snapLock;
+    std::condition_variable m_snapReady;
+    std::vector<uint8_t> m_snap;
+    uint32_t m_snapW = 0, m_snapH = 0;
+    void OfferSnapshot(const uint8_t* nv12, long pitch, uint32_t w, uint32_t h);
 
     // Last orientation each phone source reported (camera name + lens), so the
     // virtual camera published in standby already has the right shape and is

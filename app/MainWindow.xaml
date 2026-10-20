@@ -105,7 +105,22 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+                        <!-- Snapshot and recording of what the camera shows (MainWindow.Record.cs). -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Button x:Name="SnapshotButton" Style="{StaticResource ToolButtonStyle}" Click="Snapshot_Click"
+                                    AutomationProperties.Name="Chụp ảnh" ToolTipService.ToolTip="Chụp ảnh (những gì camera ảo đang phát) vào Ảnh › Cam Studio">
+                                <FontIcon Glyph="{StaticResource IconCamera}" Style="{StaticResource ToolIconStyle}" />
+                            </Button>
+                            <Button x:Name="RecordButton" Style="{StaticResource ToolButtonStyle}" Width="NaN" MinWidth="40" Padding="12,0" Click="Record_Click"
+                                    AutomationProperties.Name="Ghi hình">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon x:Name="RecordIcon" Glyph="{StaticResource IconRecord}" Style="{StaticResource ToolIconStyle}" />
+                                    <TextBlock x:Name="RecordTime" Visibility="Collapsed" VerticalAlignment="Center" FontWeight="SemiBold" MinWidth="40" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                         <!-- The source's name; under it its mode (resolution, fps) and lens / connection. -->
                         <StackPanel VerticalAlignment="Center" Spacing="2">
                             <TextBlock x:Name="CameraButtonText" Text="Đang tìm nguồn hình…" Style="{StaticResource SubtitleTextBlockStyle}"
@@ -125,7 +140,7 @@
                         </StackPanel>
 
                         <!-- Virtual camera: live state and the picture on/off -->
-                        <Border Grid.Column="1" Style="{StaticResource CardStyle}" MinHeight="0" Padding="12,6,8,6"
+                        <Border Grid.Column="2" Style="{StaticResource CardStyle}" MinHeight="0" Padding="12,6,8,6"
                                 VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <Ellipse x:Name="StatusDot" Width="8" Height="8" VerticalAlignment="Center"
@@ -141,7 +156,7 @@
                             </StackPanel>
                         </Border>
 
-                        <ToggleButton x:Name="InspectorToggle" Grid.Column="2" IsChecked="True" VerticalAlignment="Center"
+                        <ToggleButton x:Name="InspectorToggle" Grid.Column="3" IsChecked="True" VerticalAlignment="Center"
                                       Style="{StaticResource PaneToggleStyle}" Click="InspectorToggle_Click"
                                       AutomationProperties.Name="Bảng chỉnh hình" ToolTipService.ToolTip="Hiện / ẩn bảng chỉnh hình">
                             <ToggleButton.Resources>
@@ -222,12 +237,18 @@
 
                             <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" Title="Không bật được camera"
                                      VerticalAlignment="Top" HorizontalAlignment="Center" Margin="12,52,12,12" />
-                            <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True"
-                                     VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="12">
-                                <InfoBar.ActionButton>
-                                    <Button Content="Cập nhật ngay" Click="UpdateNow_Click" />
-                                </InfoBar.ActionButton>
-                            </InfoBar>
+                            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="12" Spacing="8">
+                                <InfoBar x:Name="SavedBar" Severity="Success" IsClosable="True">
+                                    <InfoBar.ActionButton>
+                                        <Button x:Name="SavedOpenButton" Content="Mở thư mục" Click="SavedOpen_Click" />
+                                    </InfoBar.ActionButton>
+                                </InfoBar>
+                                <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True">
+                                    <InfoBar.ActionButton>
+                                        <Button Content="Cập nhật ngay" Click="UpdateNow_Click" />
+                                    </InfoBar.ActionButton>
+                                </InfoBar>
+                            </StackPanel>
                         </Grid>
                     </Border>
 
@@ -727,6 +748,15 @@
                     </StackPanel>
                     <!-- Built by BuildHotkeyRows (MainWindow.Hotkeys.cs). -->
                     <StackPanel x:Name="HotkeyRows" Spacing="8" />
+
+                    <TextBlock Text="Ghi hình" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
+                    <ToggleSwitch x:Name="RecordMicToggle" Header="Tiếng khi ghi hình" OnContent="Ghi kèm tiếng micro mặc định" OffContent="Chỉ ghi hình"
+                                  Toggled="RecordMicToggle_Toggled" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="Mở thư mục Video › Cam Studio" Click="OpenVideos_Click" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                               Text="Ảnh chụp lưu trong Ảnh › Cam Studio. Ảnh và đoạn ghi là đúng hình camera ảo đang phát (đã chỉnh màu, khung)." />
 
                     <TextBlock Text="Cập nhật" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
                     <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật"

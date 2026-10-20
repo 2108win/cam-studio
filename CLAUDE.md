@@ -433,6 +433,13 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Snapshot and recording** (2026-10-20, `Recorder.cpp`, `MainWindow.Record.cs`): what the camera
+  shows (settings, framing, colour), PNG to Pictures\Cam Studio, MP4 (H.264 through the GPU's MFT,
+  AAC from the default microphone, timed by sample count) to Videos\Cam Studio. Up to 60 fps (a
+  100 fps webcam gives ~50). A recording or a snapshot keeps the source out of standby
+  (`SourceWanted`); paused, the pause picture is recorded. The microphone thread is never shut
+  down while it reads (that hung `Stop`): it gets 1 s to see the stop flag. Updates wait for a
+  recording to end. Ctrl+Alt+S / Ctrl+Alt+R, the tray.
 - **Phone app QR** (2026-10-20, `QrCode.cs`, `MainWindow.Download.cs`): our own encoder (byte mode,
   level M, versions 1–10), checked against Thonky's HELLO WORLD Reed–Solomon codewords and the
   ISO format strings. It encodes the GitHub `releases/latest` page (the APK's name has the

@@ -145,6 +145,13 @@ public:
         return true;
     }
 
+    // Same, only if it was written in the last 2 s (what a reader would still show).
+    bool CopyLatestFresh(std::vector<uint8_t>& out, uint32_t& w, uint32_t& h) const
+    {
+        if (!m_header || MFGetSystemTime() - m_header->writeTime100ns > CAMSTUDIO_STALE_100NS) return false;
+        return CopyLatest(out, w, h);
+    }
+
     // Keeps the latest frame good for readers for `ms` more, so an app keeps showing it (frozen)
     // instead of "no signal" while the next source opens. Nothing is copied: the picture is
     // already in its slot, only its time moves (ahead of now: readers check the age with a

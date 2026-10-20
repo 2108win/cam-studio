@@ -30,6 +30,7 @@ it once everything is tested.
 | PC UI 2026-10-19: device cards, camera bar under the preview, colour presets, (i) help, **Khởi động lại** | yes | dev build: dark + light theme, 960 px window, presets, restart (visible, hidden `--tray`, and during a Discord call: Discord then needs its camera off/on once, picture back at once) |
 | PC design rules (spacing, radii, one status palette, screen-reader names), 2026-10-20 | yes | dev build: dark + light theme, menus, Settings |
 | PC icons: bundled Fluent UI System Icons font (`tools/make_icon_font.py`) | yes | dev build on Win11; **not seen on Windows 10** |
+| PC snapshot (PNG) and recording (MP4 H.264 + mic AAC) of the camera's picture | yes | OBSBOT: PNG 1920×1080, MP4 4.4 s and 17.7 s with the window hidden (~50 fps, sound track); **not tried: a phone source, paused while recording, no microphone, Windows 10** |
 | PC phone-app QR ("+" › Tải app cho điện thoại…, empty preview) | yes | encoder vectors pass, dialog seen; **not scanned with a phone yet** |
 | PC pause picture (blurred last picture + text, card, own image, no signal) | yes | blurred card seen through `camstudio-verify --dump` (29 fps, 0 no-signal), resume live; **card / own image / Windows 10 path not looked at** |
 | PC global shortcuts (Ctrl+Alt+P pause, Ctrl+Alt+N next source; Settings › Phím tắt) | yes | pause/resume by shortcut, recording a new one; **not tried with the window hidden in a Discord call** |

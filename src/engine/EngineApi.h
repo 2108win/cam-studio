@@ -161,6 +161,17 @@ CS_API void cs_set_auto_frame(int32_t enabled);
 #define CS_PAUSE_BLUR 2      // the last picture, blurred, with the text on it
 #define CS_PAUSE_IMAGE 3     // an image file filling the frame (the card if it can't be read)
 CS_API void cs_set_pause_picture(int32_t kind, const wchar_t* text, const wchar_t* imagePath);
+
+// "Chụp ảnh": what the camera shows, as a PNG at path. Blocks up to 4 s. HRESULT.
+CS_API int32_t cs_snapshot(const wchar_t* path);
+// "Ghi hình": what the camera shows, at its size now, to an MP4 at path (H.264, the GPU's encoder
+// when there is one); microphone = 1 adds the default microphone. HRESULT.
+CS_API int32_t cs_record_start(const wchar_t* path, int32_t microphone);
+// Finishes the file. HRESULT (S_FALSE: nothing was recording).
+CS_API int32_t cs_record_stop();
+// How long it has been recording (ms), 0 when not; hasAudio: the microphone is in the file.
+// problem: why there is no sound, if asked for and missing.
+CS_API int64_t cs_record_status(int32_t* hasAudio, wchar_t* problem, int32_t capacity);
 struct CsFraming
 {
     double zoom;          // the view shown now (1 .. maxZoom)
