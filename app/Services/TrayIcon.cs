@@ -54,11 +54,12 @@ public sealed unsafe partial class TrayIcon : IDisposable
         Shell_NotifyIconW(NIM_MODIFY, &nid);
     }
 
-    public void ShowBalloon(string title, string text)
+    // silent: no sound (a shortcut pressed during a call).
+    public void ShowBalloon(string title, string text, bool silent = false)
     {
         var nid = NewData();
         nid.uFlags = NIF_INFO;
-        nid.dwInfoFlags = 1; // NIIF_INFO
+        nid.dwInfoFlags = 1 | (silent ? 0x10u : 0); // NIIF_INFO, NIIF_NOSOUND
         CopyString(title, nid.szInfoTitle, 64);
         CopyString(text, nid.szInfo, 256);
         Shell_NotifyIconW(NIM_MODIFY, &nid);

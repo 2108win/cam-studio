@@ -676,6 +676,16 @@
                         <x:String>720p · 1280 × 720</x:String>
                     </ComboBox>
 
+                    <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,16,0,0">
+                        <TextBlock Text="Phím tắt" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <Button Style="{StaticResource InfoButtonStyle}" AutomationProperties.Name="Giải thích: Phím tắt" ToolTipService.ToolTip="Dùng được cả khi Cam Studio ẩn ở khay hay đang ở ứng dụng khác (Discord, Zoom, Meet…). Bấm vào một tổ hợp để đổi.">
+                            <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconInfo}" FontSize="14" />
+                            <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Dùng được cả khi Cam Studio ẩn ở khay hay đang ở ứng dụng khác (Discord, Zoom, Meet…). Bấm vào một tổ hợp để đổi; Backspace để bỏ. Ctrl + 1…9 (chọn nguồn) chỉ dùng được khi cửa sổ Cam Studio đang mở." /></Flyout></Button.Flyout>
+                        </Button>
+                    </StackPanel>
+                    <!-- Built by BuildHotkeyRows (MainWindow.Hotkeys.cs). -->
+                    <StackPanel x:Name="HotkeyRows" Spacing="8" />
+
                     <TextBlock Text="Cập nhật" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
                     <ToggleSwitch x:Name="AutoUpdateToggle" Header="Tự động cập nhật"
                                   OnContent="Bật (tải sẵn, cài khi không dùng camera)" OffContent="Tắt (chỉ báo có bản mới)"

@@ -30,6 +30,7 @@ it once everything is tested.
 | PC UI 2026-10-19: device cards, camera bar under the preview, colour presets, (i) help, **Khởi động lại** | yes | dev build: dark + light theme, 960 px window, presets, restart (visible, hidden `--tray`, and during a Discord call: Discord then needs its camera off/on once, picture back at once) |
 | PC design rules (spacing, radii, one status palette, screen-reader names), 2026-10-20 | yes | dev build: dark + light theme, menus, Settings |
 | PC icons: bundled Fluent UI System Icons font (`tools/make_icon_font.py`) | yes | dev build on Win11; **not seen on Windows 10** |
+| PC global shortcuts (Ctrl+Alt+P pause, Ctrl+Alt+N next source; Settings › Phím tắt) | yes | pause/resume by shortcut, recording a new one; **not tried with the window hidden in a Discord call** |
 | PC source list: working sources first, "Chưa kết nối" below; right-click "Quên ghép đôi…" / "Xóa khỏi danh sách"; add by IP without a port | yes | order, menu, add + remove a test IP; **"Quên ghép đôi" not run** (needs re-pairing a real phone) |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |

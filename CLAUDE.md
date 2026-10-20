@@ -433,6 +433,10 @@ Windows 11.
 - **Sources are known by id** (`cs_camera_id`): `cam:<symbolic link>`, `phone:<ip>:<port>`,
   `phone:usb:<serial>:<port>`. Indices change on every refresh, now also while streaming.
   The mode is remembered per id (`HKCU\Software\CamStudio\Modes`).
+- **Global shortcuts** (2026-10-20, `MainWindow.Hotkeys.cs`, `GlobalHotkeys.cs`): `RegisterHotKey`
+  on a message-only window, so they work hidden and in a call. Ctrl+Alt+letter by default
+  (Settings › Phím tắt: change, Backspace = off, a taken combination says so). Unregistered while
+  a row records a new one. Hidden: a silent tray notification says what happened.
 - **List order and forgetting** (2026-10-20): sources that work first, phones that can't be used
   now under "Chưa kết nối". Right-click a phone: "Quên ghép đôi…" (deletes the key, closes its
   idle links) and "Xóa khỏi danh sách" (added by IP): `cs_phone_flags` / `cs_forget_phone`. A

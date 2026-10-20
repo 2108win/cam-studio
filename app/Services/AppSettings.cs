@@ -50,6 +50,8 @@ public sealed class AppSettings
     public string AutoInstalledVersion { get; set; } = ""; // the version last installed by itself (never twice)
     // The mode last used per source (by its engine id): "lens|width|height|fpsMilli", 0 = native.
     public Dictionary<string, string> Modes { get; } = new();
+    // System-wide shortcuts by action name (GlobalHotkeys.Pack; 0 = off). Missing: the default.
+    public Dictionary<string, int> Hotkeys { get; } = new();
 
     public static AppSettings Load()
     {
@@ -89,6 +91,12 @@ public sealed class AppSettings
                 foreach (string name in modes.GetValueNames())
                     if (modes.GetValue(name) is string v) s.Modes[name] = v;
         }
+        using (var hotkeys = key.OpenSubKey("Hotkeys"))
+        {
+            if (hotkeys is not null)
+                foreach (string name in hotkeys.GetValueNames())
+                    if (hotkeys.GetValue(name) is int v) s.Hotkeys[name] = v;
+        }
         return s;
     }
 
@@ -120,8 +128,10 @@ public sealed class AppSettings
         key.SetValue("OutputSize", OutputSize, RegistryValueKind.DWord);
         key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("AutoInstalledVersion", AutoInstalledVersion);
-        using var modes = key.CreateSubKey("Modes");
-        foreach (var (id, mode) in Modes) modes.SetValue(id, mode);
+        using (var modes = key.CreateSubKey("Modes"))
+            foreach (var (id, mode) in Modes) modes.SetValue(id, mode);
+        using var hotkeys = key.CreateSubKey("Hotkeys");
+        foreach (var (name, packed) in Hotkeys) hotkeys.SetValue(name, packed, RegistryValueKind.DWord);
     }
 }
 

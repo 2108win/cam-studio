@@ -91,6 +91,7 @@ public sealed partial class MainWindow : Window
         _tray = new TrayIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "CamStudio.ico"));
         _tray.Activated += () => DispatcherQueue.TryEnqueue(ShowFromTray);
         _tray.BuildMenu = BuildTrayMenu;
+        SetupHotkeys();
 
         // 30 fps is plenty for an on-screen preview.
         _previewTimer = DispatcherQueue.CreateTimer();
@@ -287,6 +288,7 @@ public sealed partial class MainWindow : Window
         _previewTimer.Stop();
         _statusTimer.Stop();
         CloseScreenWindows();
+        _hotkeys?.Dispose();
         _tray.Dispose();
         if (engineTimeoutMs < 0) Engine.cs_shutdown();
         else System.Threading.Tasks.Task.Run(Engine.cs_shutdown).Wait(engineTimeoutMs);
@@ -359,7 +361,7 @@ public sealed partial class MainWindow : Window
         }
         items.AddRange(new List<TrayIcon.MenuItem?>
         {
-            new(paused ? "Phát hình" : "Tạm dừng hình (camera ảo vẫn có)", () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = paused)),
+            new((paused ? "Phát hình" : "Tạm dừng hình (camera ảo vẫn có)") + MenuShortcut("Pause"), () => DispatcherQueue.TryEnqueue(() => VcamToggle.IsOn = paused)),
             new("Lật ngang", () => DispatcherQueue.TryEnqueue(() => { MirrorButton.IsChecked = !_settings.Mirror; Mirror_Click(this, new RoutedEventArgs()); }), Checked: _settings.Mirror),
             null,
             new("Khởi động cùng Windows", () => DispatcherQueue.TryEnqueue(() => AutostartToggle.IsOn = !AutostartToggle.IsOn), Checked: Autostart.IsEnabled),
@@ -1564,8 +1566,12 @@ public sealed partial class MainWindow : Window
         if (!_inspectorByUser) ShowInspector(w >= 1180);
     }
 
+    // "\tCtrl + Alt + P": a Win32 menu shows the text after a tab on the right.
+    private string MenuShortcut(string name) => HotkeyText(name) is { Length: > 0 } t ? "\t" + t : "";
+
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
+        BuildHotkeyRows();
         SettingsDialog.XamlRoot = RootGrid.XamlRoot;
         try
         {
