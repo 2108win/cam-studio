@@ -217,7 +217,9 @@ Windows 11.
   **Not tested on a real Windows 10 PC**, but **published in v0.1.6** (installer built here and
   installed on the user's Win11 PC; the iPhone then streamed 2K/60). **v0.1.7** (2026-10-19: new PC
   interface, colour presets, restart button, face framing) is installed on the user's PC and
-  **published** (2026-10-20). The `DllCanUnloadNow` is `S_FALSE`, so
+  **published** (2026-10-20). **v0.1.8** (2026-10-20: effects, snapshot/recording, pause picture,
+  global shortcuts, hot phone, QR, forget a phone, Fluent icons) is **published** (tag on d7ac5cd);
+  the installed 0.1.7 found it and offered the update. The `DllCanUnloadNow` is `S_FALSE`, so
   once anything (even the Claude desktop app's device enumeration) loads the registered filter DLL it
   stays mapped and locks the file: rename the DLL aside before rebuilding, or unregister first.
 - **iPhone pairing (same day):** when the PC and phone hold **different** pairing keys (app
