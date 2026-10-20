@@ -173,10 +173,10 @@ public sealed partial class MainWindow
             tooltip = error.Length > 0 ? error : _cameras[screen];
         }
 
-        var extras = new StackPanel { Spacing = 6, Margin = new Thickness(0, 8, 0, 0) };
+        var extras = new StackPanel { Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
         if (cameras.Count > 1)
         {
-            var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             foreach (int c in cameras.OrderBy(c => IsUsb(c) ? 0 : 1))
             {
                 int pick = c;
@@ -228,7 +228,7 @@ public sealed partial class MainWindow
         if (!isCamera)
         {
             int s = screen;
-            var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
             var window = new HyperlinkButton { Content = "Cửa sổ", Style = Res<Style>("CardLinkStyle") };
             ToolTipService.SetToolTip(window, "Mở trong cửa sổ riêng, để chia sẻ cửa sổ đó trong Discord, Zoom, Meet…");
             window.Click += (_, _) => OpenScreenWindow(s);
@@ -248,10 +248,10 @@ public sealed partial class MainWindow
 
     private static Windows.UI.Color? DotColor(int kind, LinkState state) => kind == 0 ? null : state switch
     {
-        LinkState.Connected => Windows.UI.Color.FromArgb(255, 0x0F, 0xA9, 0x58),
-        LinkState.Connecting or LinkState.NeedsPairing => Windows.UI.Color.FromArgb(255, 0xF7, 0xB5, 0x00),
-        LinkState.Busy or LinkState.Unreachable => Windows.UI.Color.FromArgb(255, 0xE5, 0x48, 0x4D),
-        _ => Windows.UI.Color.FromArgb(255, 0x8A, 0x8A, 0x8A),
+        LinkState.Connected => StatusGreen,
+        LinkState.Connecting or LinkState.NeedsPairing => StatusAmber,
+        LinkState.Busy or LinkState.Unreachable => StatusRed,
+        _ => StatusGrey,
     };
 
     // One card: an icon tile, the name and its state line, a state dot; extras (route chips, the
@@ -272,7 +272,7 @@ public sealed partial class MainWindow
             Child = new FontIcon { Glyph = glyph, Style = Res<Style>(selected ? "TileGlyphSelectedStyle" : "TileGlyphStyle") },
         };
         grid.Children.Add(tile);
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
         text.Children.Add(new TextBlock
         {
             Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,

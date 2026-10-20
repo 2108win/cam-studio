@@ -174,6 +174,10 @@ Gotchas:
   drawn as gradients through `Slider.Resources`), Chỉnh tay, Chi tiết (the last two refresh only
   while expanded: `UpdatePaneActivity`). Explanations sit behind (i) buttons (`InfoButtonStyle`).
   It folds away under 1180 px. Settings is a `ContentDialog`.
+- **Design rules** (App.xaml, 2026-10-20): spacing in steps of 4; radii 6 (controls,
+  `ControlCornerRadius`), 10 (cards), 12 (preview, panes); text only Caption 12 / Body 14 /
+  Subtitle 20; an icon as big as the text beside it, 16 alone. Status colours are one set
+  (`StatusGreen/Amber/Red/Grey` in `MainWindow.xaml.cs`): red only while an app uses the camera.
 - **Accent:** WinUI's controls take it from the `SystemAccentColor*` ramp in App.xaml (dark theme:
   Light2, light theme: Dark1). Overriding `AccentFillColorDefaultBrush` in App.xaml reaches only
   our own XAML, not the controls (their brushes are `StaticResource` inside XamlControlsResources).

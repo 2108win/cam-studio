@@ -28,6 +28,7 @@ it once everything is tested.
 | **"Tự căn khung" + Smart Zoom** (`AutoFrame.h`, `FaceDetect.cpp`, switch in the Camera tab), 2026-10-19 | **compiled on Windows 2026-10-19** (engine + app, 0 warnings) | `framing-check` 37/0, `frame-check` 375/0, protocol ALL PASS; **OBSBOT: follows a face** (1.1× at 1080p, "nét"), Redmi with nobody in view: "Không thấy ai". Fix needed first: FaceTracker wants `RelativeTime` on each frame, else E_FAIL every frame |
 | PC camera always on, automatic source pick | yes | yes |
 | PC UI 2026-10-19: device cards, camera bar under the preview, colour presets, (i) help, **Khởi động lại** | yes | dev build: dark + light theme, 960 px window, presets, restart (visible, hidden `--tray`, and during a Discord call: Discord then needs its camera off/on once, picture back at once) |
+| PC design rules (spacing, radii, one status palette, screen-reader names), 2026-10-20 | yes | dev build: dark + light theme, menus, Settings |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
 | Installer with adb | yes | built, **not installed** |
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |

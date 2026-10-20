@@ -1500,6 +1500,13 @@ public sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
+    // The status colours, one of each: ready / connected, waiting, live (an app uses the camera)
+    // or an error, off. The header dot, the preview badge and the source cards share them.
+    private static readonly Color StatusGreen = Color.FromArgb(255, 0x0F, 0xA9, 0x58);
+    private static readonly Color StatusAmber = Color.FromArgb(255, 0xF7, 0xB5, 0x00);
+    private static readonly Color StatusRed = Color.FromArgb(255, 0xE5, 0x48, 0x4D);
+    private static readonly Color StatusGrey = Color.FromArgb(255, 0x8A, 0x8A, 0x8A);
+
     private bool _inspectorByUser; // the user showed or hid it: the window width no longer decides
 
     private void InspectorToggle_Click(object sender, RoutedEventArgs e)
@@ -1646,17 +1653,17 @@ public sealed partial class MainWindow : Window
 
         (string text, string pill, Color dot) = state switch
         {
-            EngineState.Starting => ("Đang khởi động…", "Đang khởi động", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
+            EngineState.Starting => ("Đang khởi động…", "Đang khởi động", StatusAmber),
             // Always there for apps; with no source they see "no signal".
-            EngineState.Running when s.NoSource != 0 && _paused => ("Đã tạm dừng · ứng dụng thấy “không có tín hiệu”", "Đã tạm dừng hình", Color.FromArgb(255, 0x8A, 0x8A, 0x8A)),
-            EngineState.Running when s.NoSource != 0 => ("Chưa có nguồn hình · ứng dụng thấy “không có tín hiệu”", "Đang chờ nguồn hình", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
+            EngineState.Running when s.NoSource != 0 && _paused => ("Đã tạm dừng · ứng dụng thấy “không có tín hiệu”", "Đã tạm dừng hình", StatusGrey),
+            EngineState.Running when s.NoSource != 0 => ("Chưa có nguồn hình · ứng dụng thấy “không có tín hiệu”", "Đang chờ nguồn hình", StatusAmber),
             // Standby: the camera is there for apps, the source sleeps until one opens it.
-            EngineState.Running when s.Standby != 0 => ($"Sẵn sàng · chờ ứng dụng dùng · {s.Width} × {s.Height}", "Sẵn sàng (nguồn đang nghỉ, tự bật khi có ứng dụng dùng)", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
-            EngineState.Running when s.ConsumerActive != 0 => ($"Đang được dùng · {s.Width} × {s.Height}", "Đang được dùng", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
-            EngineState.Running => ($"Sẵn sàng · {s.Width} × {s.Height}", "Đang phát", Color.FromArgb(255, 0x0F, 0xA9, 0x58)),
-            EngineState.Failed => ("Lỗi", "Lỗi", Color.FromArgb(255, 0xE8, 0x11, 0x23)),
-            EngineState.Waiting => ("Đang chờ nguồn hình…", "Đang chờ nguồn hình", Color.FromArgb(255, 0xF7, 0xB5, 0x00)),
-            _ => ("Đang tắt", "Đã tắt", Color.FromArgb(255, 0x8A, 0x8A, 0x8A)),
+            EngineState.Running when s.Standby != 0 => ($"Sẵn sàng · chờ ứng dụng dùng · {s.Width} × {s.Height}", "Sẵn sàng (nguồn đang nghỉ, tự bật khi có ứng dụng dùng)", StatusGreen),
+            EngineState.Running when s.ConsumerActive != 0 => ($"Đang được dùng · {s.Width} × {s.Height}", "Đang được dùng", StatusRed),
+            EngineState.Running => ($"Sẵn sàng · {s.Width} × {s.Height}", "Đang phát", StatusGreen),
+            EngineState.Failed => ("Lỗi", "Lỗi", StatusRed),
+            EngineState.Waiting => ("Đang chờ nguồn hình…", "Đang chờ nguồn hình", StatusAmber),
+            _ => ("Đang tắt", "Đã tắt", StatusGrey),
         };
         _tray.SetTooltip($"Cam Studio · {pill}" + (running ? $" · {s.Width} × {s.Height}" : ""));
 
@@ -1666,6 +1673,7 @@ public sealed partial class MainWindow : Window
 
         StatusText.Text = text;
         StatusDot.Fill = new SolidColorBrush(dot);
+        LiveDot.Fill = StatusDot.Fill; // red only while an app uses the camera
         LiveBadge.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         UpdateOverlayVisibility();
         LiveBadgeText.Text = $"{s.Width} × {s.Height}  ·  {s.Fps:0} fps";

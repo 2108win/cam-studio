@@ -29,6 +29,18 @@
             <Color x:Key="SystemAccentColorDark2">#FF1A4FB0</Color>
             <Color x:Key="SystemAccentColorDark3">#FF123E8F</Color>
 
+            <!-- Design rules (2026-10-20), one set for the whole app:
+                 - spacing in steps of 4 (4, 8, 12, 16, 20, 24);
+                 - three corner radii: controls 6, cards 10, the preview and panes 12; a pill is
+                   half its height;
+                 - text only in WinUI's ramp: Caption 12, Body 14, Subtitle 20;
+                 - an icon is as big as the text beside it (12, 14), 16 on its own, 48 in an
+                   empty state. -->
+            <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
+            <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
+            <CornerRadius x:Key="CardCornerRadius">10</CornerRadius>
+            <CornerRadius x:Key="PanelCornerRadius">12</CornerRadius>
+
             <!-- Colour slider tracks: what each slider does, drawn on the slider itself. -->
             <LinearGradientBrush x:Key="BrightnessTrackBrush" StartPoint="0,0" EndPoint="1,0">
                 <GradientStop Color="#FF151515" Offset="0" />
@@ -52,39 +64,19 @@
 
             <SolidColorBrush x:Key="LiveBrush" Color="#FFE5484D" />
 
-            <!-- One row of the source list (left pane), Windows Settings navigation style. -->
-            <Style x:Key="SourceItemStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
-                <Setter Property="HorizontalAlignment" Value="Stretch" />
-                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="Padding" Value="10,7,10,7" />
-                <Setter Property="CornerRadius" Value="6" />
-                <Setter Property="MinHeight" Value="48" />
-            </Style>
             <!-- Theme colours for rows built in code: a brush looked up in code follows the Windows
                  theme, not the app's own (Settings › Giao diện); a style's ThemeResource follows it. -->
-            <Style x:Key="SourceItemSelectedStyle" TargetType="Button" BasedOn="{StaticResource SourceItemStyle}">
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
-            </Style>
             <Style x:Key="SourceSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                 <Setter Property="MaxLines" Value="1" />
             </Style>
-            <Style x:Key="SourceIconSelectedStyle" TargetType="FontIcon">
-                <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-            </Style>
-            <Style x:Key="SelectionPillStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-                <Setter Property="Width" Value="3" />
-                <Setter Property="Height" Value="18" />
-                <Setter Property="CornerRadius" Value="1.5" />
-            </Style>
             <!-- A source card (left pane, 2026-10-19 look): one card per device, icon tile, name, state. -->
             <Style x:Key="SourceCardStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="Padding" Value="12,10,12,10" />
-                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="12" />
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
@@ -94,9 +86,9 @@
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}" />
             </Style>
             <Style x:Key="IconTileStyle" TargetType="Border">
-                <Setter Property="Width" Value="36" />
-                <Setter Property="Height" Value="36" />
-                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Background" Value="{ThemeResource SourceTileBrush}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
@@ -114,9 +106,9 @@
             <Style x:Key="RouteChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
                 <Setter Property="Height" Value="24" />
                 <Setter Property="MinWidth" Value="0" />
-                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="Padding" Value="12,0" />
                 <Setter Property="CornerRadius" Value="12" />
-                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontSize" Value="12" />
             </Style>
             <Style x:Key="CardLinkStyle" TargetType="HyperlinkButton">
                 <Setter Property="Padding" Value="4,0" />
@@ -140,8 +132,8 @@
             <Style x:Key="PresetChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
-                <Setter Property="Padding" Value="2,8,2,6" />
-                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="0,8" />
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
                 <Setter Property="MinWidth" Value="0" />
             </Style>
             <Style x:Key="SwatchStyle" TargetType="Ellipse">
@@ -151,9 +143,9 @@
                 <Setter Property="StrokeThickness" Value="1" />
             </Style>
             <Style x:Key="PresetLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="FontSize" Value="11" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
-                <Setter Property="Margin" Value="0,5,0,0" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+                <Setter Property="TextWrapping" Value="NoWrap" />
                 <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             </Style>
             <Style x:Key="SliderValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
@@ -166,20 +158,20 @@
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="22" />
-                <Setter Property="Padding" Value="6" />
+                <Setter Property="CornerRadius" Value="21" />
+                <Setter Property="Padding" Value="4" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
             </Style>
             <Style x:Key="BarIconButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
-                <Setter Property="MinWidth" Value="36" />
+                <Setter Property="MinWidth" Value="32" />
                 <Setter Property="Height" Value="32" />
-                <Setter Property="Padding" Value="9,0" />
+                <Setter Property="Padding" Value="8,0" />
                 <Setter Property="CornerRadius" Value="16" />
             </Style>
             <Style x:Key="BarIconToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-                <Setter Property="MinWidth" Value="36" />
+                <Setter Property="MinWidth" Value="32" />
                 <Setter Property="Height" Value="32" />
-                <Setter Property="Padding" Value="9,0" />
+                <Setter Property="Padding" Value="8,0" />
                 <Setter Property="CornerRadius" Value="16" />
                 <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="Background" Value="Transparent" />
@@ -187,7 +179,7 @@
             <Style x:Key="BarDividerStyle" TargetType="Border">
                 <Setter Property="Width" Value="1" />
                 <Setter Property="Height" Value="20" />
-                <Setter Property="Margin" Value="6,0" />
+                <Setter Property="Margin" Value="4,0" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </Style>
@@ -197,8 +189,8 @@
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             </Style>
             <Style x:Key="SectionIconStyle" TargetType="FontIcon">
-                <Setter Property="FontSize" Value="15" />
-                <Setter Property="Margin" Value="0,0,10,0" />
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="Margin" Value="0,0,12,0" />
                 <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
             </Style>
             <Style x:Key="SectionSummaryStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
@@ -211,30 +203,21 @@
             <Style x:Key="InspectorSubheadStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="0,12,0,6" />
-            </Style>
-            <Style x:Key="PaneLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="12,14,0,4" />
-            </Style>
-            <!-- Inspector (right pane) sections. -->
-            <Style x:Key="InspectorHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
-                <Setter Property="Margin" Value="0,18,0,8" />
+                <Setter Property="Margin" Value="0,16,0,8" />
             </Style>
             <Style x:Key="InspectorHintStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
-                <Setter Property="Margin" Value="0,6,0,0" />
+                <Setter Property="Margin" Value="0,4,0,0" />
             </Style>
             <Style x:Key="SegmentToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
-                <Setter Property="Height" Value="36" />
+                <Setter Property="Height" Value="32" />
                 <Setter Property="Padding" Value="8,0" />
             </Style>
             <Style x:Key="SegmentButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
-                <Setter Property="Height" Value="36" />
+                <Setter Property="Height" Value="32" />
                 <Setter Property="Padding" Value="8,0" />
             </Style>
 
@@ -243,68 +226,41 @@
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
                 <Setter Property="Padding" Value="16,12" />
                 <Setter Property="MinHeight" Value="64" />
             </Style>
 
-            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
-                <Setter Property="Margin" Value="2,20,0,8" />
-            </Style>
-
-            <Style x:Key="CardIconStyle" TargetType="FontIcon">
-                <Setter Property="FontSize" Value="20" />
-                <Setter Property="Margin" Value="2,0,16,0" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
-
-            <Style x:Key="CardDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Setter Property="TextWrapping" Value="Wrap" />
-            </Style>
-
             <Style x:Key="InfoLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-                <Setter Property="Margin" Value="0,0,16,6" />
+                <Setter Property="Margin" Value="0,0,16,8" />
             </Style>
 
             <Style x:Key="InfoValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
-                <Setter Property="Margin" Value="0,0,0,6" />
+                <Setter Property="Margin" Value="0,0,0,8" />
                 <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="IsTextSelectionEnabled" Value="True" />
             </Style>
 
-            <!-- Icon buttons of the bottom toolbar. Toggles fill with the accent
-                 colour when on, so active features are visible at a glance. -->
+            <!-- Icon buttons of the left pane's bottom bar. -->
             <Style x:Key="ToolButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
-                <Setter Property="Width" Value="44" />
+                <Setter Property="Width" Value="40" />
                 <Setter Property="Height" Value="40" />
                 <Setter Property="Padding" Value="0" />
-                <Setter Property="CornerRadius" Value="6" />
-            </Style>
-            <Style x:Key="ToolToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-                <Setter Property="Width" Value="44" />
-                <Setter Property="Height" Value="40" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="CornerRadius" Value="6" />
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
             </Style>
             <Style x:Key="ToolIconStyle" TargetType="FontIcon">
-                <Setter Property="FontSize" Value="17" />
+                <Setter Property="FontSize" Value="16" />
             </Style>
-            <!-- Small dot on a tool button whose setting is not the default. -->
-            <Style x:Key="ToolDotStyle" TargetType="Ellipse">
-                <Setter Property="Width" Value="6" />
-                <Setter Property="Height" Value="6" />
-                <Setter Property="Fill" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-                <Setter Property="HorizontalAlignment" Value="Right" />
-                <Setter Property="VerticalAlignment" Value="Top" />
-                <Setter Property="Margin" Value="0,7,8,0" />
-                <Setter Property="IsHitTestVisible" Value="False" />
-            </Style>
-            <Style x:Key="FlyoutTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
-                <Setter Property="Margin" Value="0,0,0,12" />
+
+            <!-- Shows / hides a pane: an accent icon when on, no accent fill (that reads as "a
+                 feature is on" and outweighs the virtual camera switch beside it). -->
+            <Style x:Key="PaneToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
             </Style>
 
             <!-- A phone lens (0.6×, 1×, Macro…) in the inspector's focal-length row. -->
@@ -318,29 +274,11 @@
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
 
-            <!-- Controls drawn over the video (camera-app style). -->
-            <Style x:Key="OverlayRoundButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-                <Setter Property="Width" Value="42" />
-                <Setter Property="Height" Value="42" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="CornerRadius" Value="21" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Background" Value="#B3202020" />
-            </Style>
-            <Style x:Key="OverlayRoundToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
-                <Setter Property="Width" Value="42" />
-                <Setter Property="Height" Value="42" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="CornerRadius" Value="21" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Background" Value="#B3202020" />
-            </Style>
-
             <!-- Translucent pill used over the video. -->
             <Style x:Key="OverlayPillStyle" TargetType="Border">
                 <Setter Property="Background" Value="#B3202020" />
                 <Setter Property="CornerRadius" Value="14" />
-                <Setter Property="Padding" Value="12,5" />
+                <Setter Property="Padding" Value="12,6" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

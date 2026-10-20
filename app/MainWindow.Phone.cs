@@ -116,13 +116,13 @@ public sealed partial class MainWindow
                 "backgroundReplacement" => "Thay nền",
                 _ => kv.Key,
             });
-            var button = new Button { Content = "Hiệu ứng trên điện thoại", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+            var button = new Button { Content = "Hiệu ứng trên điện thoại", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 8, 0, 0) };
             ToolTipService.SetToolTip(button, string.Join(", ", names) + " do hệ điều hành điều khiển: bật trong bảng mở ra trên điện thoại.");
             button.Click += (_, _) => Engine.PhoneSend("{\"type\":\"showSystemEffects\"}");
             PhoneControls.Children.Add(button);
         }
 
-        _phoneReadout = new TextBlock { Style = Res<Style>("InspectorHintStyle"), Margin = new Thickness(0, 10, 0, 0) };
+        _phoneReadout = new TextBlock { Style = Res<Style>("InspectorHintStyle"), Margin = new Thickness(0, 12, 0, 0) };
         PhoneControls.Children.Add(_phoneReadout);
         UpdatePhoneReadout();
     }
@@ -208,13 +208,13 @@ public sealed partial class MainWindow
         row.Children.Add(slider);
         Grid.SetColumn(valueText, 1);
         row.Children.Add(valueText);
-        PhoneControls.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 6, 0, 0) });
+        PhoneControls.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 8, 0, 0) });
         PhoneControls.Children.Add(row);
     }
 
     private void AddChoice(string label, List<string> options, string current, Action<string> onChange)
     {
-        var combo = new ComboBox { Header = label, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+        var combo = new ComboBox { Header = label, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 8, 0, 0) };
         foreach (var o in options) combo.Items.Add(Name(o));
         combo.SelectedIndex = Math.Max(0, options.IndexOf(current));
         combo.SelectionChanged += (_, _) =>
