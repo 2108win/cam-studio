@@ -35,6 +35,10 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
   - đổi ống kính, zoom, đèn flash, bù sáng, chạm để lấy nét;
   - chỉnh tay ISO, tốc độ màn trập, cân bằng trắng.
 - **Chỉnh hình:** lật, xoay, cắt khung theo tỉ lệ, zoom số, chỉnh sáng, tương phản, độ bão hòa, nhiệt độ màu.
+- **Chụp ảnh và ghi hình:** đúng hình camera ảo đang phát (đã chỉnh màu, khung), ảnh PNG vào **Ảnh › Cam Studio**, video MP4 kèm tiếng micro vào **Video › Cam Studio**.
+- **Tạm dừng đẹp hơn:** khi tạm dừng, ứng dụng thấy hình cuối làm mờ với chữ "Quay lại ngay" (đổi được chữ, dùng ảnh riêng, hoặc màn hình "không có tín hiệu" như cũ).
+- **Phím tắt dùng cả khi đang ở app khác:** **Ctrl+Alt+P** tạm dừng/phát, **Ctrl+Alt+N** nguồn kế tiếp, **Ctrl+Alt+S** chụp ảnh, **Ctrl+Alt+R** ghi hình, **Ctrl+Alt+B** hiệu ứng nền. Đổi trong **Cài đặt › Phím tắt**.
+- **Điện thoại nóng:** Cam Studio tự giảm xuống 1080p30 (quá nóng: 720p30) trước khi điện thoại tự tắt camera giữa cuộc gọi.
 - **Rất nhẹ:** chỉ bật camera khi có ứng dụng dùng (xem [bên dưới](#nhẹ-và-tiết-kiệm)).
 - **Không bị rớt camera:** khi điện thoại tạm ẩn app, mất Wi‑Fi, hay khi rút cáp webcam hoặc điện thoại, Discord vẫn giữ camera "Cam Studio" và hình tự quay lại khi nguồn sẵn sàng.
 - **An toàn:**
@@ -108,7 +112,9 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 > Nhiều nguồn cùng lúc, cửa sổ màn hình điện thoại, cửa sổ trên máy tính và camera luôn có là tính năng mới, **chưa được kiểm tra trên Windows**.
 
 > [!TIP]
-> - **Không thấy điện thoại?** Chọn **Thêm điện thoại theo địa chỉ IP…** rồi nhập địa chỉ hiện trên app điện thoại. Hoặc cắm cáp USB.
+> - **Chưa có app trên điện thoại?** Bấm **+ › Tải app cho điện thoại…** và quét mã QR (Android).
+> - **Không thấy điện thoại?** Bấm **+ › Thêm điện thoại theo IP…** rồi nhập địa chỉ IP hiện trên app điện thoại. Hoặc cắm cáp USB.
+> - **Bỏ một điện thoại:** chuột phải vào nó: **Quên ghép đôi…** hoặc **Xóa khỏi danh sách**.
 > - **Dùng camera điện thoại:** cần để app mở trên màn hình. Android và iOS không cho ứng dụng chạy nền dùng camera. App tự làm tối màn hình để đỡ tốn pin.
 
 <br clear="right" />
