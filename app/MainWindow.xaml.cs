@@ -709,7 +709,7 @@ public sealed partial class MainWindow : Window
         // Everything else, for when the short list is not enough.
         if (list.Count > presets.Count)
         {
-            var all = new MenuFlyoutSubItem { Text = $"Tất cả chế độ (nâng cao) · {list.Count}", Icon = new FontIcon { Glyph = "" } };
+            var all = new MenuFlyoutSubItem { Text = $"Tất cả chế độ (nâng cao) · {list.Count}", Icon = new FontIcon { Glyph = Icons.More, FontFamily = (FontFamily)Application.Current.Resources["IconFont"] } };
             uint lastHeight = 0;
             foreach (var f in list)
             {
@@ -764,6 +764,7 @@ public sealed partial class MainWindow : Window
 
             FlashButton.Visibility = lens!.Torch ? Visibility.Visible : Visibility.Collapsed;
             FlashButton.IsChecked = Sent("torch", 0.0) > 0;
+            ShowFlashState();
             ExposureButton.Visibility = lens.Bias is null ? Visibility.Collapsed : Visibility.Visible;
             if (lens.Bias is { } b)
             {
@@ -859,7 +860,15 @@ public sealed partial class MainWindow : Window
         if (other is not null) SwitchLens(other);
     }
 
-    private void FlashButton_Click(object sender, RoutedEventArgs e) => SendPhone("torch", FlashButton.IsChecked == true ? 1.0 : 0.0);
+    private void FlashButton_Click(object sender, RoutedEventArgs e)
+    {
+        SendPhone("torch", FlashButton.IsChecked == true ? 1.0 : 0.0);
+        ShowFlashState();
+    }
+
+    // A filled flash while it is on (the iPhone camera's look).
+    private void ShowFlashState() =>
+        FlashIcon.FontFamily = (FontFamily)Application.Current.Resources[FlashButton.IsChecked == true ? "IconFontFilled" : "IconFont"];
 
     private void BiasSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
@@ -1677,6 +1686,8 @@ public sealed partial class MainWindow : Window
         LiveBadge.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         UpdateOverlayVisibility();
         LiveBadgeText.Text = $"{s.Width} × {s.Height}  ·  {s.Fps:0} fps";
+        PlaceholderIcon.Glyph = _paused ? Icons.VideoOffLarge
+            : state == EngineState.Running && s.NoSource != 0 ? Icons.PhoneLarge : Icons.VideoLarge;
         PlaceholderTitle.Text = state switch
         {
             EngineState.Starting => "Đang khởi động camera…",

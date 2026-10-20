@@ -48,20 +48,20 @@
                 </Grid.ColumnDefinitions>
                 <Button Style="{StaticResource ToolButtonStyle}" Click="AddPhone_Click" AutomationProperties.Name="Thêm điện thoại theo IP"
                         ToolTipService.ToolTip="Thêm điện thoại theo IP: khi điện thoại không tự hiện, nhập địa chỉ hiện trên app Cam Studio của điện thoại">
-                    <FontIcon Glyph="&#xE710;" Style="{StaticResource ToolIconStyle}" />
+                    <FontIcon Glyph="{StaticResource IconAdd}" Style="{StaticResource ToolIconStyle}" />
                 </Button>
                 <Button Grid.Column="1" Style="{StaticResource ToolButtonStyle}" Click="Refresh_Click" AutomationProperties.Name="Tìm lại thiết bị"
                         ToolTipService.ToolTip="Tìm lại thiết bị">
-                    <FontIcon Glyph="&#xE72C;" Style="{StaticResource ToolIconStyle}" />
+                    <FontIcon Glyph="{StaticResource IconRescan}" Style="{StaticResource ToolIconStyle}" />
                 </Button>
                 <Button Grid.Column="2" Style="{StaticResource ToolButtonStyle}" Click="Restart_Click" AutomationProperties.Name="Khởi động lại Cam Studio"
                         ToolTipService.ToolTip="Khởi động lại Cam Studio: khi hình bị treo, giật, hoặc camera không nhận">
-                    <FontIcon Glyph="&#xE777;" Style="{StaticResource ToolIconStyle}" />
+                    <FontIcon Glyph="{StaticResource IconRestart}" Style="{StaticResource ToolIconStyle}" />
                 </Button>
                 <Button Grid.Column="4" Style="{StaticResource SubtleButtonStyle}" Height="40" Padding="12,0" Click="Settings_Click"
                         AutomationProperties.Name="Cài đặt" ToolTipService.ToolTip="Cài đặt">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE713;" FontSize="16" />
+                        <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconSettings}" FontSize="16" />
                         <TextBlock x:Name="SettingsLabel" Text="Cài đặt" />
                     </StackPanel>
                 </Button>
@@ -98,10 +98,7 @@
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <DropDownButton x:Name="FormatButton" Padding="8,2,8,2" Margin="-8,0,0,0" Background="Transparent" BorderThickness="0"
                                                 ToolTipService.ToolTip="Độ phân giải và tốc độ khung hình của nguồn">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon Glyph="&#xE7F4;" FontSize="12" />
-                                        <TextBlock x:Name="FormatButtonText" Text="—" Style="{StaticResource CaptionTextBlockStyle}" />
-                                    </StackPanel>
+                                    <TextBlock x:Name="FormatButtonText" Text="—" Style="{StaticResource CaptionTextBlockStyle}" />
                                     <DropDownButton.Flyout>
                                         <MenuFlyout x:Name="FormatMenu" Placement="BottomEdgeAlignedLeft" />
                                     </DropDownButton.Flyout>
@@ -143,7 +140,7 @@
                                 <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="SubtleFillColorTransparentBrush" />
                                 <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="SubtleFillColorTransparentBrush" />
                             </ToggleButton.Resources>
-                            <FontIcon Glyph="&#xE90D;" FontSize="16" />
+                            <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconPanelRight}" FontSize="16" />
                         </ToggleButton>
                     </Grid>
 
@@ -161,7 +158,7 @@
                             <!-- No picture: paused, waiting, or no source yet (then how to get one). -->
                             <StackPanel x:Name="PreviewPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Spacing="16" MaxWidth="460" Padding="24">
-                                <FontIcon Glyph="&#xE714;" FontSize="48" Foreground="#80FFFFFF" />
+                                <FontIcon x:Name="PlaceholderIcon" Glyph="{StaticResource IconVideoLarge}" FontFamily="{StaticResource IconFont}" FontSize="48" Foreground="#80FFFFFF" />
                                 <TextBlock x:Name="PlaceholderTitle" Text="Camera ảo đang tắt" HorizontalAlignment="Center" TextAlignment="Center"
                                            TextWrapping="Wrap" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="#E6FFFFFF" />
                                 <TextBlock x:Name="PlaceholderHint" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
@@ -170,7 +167,7 @@
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                     <Button x:Name="PlaceholderStart" Style="{StaticResource AccentButtonStyle}" Click="PlaceholderStart_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                            <FontIcon Glyph="{StaticResource IconPlay}" FontFamily="{StaticResource IconFontFilled}" FontSize="14" />
                                             <TextBlock Text="Phát hình" />
                                         </StackPanel>
                                     </Button>
@@ -190,7 +187,7 @@
                                     HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"
                                     ToolTipService.ToolTip="Ứng dụng đang dùng camera">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon Glyph="&#xE7B3;" FontSize="12" Foreground="White" />
+                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconEye}" FontSize="12" Foreground="White" />
                                     <TextBlock x:Name="ConsumerBadgeText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
                                 </StackPanel>
                             </Border>
@@ -220,15 +217,15 @@
                             <Border x:Name="BarDivider" Style="{StaticResource BarDividerStyle}" />
                             <Button x:Name="FacingButton" Style="{StaticResource BarIconButtonStyle}" Click="FacingButton_Click"
                                     AutomationProperties.Name="Đổi camera trước / sau" ToolTipService.ToolTip="Đổi camera trước / sau">
-                                <FontIcon Glyph="&#xE89E;" FontSize="16" />
+                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconCameraSwitch}" FontSize="16" />
                             </Button>
                             <ToggleButton x:Name="FlashButton" Style="{StaticResource BarIconToggleStyle}" Click="FlashButton_Click"
                                           AutomationProperties.Name="Đèn flash" ToolTipService.ToolTip="Đèn flash">
-                                <FontIcon Glyph="&#xE945;" FontSize="16" />
+                                <FontIcon x:Name="FlashIcon" FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconFlash}" FontSize="16" />
                             </ToggleButton>
                             <Button x:Name="ExposureButton" Style="{StaticResource BarIconButtonStyle}" AutomationProperties.Name="Bù sáng" ToolTipService.ToolTip="Bù sáng">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon Glyph="&#xE706;" FontSize="16" />
+                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconExposure}" FontSize="16" />
                                     <TextBlock x:Name="BiasText" Text="0 EV" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Button.Flyout>
@@ -265,7 +262,7 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
-                                            <FontIcon Glyph="&#xE7A8;" Style="{StaticResource SectionIconStyle}" />
+                                            <FontIcon Glyph="{StaticResource IconCrop}" Style="{StaticResource SectionIconStyle}" />
                                             <TextBlock Text="Khung hình" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </Grid>
@@ -277,7 +274,7 @@
                                             <StackPanel Orientation="Horizontal" Spacing="2">
                                                 <TextBlock Text="Tự căn khung" Style="{StaticResource BodyTextBlockStyle}" VerticalAlignment="Center" />
                                                 <Button Style="{StaticResource InfoButtonStyle}" AutomationProperties.Name="Giải thích: Tự căn khung" ToolTipService.ToolTip="Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Cho webcam và camera điện thoại, không cho màn hình hay cửa sổ.">
-                                                    <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconInfo}" FontSize="14" />
                                                     <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Theo khuôn mặt: tự zoom và giữ người ở giữa khung. Cho webcam và camera điện thoại, không cho màn hình hay cửa sổ." /></Flyout></Button.Flyout>
                                                 </Button>
                                             </StackPanel>
@@ -290,7 +287,7 @@
                                             <StackPanel Orientation="Horizontal" Spacing="2">
                                                 <TextBlock Text="Thu phóng" Style="{StaticResource InspectorSubheadStyle}" Margin="0" VerticalAlignment="Center" />
                                                 <Button Style="{StaticResource InfoButtonStyle}" AutomationProperties.Name="Giải thích: Thu phóng">
-                                                    <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                                    <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconInfo}" FontSize="14" />
                                                     <Button.Flyout><Flyout><TextBlock x:Name="ZoomHint" Style="{StaticResource InfoTextStyle}" Text="Thu phóng trên máy tính. Kéo trên hình để chọn khung, nhấp đúp để đặt lại." /></Flyout></Button.Flyout>
                                                 </Button>
                                             </StackPanel>
@@ -304,12 +301,12 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <Button Click="ZoomOut_Click" Style="{StaticResource SubtleButtonStyle}" Padding="8" AutomationProperties.Name="Thu nhỏ" ToolTipService.ToolTip="Thu nhỏ">
-                                                <FontIcon Glyph="&#xE71F;" FontSize="16" />
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconZoomOut}" FontSize="16" />
                                             </Button>
                                             <Slider x:Name="ZoomSlider" Grid.Column="1" Minimum="1" Maximum="4" StepFrequency="0.05" VerticalAlignment="Center"
                                                     ValueChanged="ZoomSlider_ValueChanged" IsThumbToolTipEnabled="False" />
                                             <Button Grid.Column="2" Click="ZoomIn_Click" Style="{StaticResource SubtleButtonStyle}" Padding="8" AutomationProperties.Name="Phóng to" ToolTipService.ToolTip="Phóng to">
-                                                <FontIcon Glyph="&#xE8A3;" FontSize="16" />
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconZoomIn}" FontSize="16" />
                                             </Button>
                                         </Grid>
                                     </StackPanel>
@@ -324,21 +321,21 @@
                                         <ToggleButton x:Name="MirrorButton" Style="{StaticResource SegmentToggleStyle}" Click="Mirror_Click"
                                                       ToolTipService.ToolTip="Lật ngang như gương">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <FontIcon Glyph="&#xE8AB;" FontSize="14" />
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconFlipHorizontal}" FontSize="14" />
                                                 <TextBlock Text="Gương" />
                                             </StackPanel>
                                         </ToggleButton>
                                         <ToggleButton x:Name="FlipButton" Grid.Column="1" Style="{StaticResource SegmentToggleStyle}" Click="Flip_Click"
                                                       ToolTipService.ToolTip="Lật dọc">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <FontIcon Glyph="&#xE8CB;" FontSize="14" />
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconFlipVertical}" FontSize="14" />
                                                 <TextBlock Text="Lật dọc" />
                                             </StackPanel>
                                         </ToggleButton>
                                         <Button x:Name="RotateButton" Grid.Column="2" Style="{StaticResource SegmentButtonStyle}" Click="Rotate_Click"
                                                 ToolTipService.ToolTip="Xoay 90° theo chiều kim đồng hồ">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <FontIcon Glyph="&#xE7AD;" FontSize="14" />
+                                                <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconRotate}" FontSize="14" />
                                                 <TextBlock x:Name="RotateText" Text="0°" />
                                             </StackPanel>
                                         </Button>
@@ -347,7 +344,7 @@
                                     <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,16,0,8">
                                         <TextBlock Text="Tỉ lệ khung" Style="{StaticResource InspectorSubheadStyle}" Margin="0" VerticalAlignment="Center" />
                                         <Button Style="{StaticResource InfoButtonStyle}" AutomationProperties.Name="Giải thích: Tỉ lệ khung" ToolTipService.ToolTip="Cắt ở giữa khung, không làm méo hình.">
-                                            <FontIcon Glyph="&#xE946;" FontSize="14" />
+                                            <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconInfo}" FontSize="14" />
                                             <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Cắt ở giữa khung, không làm méo hình." /></Flyout></Button.Flyout>
                                         </Button>
                                     </StackPanel>
@@ -380,7 +377,7 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
-                                            <FontIcon Glyph="&#xE790;" Style="{StaticResource SectionIconStyle}" />
+                                            <FontIcon Glyph="{StaticResource IconColor}" Style="{StaticResource SectionIconStyle}" />
                                             <TextBlock Text="Màu sắc" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                         </StackPanel>
                                         <TextBlock x:Name="ColorSummary" Grid.Column="1" Style="{StaticResource SectionSummaryStyle}" />
@@ -581,7 +578,7 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
-                                            <FontIcon Glyph="&#xE9E9;" Style="{StaticResource SectionIconStyle}" />
+                                            <FontIcon Glyph="{StaticResource IconOptions}" Style="{StaticResource SectionIconStyle}" />
                                             <TextBlock Text="Chỉnh tay" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </Grid>
@@ -600,7 +597,7 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
-                                            <FontIcon Glyph="&#xE946;" Style="{StaticResource SectionIconStyle}" />
+                                            <FontIcon Glyph="{StaticResource IconInfo}" Style="{StaticResource SectionIconStyle}" />
                                             <TextBlock Text="Chi tiết" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                         </StackPanel>
                                         <TextBlock x:Name="DetailsSummary" Grid.Column="1" Style="{StaticResource SectionSummaryStyle}" />
@@ -667,7 +664,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,16,0,0">
                         <TextBlock Text="Camera ảo" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                         <Button Style="{StaticResource InfoButtonStyle}" AutomationProperties.Name="Giải thích: Kích thước camera ảo" ToolTipService.ToolTip="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen; gọi xong tự về cỡ gốc. Chọn 1080p nếu muốn khung luôn ngang.">
-                            <FontIcon Glyph="&#xE946;" FontSize="14" />
+                            <FontIcon FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconInfo}" FontSize="14" />
                             <Button.Flyout><Flyout><TextBlock Style="{StaticResource InfoTextStyle}" Text="Tự động: theo cỡ gốc của nguồn. Khi đang có ứng dụng dùng camera, đổi nguồn sẽ giữ nguyên cỡ và thêm viền đen; gọi xong tự về cỡ gốc. Chọn 1080p nếu muốn khung luôn ngang." /></Flyout></Button.Flyout>
                         </Button>
                     </StackPanel>

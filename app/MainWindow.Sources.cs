@@ -102,14 +102,14 @@ public sealed partial class MainWindow
         {
             if (_kinds[i] != 0) continue;
             int cam = i;
-            var card = SourceCard("\uE960", ScreenTitle(_cameras[i]), IsBuiltIn(i) ? "Camera tích hợp" : "Webcam USB",
+            var card = SourceCard(Icons.Video, ScreenTitle(_cameras[i]), IsBuiltIn(i) ? "Camera tích hợp" : "Webcam USB",
                 i == _camera && _windowSource is null, null, _cameras[i] + QuickHint(quick, i));
             card.Click += (_, _) => OnCameraPicked(cam);
             SourceList.Children.Add(card);
         }
 
         bool windowSelected = _windowSource is not null;
-        var windowCard = SourceCard("\uE7C4", windowSelected ? _windowSource!.Value.Title : "Cửa sổ trên máy tính",
+        var windowCard = SourceCard(Icons.Window, windowSelected ? _windowSource!.Value.Title : "Cửa sổ trên máy tính",
             windowSelected ? "Cửa sổ trên máy tính" : "Trình duyệt, bài trình chiếu…", windowSelected, null,
             "Một cửa sổ trên máy tính làm nguồn của camera ảo");
         windowCard.Click += (_, _) => ShowWindowPicker(windowCard);
@@ -195,7 +195,7 @@ public sealed partial class MainWindow
         }
         if (screen >= 0) extras.Children.Add(ScreenRow(screen, screenIsCamera));
 
-        var card = SourceCard("\uE8EA", name, subtitle, selected, dot, tooltip, extras.Children.Count > 0 ? extras : null);
+        var card = SourceCard(Icons.Phone, name, subtitle, selected, dot, tooltip, extras.Children.Count > 0 ? extras : null);
         if (route >= 0)
         {
             int pick = route;

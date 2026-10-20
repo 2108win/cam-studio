@@ -181,7 +181,11 @@ Gotchas:
 - **Accent:** WinUI's controls take it from the `SystemAccentColor*` ramp in App.xaml (dark theme:
   Light2, light theme: Dark1). Overriding `AccentFillColorDefaultBrush` in App.xaml reaches only
   our own XAML, not the controls (their brushes are `StaticResource` inside XamlControlsResources).
-- **Glyphs:** check each one exists in `segmdl2.ttf` (Windows 10 has no Segoe Fluent Icons).
+- **Icons:** our own come from `app/Assets/Fonts/CamStudioIcons-{Regular,Filled}.ttf` (Fluent UI
+  System Icons, MIT, cut to ~40 icons by `tools/make_icon_font.py`, which also writes `Icons.xaml`
+  and `Icons.cs`): add a row there and rerun. Use `Glyph="{StaticResource IconAdd}"` with
+  `FontFamily="{StaticResource IconFont}"`. Never an implicit FontIcon style: WinUI's own
+  templates (Expander chevron, InfoBar…) draw MDL2 glyphs through FontIcon.
 - **Khởi động lại** (left pane, tray): starts `CamStudio.exe --after <pid>` and exits (engine given
   4 s). `Program.Main` waits for that pid (kills it after 10 s), else the single-instance key would
   hand the new process to the old one. Apps using the camera lose it and must turn it on again.

@@ -6,6 +6,9 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <!-- Our icons (Fluent UI System Icons, in Assets/Fonts: Windows 10 has no Segoe
+                     Fluent Icons). WinUI's own controls keep their system glyphs. -->
+                <ResourceDictionary Source="Icons.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <!-- WinUI's controls take their accent from the SystemAccentColor ramp below (dark theme:
                  Light2, light theme: Dark1); brushes overridden here would reach only our own XAML. -->
@@ -96,6 +99,7 @@
                 <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
             <Style x:Key="TileGlyphStyle" TargetType="FontIcon">
+                <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
                 <Setter Property="FontSize" Value="16" />
                 <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
             </Style>
@@ -189,6 +193,7 @@
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             </Style>
             <Style x:Key="SectionIconStyle" TargetType="FontIcon">
+                <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
                 <Setter Property="FontSize" Value="16" />
                 <Setter Property="Margin" Value="0,0,12,0" />
                 <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
@@ -250,6 +255,7 @@
                 <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
             </Style>
             <Style x:Key="ToolIconStyle" TargetType="FontIcon">
+                <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
                 <Setter Property="FontSize" Value="16" />
             </Style>
 
