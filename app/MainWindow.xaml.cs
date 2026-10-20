@@ -819,6 +819,7 @@ public sealed partial class MainWindow : Window
         ConfigureZoomSlider();
         UpdateOverlayVisibility();
         if (_phoneOpen) BuildPhoneControls(); // another lens: other controls
+        ApplyPhoneAudio(); // another source: its microphone, if it has one
     }
 
     // What this source has: the camera bar under the preview (a phone's lenses, front / back,

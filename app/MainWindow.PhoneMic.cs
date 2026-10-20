@@ -18,17 +18,25 @@ public sealed partial class MainWindow
     private const string CableUrl = "https://vb-audio.com/Cable/";
     private DateTime _micUsageAt;
     private bool _micInUse;
+    private List<(string Id, string Name)>? _outputs;
+    private DateTime _outputsAt;
 
-    // Output devices (endpoint id, name), the auto choice first when there is one.
-    private static List<(string Id, string Name)> AudioOutputs()
+    // Output devices (endpoint id, name), read again at most every 5 s (the status tick asks).
+    private List<(string Id, string Name)> AudioOutputs(bool fresh = false)
     {
+        if (!fresh && _outputs is not null && DateTime.UtcNow - _outputsAt < TimeSpan.FromSeconds(5)) return _outputs;
         string all = Engine.AudioOutputs();
-        return all.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        _outputs = all.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Split('\t'))
             .Where(p => p.Length == 2)
             .Select(p => (p[0], p[1]))
             .ToList();
+        _outputsAt = DateTime.UtcNow;
+        return _outputs;
     }
+
+    // The source now is a phone that can send its microphone (caps.audio: Android, new app).
+    private bool PhoneOffersMic => _isPhone && _phoneCaps is { HasAudio: true };
 
     private static bool IsCable(string name) =>
         name.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase) || name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
@@ -49,9 +57,10 @@ public sealed partial class MainWindow
         return picked.Id ?? "";
     }
 
+    // Nothing asked of a source that cannot send it (a webcam, an iPhone, an older app).
     private void ApplyPhoneAudio()
     {
-        string target = _settings.PhoneMic ? PhoneAudioTarget(out _) : "";
+        string target = _settings.PhoneMic && PhoneOffersMic ? PhoneAudioTarget(out _) : "";
         Engine.cs_set_phone_audio(target);
     }
 
@@ -59,7 +68,8 @@ public sealed partial class MainWindow
     // with the camera off), the phone source stays open for its sound.
     private void UpdatePhoneAudioWanted()
     {
-        if (!_settings.PhoneMic)
+        // Only when the sound can go somewhere: else a phone would stream for nothing.
+        if (!_settings.PhoneMic || !PhoneOffersMic || PhoneAudioTarget(out _).Length == 0)
         {
             Engine.cs_set_audio_wanted(0);
             return;
@@ -86,7 +96,7 @@ public sealed partial class MainWindow
     // The camera bar's microphone: shown for phones that offer it, its tooltip says what happens.
     private void UpdateMicButton()
     {
-        bool offered = _isPhone && _phoneCaps is { HasAudio: true };
+        bool offered = PhoneOffersMic;
         MicButton.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
         if (!offered) return;
         MicButton.IsChecked = _settings.PhoneMic;
@@ -116,7 +126,7 @@ public sealed partial class MainWindow
         PhoneAudioCombo.Items.Clear();
         PhoneAudioCombo.Items.Add(new ComboBoxItem { Content = "Tự chọn (VB-Audio CABLE Input nếu có)", Tag = "" });
         int selected = 0;
-        foreach (var (id, name) in AudioOutputs())
+        foreach (var (id, name) in AudioOutputs(fresh: true))
         {
             PhoneAudioCombo.Items.Add(new ComboBoxItem { Content = IsCable(name) ? name : name + " (loa / tai nghe)", Tag = id });
             if (id == _settings.PhoneAudioOutput) selected = PhoneAudioCombo.Items.Count - 1;
