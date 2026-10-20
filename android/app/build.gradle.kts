@@ -10,8 +10,8 @@ android {
         applicationId = "vn.camstudio.phone"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.8"
+        versionCode = 11
+        versionName = "0.1.9"
     }
 
     buildTypes {
