@@ -63,7 +63,7 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-- **v0.1.10** (2026-10-21): Thành phần bổ sung (Apple Devices, VB-CABLE), Windows accent +
+- **v0.1.10 published** (2026-10-21, tag on 91dae8f, setup sha256 10de9da0…, APK baf1f5ec…): Thành phần bổ sung (Apple Devices, VB-CABLE), Windows accent +
   Settings › Màu nhấn, bigger centred icons, one card per phone, crash log. Tested on the user's
   PC: winget install of Apple Devices, iPhone over USB (~130 ms vs ~185 ms Wi‑Fi), VB-CABLE
   install through the app, live accent change. Not clicked through: the in-app Apple Devices
