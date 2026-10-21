@@ -1,8 +1,8 @@
 # Handoff: unfinished work
 
-> **Tóm tắt:** ngày 2026-10-18 phần PC đã build và chạy trên Windows, Redmi qua cáp và Wi‑Fi (cả
-> Discord) chạy tốt, có tự động cập nhật; bản 0.1.5 (giao diện mới) đã đăng trên GitHub. iOS
-> 0.1.0 (20261018.1756) đã lên TestFlight. Còn lại: các bài thử cần người cầm máy (mục 3).
+> **Tóm tắt (2026-10-21):** bản 0.1.10 đã đăng trên GitHub (PC + Android). iOS 0.1.0
+> (20261021.2339) đã lên TestFlight. Còn một lỗi micro phía PC (mục 3) và các bài thử cần người
+> cầm máy.
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
 Redmi over USB" says what was verified). Update this file in the same commit as each step; delete
@@ -13,7 +13,7 @@ it once everything is tested.
 | Piece | Built | Tested on a device |
 |---|---|---|
 | **Windows 10 DirectShow filter** (x64+x86), engine run-time API pick | yes | **published in v0.1.6**; Win11 forced path verified; **no real Win10 PC** yet |
-| **iPhone re-pair on key mismatch** (PC `pair` only on clean close) | yes | in v0.1.6; iPhone streamed 2K/60 with the saved key (no mismatch hit); iOS `Store` **not compiled** (needs Mac) |
+| **iPhone re-pair on key mismatch** (PC `pair` only on clean close) | yes | in v0.1.6; iPhone streamed 2K/60 with the saved key (no mismatch hit); iOS `Store` compiled on the Mac 2026-10-21 (app + screen extension, CryptoTests pass); the re-pair itself not yet hit on a device |
 | USB: Redmi over adb, engine starts/stops adb | yes | yes |
 | USB: iPhone through the Apple service on Windows | yes | **no** |
 | Webcam found again after unplug/replug | yes | **no** |
@@ -40,7 +40,7 @@ it once everything is tested.
 | PC global shortcuts (P pause, N next, C snapshot, R record, B effects, with Ctrl+Alt) | yes | hidden: with `camstudio-verify --hold` on the camera (no frame lost) and in standby (snapshot woke the webcam); a taken combination (Zalo's Ctrl+Alt+S) shows the warning. **Not in a real Discord call** |
 | PC source list: working sources first, "Chưa kết nối" below; right-click "Quên ghép đôi…" / "Xóa khỏi danh sách"; add by IP without a port | yes | order, menu, add + remove a test IP; **"Quên ghép đôi" not run** (needs re-pairing a real phone) |
 | iPhone PiP after leaving the app (`BackgroundCamera.swift`, voip) | yes | **no** |
-| Installer with adb | yes | built, **not installed** |
+| Installer with adb | yes | yes (installed since 0.1.4) |
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
@@ -63,13 +63,19 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
+- **Phone mic, still open (code review 2026-10-21, on the Mac):** `RunPhone` reads `audio` only
+  from later messages, not from the first `started` (`CaptureEngine.cpp` ~1575: add
+  `audioFrom(v)` there). So a mic denied at start shows on the PC only after a `set` (the mic
+  button toggled), and a phone recording at 44.1/16 kHz would play at 48 kHz. Also: "Tạm dừng
+  hình" (`cs_switch_none`) stops the phone's sound too, in a call.
+
 - **v0.1.10 published** (2026-10-21, tag on 91dae8f, setup sha256 10de9da0…, APK baf1f5ec…): Thành phần bổ sung (Apple Devices, VB-CABLE), Windows accent +
   Settings › Màu nhấn, bigger centred icons, one card per phone, crash log. Tested on the user's
   PC: winget install of Apple Devices, iPhone over USB (~130 ms vs ~185 ms Wi‑Fi), VB-CABLE
   install through the app, live accent change. Not clicked through: the in-app Apple Devices
   flow end to end (the same steps were run by hand). **iPhone "Tắt màn hình"** (black cover,
-  auto after 60 s) is in `ios/` and compiles with `xtool dev build` in WSL; it needs a Mac or
-  TestFlight build to reach the phone, untested on the device (PiP with the cover above it).
+  auto after 60 s) is in TestFlight build 0.1.0 (20261021.2339), uploaded from the Mac; untested
+  on the device (PiP with the cover above it).
 - **v0.1.9 published** (2026-10-21, tag on 07218c5): `CamStudio-Setup-0.1.9.exe` (sha256
   d9b48899…) and `CamStudio-0.1.9-android.apk` (versionCode 11, sha256 1fa84ed7…, the same APK
   tested on the Redmi). Redmi over USB: pairing survived the upgrade; mic denied → camera fine,
@@ -109,7 +115,7 @@ it once everything is tested.
    only once Discord has let go for 5 s (`kConsumerGraceMs`): toggling the camera off and on
    quickly keeps the old size, which is what confused the user first.
 4. **Two PCs** with one phone: the second shows "Bận với PC khác".
-5. **iPhone:** Apple Devices on Windows. PiP: install TestFlight build 20261018.1756 (it has PiP)
+5. **iPhone:** Apple Devices on Windows. PiP and "Tắt màn hình": install TestFlight build 20261021.2339
    or `scripts/ios-run.sh` on the Mac (ask first: it replaces the TestFlight install).
 
 ## 4. Pitfalls

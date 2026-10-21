@@ -542,10 +542,8 @@ Windows 11.
 ## Open work (roughly in priority order)
 
 1. Run the iPhone against the real Windows PC app: virtual camera, lens chips, the phone control panel,
-   and the "iPhone · Màn hình" source (portrait frames, rotation, reconnect after a drop: build the
-   `PhoneLink::Reconnect` change first).
-   Also build the small PC change for per-lens `cinematic` (`PhoneCaps.cs`, `MainWindow.Phone.cs`):
-   it was written on the Mac and has not been compiled.
+   and the "iPhone · Màn hình" source (portrait frames, rotation, reconnect after a drop), and the
+   per-lens `cinematic` switch (compiled in every release since 0.1.4, never used with an iPhone).
 2. Verify on the Redmi:
    - tap-to-focus;
    - the advanced phone control panel (focus, exposure, white balance, stabilization);
@@ -553,9 +551,10 @@ Windows 11.
 3. TestFlight: on 2026-10-18, `scripts/ios-archive.sh --upload` sent 0.1.0 (20261018.0743) as
    `vn.camstudio.phonewl` on the user's own paid team. The App Store Connect record "Cam Studio"
    says version 1.0; the build says 0.1.0. Next: test the TestFlight install on the iPhone.
-   **Latest: 0.1.0 (20261018.1756)**, uploaded 2026-10-18 from `main` (CryptoTests PASS, `nm -u`:
-   only UserDefaults). New since 0743: probe-safe servers, PiP + `voip`, auto/busy/ping. PiP is not
-   yet tested on a device. External testers need beta review, which may question `voip`.
+   **Latest: 0.1.0 (20261021.2339)**, uploaded 2026-10-21 from `main` at de6d98e (CryptoTests
+   PASS, `nm -u`: only UserDefaults). New since 1756: "Tắt màn hình" (black cover, auto after
+   60 s), the `Store` key cleanup. Since 0743: probe-safe servers, PiP + `voip`, auto/busy/ping.
+   PiP and the black screen are not yet tested on a device. External testers need beta review, which may question `voip`.
    Export compliance: `ITSAppUsesNonExemptEncryption = NO` in `ios/Info.plist` (the user's choice:
    all crypto is CryptoKit), so builds after 0743 skip the question; `ios-archive.sh` checks the key.
 4. USB transport (docs/protocol.md 1.2): the Redmi over adb works (2026-10-18). Left: the iPhone
