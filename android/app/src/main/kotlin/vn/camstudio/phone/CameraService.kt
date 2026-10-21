@@ -51,7 +51,11 @@ class CameraService : Service(), Session.Ui {
             shutDown("Không bật được camera: ${e.message ?: e.javaClass.simpleName}")
             return START_NOT_STICKY
         }
-        if (server != null) return START_NOT_STICKY // already serving
+        if (server != null) {
+            // Started again once the microphone was allowed: the PC may be waiting for the sound.
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) server?.session?.onMicAllowed()
+            return START_NOT_STICKY // already serving
+        }
 
         running = true
         val camera = CameraSource(this, this)
@@ -108,6 +112,10 @@ class CameraService : Service(), Session.Ui {
     override val deviceRotation: Int get() = rotation
 
     override fun confirmPairing(pcName: String, code: String): Boolean = pairing?.invoke(pcName, code) ?: false
+
+    override fun askMicrophone() {
+        micRequest?.invoke()
+    }
 
     override fun status(streaming: Boolean, text: String) {
         if (!running) return // a session that ended with the service
@@ -203,6 +211,9 @@ class CameraService : Service(), Session.Ui {
 
         /** Set by the activity while it is on screen: asks the person to compare the code (blocks). */
         @Volatile var pairing: ((pcName: String, code: String) -> Boolean)? = null
+
+        /** Set by the activity while it is on screen: asks for the microphone (the PC wants the sound). */
+        @Volatile var micRequest: (() -> Unit)? = null
 
         /**
          * From the activity while it is on screen (Android forbids starting a camera service

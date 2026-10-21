@@ -76,7 +76,7 @@ class MicCapture(private val context: Context, private val onChunk: (data: ByteA
         fun available(context: Context) = context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
 
         fun message(code: String) = when (code) {
-            "micDenied" -> "Chưa cho Cam Studio dùng micro trên điện thoại: mở app và cho phép micro"
+            "micDenied" -> "Điện thoại chưa cho Cam Studio dùng micro: Cài đặt › Ứng dụng › Cam Studio › Quyền › Micro"
             else -> "Không mở được micro của điện thoại (một cuộc gọi đang dùng nó?)"
         }
     }

@@ -48,6 +48,8 @@ class MainActivity : Activity() {
     private var updating = false
     private val pairingDialogs = mutableListOf<AlertDialog>()
     private var visible = false
+    /** The microphone was asked for since the app came on screen: not again until it leaves. */
+    private var micAsked = false
     /** CameraService was asked to start and has not reported yet. */
     private var cameraStarting = false
     private val cameraListener: (Boolean, String) -> Unit = { streaming, text ->
@@ -196,6 +198,7 @@ class MainActivity : Activity() {
         // Cài đặt › Micro điện thoại). Asked here: the PC may ask while the phone is locked.
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             wanted += Manifest.permission.RECORD_AUDIO
+            micAsked = true
         }
         // The notifications ("Cam Studio sẵn sàng làm camera", with Dừng) need this on Android 13+.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -209,6 +212,7 @@ class MainActivity : Activity() {
         super.onStart()
         visible = true
         CameraService.pairing = ::confirmPairing // only while someone can see the code
+        CameraService.micRequest = ::askMicrophone
         AppUpdater.onStatus = { text -> runOnUiThread { updating = false; showUpdate(text) } }
         checkForUpdate()
         if (CameraService.running) {
@@ -228,6 +232,8 @@ class MainActivity : Activity() {
     override fun onStop() {
         visible = false
         CameraService.pairing = null
+        CameraService.micRequest = null
+        micAsked = false
         pairingDialogs.toList().forEach { it.dismiss() } // the PC hears "declined"
         // "Chạy nền" off: the camera stops with the app, as it always did. A rotation or theme change is not leaving.
         if (!store.cameraInBackground && !isChangingConfigurations) CameraService.stop(this)
@@ -257,6 +263,18 @@ class MainActivity : Activity() {
         } else {
             showCameraState(false, "Cần quyền Camera để gửi hình sang máy tính (Cài đặt → Ứng dụng → Cam Studio → Quyền)")
         }
+    }
+
+    /**
+     * The PC asked for the phone's sound and the microphone is not allowed: ask now, at most
+     * once while the app is on screen (a PC that starts the stream again must not nag).
+     * Allowed, onRequestPermissionsResult starts the service again and the sound follows.
+     */
+    private fun askMicrophone() = runOnUiThread {
+        if (micAsked || !visible || isFinishing) return@runOnUiThread
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) return@runOnUiThread
+        micAsked = true
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_PERMISSIONS)
     }
 
     // ---- camera ------------------------------------------------------------------------

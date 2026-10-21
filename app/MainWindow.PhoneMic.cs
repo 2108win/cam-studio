@@ -20,6 +20,7 @@ public sealed partial class MainWindow
     private bool _micInUse;
     private List<(string Id, string Name)>? _outputs;
     private DateTime _outputsAt;
+    private string _micTip = "";
 
     // Output devices (endpoint id, name), read again at most every 5 s (the status tick asks).
     private List<(string Id, string Name)> AudioOutputs(bool fresh = false)
@@ -102,17 +103,27 @@ public sealed partial class MainWindow
         MicButton.IsChecked = _settings.PhoneMic;
         MicIcon.Glyph = _settings.PhoneMic ? Icons.Mic : Icons.MicOff;
         string tip;
+        bool problemShown = false;
         if (!_settings.PhoneMic) tip = "Gửi tiếng micro điện thoại sang máy tính";
         else
         {
             string target = PhoneAudioTarget(out string name);
             int state = Engine.PhoneAudioState(out string problem);
+            problemShown = target.Length == 0 || problem.Length > 0;
             tip = target.Length == 0 ? "Chưa có nơi nhận tiếng: cài VB-Audio Virtual Cable (Cài đặt › Micro điện thoại)"
                 : problem.Length > 0 ? problem
                 : state == 1 ? $"Đang gửi tiếng điện thoại vào {name}. Trong ứng dụng gọi, chọn micro \"CABLE Output\"."
                 : $"Tiếng điện thoại sẽ vào {name} khi điện thoại phát";
         }
-        ToolTipService.SetToolTip(MicButton, tip);
+        if (problemShown && MicWarnDot.Fill is null) MicWarnDot.Fill = new SolidColorBrush(StatusAmber);
+        MicWarnDot.Visibility = problemShown ? Visibility.Visible : Visibility.Collapsed;
+        // Only when it changes: this runs every status tick, and a new tooltip never gets to open.
+        if (tip != _micTip)
+        {
+            _micTip = tip;
+            ToolTipService.SetToolTip(MicButton, tip);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(MicButton, tip);
+        }
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MicButton, _settings.PhoneMic ? "Tắt micro điện thoại" : "Bật micro điện thoại");
     }
 

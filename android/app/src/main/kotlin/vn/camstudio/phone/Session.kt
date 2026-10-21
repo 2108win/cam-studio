@@ -43,6 +43,8 @@ class Session(
         /** Shows the pairing code; blocks until the user answers (false on timeout). */
         fun confirmPairing(pcName: String, code: String): Boolean
         fun status(streaming: Boolean, text: String)
+        /** The PC wants the phone's sound and the microphone is not allowed: ask, if someone can answer. */
+        fun askMicrophone() {}
     }
 
     /** The server's answer to a valid hello (docs/protocol.md 3.1). */
@@ -71,6 +73,9 @@ class Session(
     /** The microphone's chunks: sent before any video, never dropped for congestion. */
     private val audioQueue = LinkedBlockingDeque<Out>()
     @Volatile private var mic: MicCapture? = null
+    /** The PC asked for the sound ("audio" in start / set), whether or not the microphone runs. */
+    @Volatile private var micWanted = false
+    private var streamLabel = ""
     private var sender: Thread? = null
     private var targetBitrate = 8_000_000
     private var currentBitrate = 8_000_000
@@ -197,8 +202,12 @@ class Session(
                     ui.status(false, "Đã kết nối với $pcName")
                 }
                 "set" -> if (streaming) {
-                    if (json.has("audio")) sendControl(JSONObject().put("type", "state").put("audio",
-                        if (json.optBoolean("audio")) startMic() else { stopMic(); JSONObject().put("on", false) }))
+                    if (json.has("audio")) {
+                        micWanted = json.optBoolean("audio")
+                        val audio = if (micWanted) startMic() else { stopMic(); JSONObject().put("on", false) }
+                        sendControl(JSONObject().put("type", "state").put("audio", audio))
+                        showStreaming(micProblem(audio))
+                    }
                     source.set(json)
                 }
                 "keyframe" -> if (streaming) source.requestKeyframe()
@@ -248,12 +257,21 @@ class Session(
             return sendError(e.code, e.message ?: e.code)
         }
         streaming = true
-        if (json.optBoolean("audio")) started.message.put("audio", startMic())
+        streamLabel = started.label
+        micWanted = json.optBoolean("audio")
+        val audio = if (micWanted) startMic() else null
+        audio?.let { started.message.put("audio", it) }
         sendControl(started.message)
-        ui.status(true, "Đang phát ${started.label} → $pcName")
+        showStreaming(audio?.let(::micProblem))
+    }
+
+    /** "Đang phát …", with what keeps the microphone from working under it. */
+    private fun showStreaming(micProblem: String?) {
+        ui.status(true, "Đang phát $streamLabel → $pcName" + (micProblem?.let { "\n$it" } ?: ""))
     }
 
     private fun stopStream() {
+        micWanted = false
         stopMic()
         if (streaming) source.stop()
         streaming = false
@@ -263,7 +281,7 @@ class Session(
     // ---- microphone (docs/protocol.md 5.1) -----------------------------------------------
 
     /** What "started" / "state" say about it: {"on", "rate", "channels"} or {"on": false, "error"}. */
-    private fun startMic(): JSONObject {
+    @Synchronized private fun startMic(): JSONObject {
         mic?.let { return JSONObject().put("on", true).put("rate", it.rate).put("channels", 1).put("format", "pcm16") }
         val m = MicCapture(context) { data, ptsUs ->
             if (!closed) {
@@ -273,14 +291,25 @@ class Session(
         }
         val error = m.start()
         if (error != null) {
-            ui.status(streaming, MicCapture.message(error))
+            if (error == "micDenied") ui.askMicrophone()
             return JSONObject().put("on", false).put("error", error).put("message", MicCapture.message(error))
         }
         mic = m
         return JSONObject().put("on", true).put("rate", m.rate).put("channels", 1).put("format", "pcm16")
     }
 
-    private fun stopMic() {
+    private fun micProblem(audio: JSONObject): String? =
+        if (micWanted && !audio.optBoolean("on")) audio.optString("message").ifEmpty { null } else null
+
+    /** The microphone was just allowed (CameraService started again): start it if the PC wants it. */
+    @Synchronized fun onMicAllowed() {
+        if (!streaming || !micWanted || mic != null) return
+        val audio = startMic()
+        sendControl(JSONObject().put("type", "state").put("audio", audio))
+        showStreaming(micProblem(audio))
+    }
+
+    @Synchronized private fun stopMic() {
         mic?.stop()
         mic = null
         audioQueue.clear()

@@ -264,7 +264,12 @@
                             </Button>
                             <ToggleButton x:Name="MicButton" Style="{StaticResource BarIconToggleStyle}" Click="MicButton_Click" Visibility="Collapsed"
                                           AutomationProperties.Name="Micro điện thoại">
-                                <FontIcon x:Name="MicIcon" FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconMicOff}" FontSize="16" />
+                                <Grid>
+                                    <FontIcon x:Name="MicIcon" FontFamily="{StaticResource IconFont}" Glyph="{StaticResource IconMicOff}" FontSize="16" />
+                                    <!-- On, but no sound comes: the tooltip says why -->
+                                    <Ellipse x:Name="MicWarnDot" Width="8" Height="8" Margin="0,-4,-4,0" Visibility="Collapsed"
+                                             HorizontalAlignment="Right" VerticalAlignment="Top" />
+                                </Grid>
                             </ToggleButton>
                             <ToggleButton x:Name="FlashButton" Style="{StaticResource BarIconToggleStyle}" Click="FlashButton_Click"
                                           AutomationProperties.Name="Đèn flash" ToolTipService.ToolTip="Đèn flash">
