@@ -70,6 +70,47 @@ ICONS = [
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "app", "Assets", "Fonts")
 
+# How much of the em an icon's drawing fills. Fluent draws a 16 px icon in the middle 12 px (2 px
+# of air each side; 20 px: 16, 48 px: 40), so at FontSize 16 our icons looked smaller than the
+# Segoe Fluent Icons in WinUI's own controls. Each icon is scaled about the em's centre so its live
+# area fills this much: 14 px at FontSize 16.
+FILL = 0.875
+PADDING = {16: 2, 20: 2, 24: 2, 28: 2, 32: 2, 48: 4}
+
+
+def scale_for(fluent):
+    size = int(fluent.rsplit("_", 1)[1])
+    return FILL / ((size - 2 * PADDING[size]) / size)
+
+
+def normalize(font, scales):
+    """Scales each glyph about the em's centre, and makes the line exactly one em: no line gap,
+    ascent = em, descent 0, like Segoe Fluent Icons. (Fluent's font has a typo line gap of 9 % of
+    the em with USE_TYPO_METRICS, which made every FontIcon box taller than its size and set the
+    glyph off-centre next to text and in round buttons.)"""
+    upm = font["head"].unitsPerEm
+    centre = upm / 2
+    glyf, hmtx = font["glyf"], font["hmtx"]
+    low, high = 0, upm
+    for name, s in scales.items():
+        g = glyf[name]
+        if g.numberOfContours <= 0:
+            continue
+        g.recalcBounds(glyf)
+        reach = max(centre - g.xMin, g.xMax - centre, centre - g.yMin, g.yMax - centre)
+        s = min(s, centre / reach)  # a tall icon (phone, flash) stays inside the em
+        coords = g.coordinates
+        coords.scale((s, s))
+        coords.translate((centre - centre * s, centre - centre * s))
+        coords.toInt()
+        g.recalcBounds(glyf)
+        hmtx[name] = (hmtx[name][0], g.xMin)
+        low, high = min(low, g.yMin), max(high, g.yMax)
+    os2, hhea = font["OS/2"], font["hhea"]
+    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = upm, 0, 0
+    hhea.ascent, hhea.descent, hhea.lineGap = upm, 0, 0
+    os2.usWinAscent, os2.usWinDescent = high, -low  # GDI clips to these: cover every glyph
+
 
 def build(src, style):
     names = json.load(open(os.path.join(src, f"FluentSystemIcons-{style}.json"), encoding="utf-8"))
@@ -80,7 +121,7 @@ def build(src, style):
         key = f"ic_fluent_{fluent}_{style.lower()}"
         if key not in names:
             sys.exit(f"{key} is not in FluentSystemIcons-{style}.json")
-        wanted[code] = cmap[names[key]]
+        wanted[code] = (cmap[names[key]], scale_for(fluent))
 
     options = subset.Options()
     options.glyph_names = True
@@ -88,13 +129,14 @@ def build(src, style):
     options.name_IDs = []        # the name table is rewritten below
     options.layout_features = []
     sub = subset.Subsetter(options)
-    sub.populate(glyphs=sorted(set(wanted.values())))
+    sub.populate(glyphs=sorted({glyph for glyph, _ in wanted.values()}))
     sub.subset(font)
+    normalize(font, {glyph: s for glyph, s in wanted.values()})
 
     # Our code points only.
     for table in font["cmap"].tables:
         if table.isUnicode():
-            table.cmap = dict(wanted)
+            table.cmap = {code: glyph for code, (glyph, _) in wanted.items()}
     font["cmap"].tables = [t for t in font["cmap"].tables if t.isUnicode() and t.format in (4, 12)]
 
     family = "Cam Studio Icons" if style == "Regular" else "Cam Studio Icons Filled"

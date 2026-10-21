@@ -464,6 +464,16 @@ CS_API int32_t cs_phone_flags(int32_t camera)
     return (e.manual ? CS_PHONE_MANUAL : 0) | (phone::HasPairKey(PairingId(g_cameras[camera], e)) ? CS_PHONE_PAIRED : 0);
 }
 
+CS_API int32_t cs_phone_identity(int32_t camera, wchar_t* buffer, int32_t capacity)
+{
+    std::lock_guard lk(g_lock);
+    if (buffer && capacity > 0) buffer[0] = 0;
+    if (!ValidCamera(camera) || !g_cameras[camera].IsPhone()) return 0;
+    const phone::Endpoint& e = EndpointOf(camera);
+    CopyOut(Widen(PairingId(g_cameras[camera], e)), buffer, capacity);
+    return e.os == "android" ? 1 : e.os == "ios" ? 2 : 0;
+}
+
 CS_API void cs_forget_phone(int32_t camera, int32_t what)
 {
     phone::Endpoint endpoint;

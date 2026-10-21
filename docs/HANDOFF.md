@@ -63,6 +63,13 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
+- **v0.1.10** (2026-10-21): Thành phần bổ sung (Apple Devices, VB-CABLE), Windows accent +
+  Settings › Màu nhấn, bigger centred icons, one card per phone, crash log. Tested on the user's
+  PC: winget install of Apple Devices, iPhone over USB (~130 ms vs ~185 ms Wi‑Fi), VB-CABLE
+  install through the app, live accent change. Not clicked through: the in-app Apple Devices
+  flow end to end (the same steps were run by hand). **iPhone "Tắt màn hình"** (black cover,
+  auto after 60 s) is in `ios/` and compiles with `xtool dev build` in WSL; it needs a Mac or
+  TestFlight build to reach the phone, untested on the device (PiP with the cover above it).
 - **v0.1.9 published** (2026-10-21, tag on 07218c5): `CamStudio-Setup-0.1.9.exe` (sha256
   d9b48899…) and `CamStudio-0.1.9-android.apk` (versionCode 11, sha256 1fa84ed7…, the same APK
   tested on the Redmi). Redmi over USB: pairing survived the upgrade; mic denied → camera fine,

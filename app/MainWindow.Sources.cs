@@ -93,19 +93,7 @@ public sealed partial class MainWindow
 
         // One card per device. A phone's routes (cable, Wi‑Fi) and its shared screen fold into the
         // phone's card, so a phone is listed once however many ways it is reachable.
-        var devices = new List<(string Name, List<int> Cameras, List<int> Screens)>();
-        for (int i = 0; i < _cameras.Count; i++)
-        {
-            if (_kinds[i] == 0) continue;
-            string name = DeviceName(_cameras[i]);
-            int d = devices.FindIndex(x => x.Name == name);
-            if (d < 0)
-            {
-                devices.Add((name, new List<int>(), new List<int>()));
-                d = devices.Count - 1;
-            }
-            (_kinds[i] == 2 ? devices[d].Screens : devices[d].Cameras).Add(i);
-        }
+        var devices = GroupPhones();
         // A phone that cannot be used now (not reachable, busy with another PC) goes under
         // "Chưa kết nối", below every source that works.
         var later = new List<Button>();
@@ -142,6 +130,59 @@ public sealed partial class MainWindow
 
     // "Redmi 9T · Màn hình (USB)" -> "Redmi 9T".
     private static string DeviceName(string name) => ScreenTitle(name).Replace(" · Màn hình", "");
+
+    private sealed class PhoneGroup
+    {
+        public readonly HashSet<string> Ids = new();
+        public readonly List<string> Names = new();
+        public readonly List<int> Cameras = new(), Screens = new();
+        public int Os;
+        public bool Wifi, Cable;
+    }
+
+    // The phone sources by phone: by the phone's own id once a route has connected, else by name.
+    // An iPhone's names differ by route (Wi‑Fi says only "iPhone", the cable gives the name the
+    // person chose), and a cable route never connected has no id yet: it joins the Wi‑Fi phone of
+    // the same kind when there is exactly one, which is the case that matters (one iPhone, both
+    // ways). Two phones of a kind on Wi‑Fi: it stays apart until it has connected once.
+    private List<(string Name, List<int> Cameras, List<int> Screens)> GroupPhones()
+    {
+        var groups = new List<PhoneGroup>();
+        for (int i = 0; i < _cameras.Count; i++)
+        {
+            if (_kinds[i] == 0) continue;
+            int os = Engine.PhoneIdentity(i, out string id);
+            string name = DeviceName(_cameras[i]);
+            var g = id.Length > 0 ? groups.Find(x => x.Ids.Contains(id)) : null;
+            g ??= groups.Find(x => x.Names.Contains(name) && (id.Length == 0 || x.Ids.Count == 0));
+            if (g is null)
+            {
+                g = new PhoneGroup { Os = os };
+                groups.Add(g);
+            }
+            if (id.Length > 0) g.Ids.Add(id);
+            if (!g.Names.Contains(name)) g.Names.Add(name);
+            if (g.Os == 0) g.Os = os;
+            if (IsUsb(i)) g.Cable = true;
+            else g.Wifi = true;
+            (_kinds[i] == 2 ? g.Screens : g.Cameras).Add(i);
+        }
+        foreach (var lone in groups.Where(x => x.Ids.Count == 0 && x.Cable && !x.Wifi && x.Os != 0).ToList())
+        {
+            var wifi = groups.Where(x => x != lone && x.Wifi && x.Os == lone.Os).ToList();
+            if (wifi.Count != 1) continue;
+            wifi[0].Cameras.AddRange(lone.Cameras);
+            wifi[0].Screens.AddRange(lone.Screens);
+            wifi[0].Names.AddRange(lone.Names.Where(n => !wifi[0].Names.Contains(n)));
+            wifi[0].Cable = true;
+            groups.Remove(lone);
+        }
+        return groups.Select(g => (CardName(g), g.Cameras, g.Screens)).ToList();
+    }
+
+    // The name the person gave the phone: an iPhone tells apps on Wi‑Fi only "iPhone".
+    private static string CardName(PhoneGroup g) =>
+        g.Names.FirstOrDefault(n => n is not ("iPhone" or "iPad")) ?? g.Names[0];
 
     private static string QuickHint(List<int> quick, int cam) => quick.IndexOf(cam) is var n and >= 0 ? $"   Ctrl+{n + 1}" : "";
 

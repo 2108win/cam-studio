@@ -183,12 +183,19 @@ Gotchas:
   `ControlCornerRadius`), 10 (cards), 12 (preview, panes); text only Caption 12 / Body 14 /
   Subtitle 20; an icon as big as the text beside it, 16 alone. Status colours are one set
   (`StatusGreen/Amber/Red/Grey` in `MainWindow.xaml.cs`): red only while an app uses the camera.
-- **Accent:** WinUI's controls take it from the `SystemAccentColor*` ramp in App.xaml (dark theme:
-  Light2, light theme: Dark1). Overriding `AccentFillColorDefaultBrush` in App.xaml reaches only
-  our own XAML, not the controls (their brushes are `StaticResource` inside XamlControlsResources).
+- **Accent (0.1.10):** Windows' own by default; Settings › Màu nhấn offers blue / purple / teal
+  (`Services/AccentColors.cs`, never red / green / amber: those are status colours). WinUI's
+  controls take it from the `SystemAccentColor*` ramp (dark theme: Light2, light theme: Dark1), set
+  in `OnLaunched` (`Application.Resources` throws E_UNEXPECTED in the App constructor;
+  `ResourceDictionary.Remove` throws on a missing key). A live change recolours the accent
+  `SolidColorBrush`es WinUI already holds (a theme round trip does not). Overriding
+  `AccentFillColorDefaultBrush` in App.xaml reaches only our own XAML.
+- **Crash log:** `%LOCALAPPDATA%\CamStudio\crash.txt` (App.UnhandledException).
 - **Icons:** our own come from `app/Assets/Fonts/CamStudioIcons-{Regular,Filled}.ttf` (Fluent UI
   System Icons, MIT, cut to ~40 icons by `tools/make_icon_font.py`, which also writes `Icons.xaml`
-  and `Icons.cs`): add a row there and rerun. Use `Glyph="{StaticResource IconAdd}"` with
+  and `Icons.cs`): add a row there and rerun. The script scales each icon to fill 87.5 % of the
+  em (Fluent leaves 2 px of air at 16 px: they looked small next to Segoe Fluent Icons) and
+  drops Fluent's 9 % line gap (it set every icon ~1 px off-centre). Use `Glyph="{StaticResource IconAdd}"` with
   `FontFamily="{StaticResource IconFont}"`. Never an implicit FontIcon style: WinUI's own
   templates (Expander chevron, InfoBar…) draw MDL2 glyphs through FontIcon.
 - **Khởi động lại** (left pane, tray): starts `CamStudio.exe --after <pid>` and exits (engine given
@@ -444,8 +451,8 @@ Windows 11.
 - **Micro điện thoại** (2026-10-21, docs/protocol.md 5.1, `AudioOut.cpp`, `MicCapture.kt`,
   `MainWindow.PhoneMic.cs`): the phone's mic as AUDIO records (kind 4, PCM16), asked with `audio` in
   `start` / `set`, gated by `caps.audio` (Android only; iOS not written). The PC plays it into an
-  output device, VB-Audio's "CABLE Input" by default (the user installs VB-Cable; we never ship or
-  install it), never the speakers by default. A phone camera source stays open while hidden when
+  output device, VB-Audio's "CABLE Input" by default, never the speakers. Since 0.1.10 the app
+  installs VB-CABLE on a click (see "Thành phần bổ sung"). A phone camera source stays open while hidden when
   an app uses a microphone (ConsentStore `microphone`, `cs_set_audio_wanted`), so a call with the
   camera off keeps the sound; the phone then encodes video too (a later "audio-only start" would
   save that). Tested: fake phone `--audio` → `wav:` target, 28 s of 440.0 Hz, no gap, `set`
@@ -498,6 +505,25 @@ Windows 11.
   idle links) and "Xóa khỏi danh sách" (added by IP): `cs_phone_flags` / `cs_forget_phone`. A
   cable phone not connected in this run has no known id, so it has no "Quên ghép đôi". Add by IP
   takes a bare IP (port 47321 by default).
+- **Thành phần bổ sung** (0.1.10, `Services/AddOns.cs`, `MainWindow.AddOns.cs`): what Windows
+  lacks, installed on one click (an InfoBar when it matters, Settings › Thành phần bổ sung):
+  - iPhone on a cable: Apple Devices (Store 9NP83LWLPZ9K) by `winget --source msstore`, hidden, no
+    UAC (~22 s). It has **no Windows service**: `AppleMobileDeviceProcess` (127.0.0.1:27015) is
+    started by a packaged startup task, and only after Apple Devices was opened once and the
+    person clicked **Agree** on Apple's licence (we never click it). "Trust" is not needed: the
+    tunnel opens and the name ("Win_Lax") reads without it. `Invoke-CommandInDesktopPackage`
+    hangs. Offered when an iPhone (USB VID 05AC, PID 12xx) is plugged in and 27015 is closed.
+  - VB-CABLE: the newest official zip from vb-audio.com, Authenticode valid and signed by
+    "BUREL VINCENT", then VB's own setup elevated (the person clicks Install Driver). Not silent:
+    the package's readme forbids folding it into another setup without the author's consent,
+    although vb-audio.com allows bundling with attribution (shown in Settings). On the user's PC
+    CABLE Input/Output appeared without a restart.
+- **Phone cards** group by the phone's own id (`cs_phone_identity`), else by name; a cable route
+  not connected yet joins the only Wi‑Fi phone of the same OS. An iPhone tells apps on Wi‑Fi only
+  "iPhone"; the cable (lockdownd) gives the person's name, which the card shows.
+- **iPhone over USB on Windows** (2026-10-21, iPhone 14, 1080p30 because it was hot): glass-to-
+  glass to the preview ~130 ms over the cable (frame interval 32–35 ms) against ~185 ms on
+  Wi‑Fi (16–50 ms). The first cable start right after Wi‑Fi timed out once, then reconnected.
 - **Automatic pick** (app, `MainWindow.Sources.cs`): the source picked last, else connected
   phones (cable, then Wi‑Fi), USB webcams, the built-in camera (`EnclosureLocation.Panel`). A
   better one replaces an automatic pick only while no app uses the camera; a source lost for

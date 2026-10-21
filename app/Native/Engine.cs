@@ -145,6 +145,7 @@ internal static unsafe partial class Engine
     public const int PhoneManual = 1, PhonePaired = 2; // cs_phone_flags
     [LibraryImport(Dll)] public static partial int cs_phone_flags(int camera);
     [LibraryImport(Dll)] public static partial void cs_forget_phone(int camera, int what);
+    [LibraryImport(Dll)] public static partial int cs_phone_identity(int camera, char* buffer, int capacity);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_pause_picture(int kind, string text, string imagePath);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial void cs_set_background(int mode, int strength, string imagePath, string modelPath);
     [LibraryImport(Dll)] public static partial void cs_get_background(out CsBackground state);
@@ -219,6 +220,16 @@ internal static unsafe partial class Engine
     {
         char* buf = stackalloc char[512];
         return Text(buf, cs_camera_name(camera, buf, 512));
+    }
+
+    // A phone source's own id ("" until that route connected once) and OS (1 Android, 2 iPhone).
+    public static int PhoneIdentity(int camera, out string id)
+    {
+        char* buf = stackalloc char[256];
+        buf[0] = ' ';
+        int os = cs_phone_identity(camera, buf, 256);
+        id = new string(buf);
+        return os;
     }
 
     public static string CameraId(int camera)

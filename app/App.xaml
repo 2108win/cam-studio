@@ -10,27 +10,18 @@
                      Fluent Icons). WinUI's own controls keep their system glyphs. -->
                 <ResourceDictionary Source="Icons.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <!-- WinUI's controls take their accent from the SystemAccentColor ramp below (dark theme:
-                 Light2, light theme: Dark1); brushes overridden here would reach only our own XAML. -->
+            <!-- The accent is Windows' own unless Settings › Màu nhấn picks one of ours
+                 (Services/AccentColors.cs sets the SystemAccentColor ramp WinUI's controls use;
+                 brushes overridden here would reach only our own XAML). The source tiles are a
+                 light wash of it. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="SourceTileBrush" Color="#1F4A8CFF" />
+                    <SolidColorBrush x:Key="SourceTileBrush" Color="{ThemeResource SystemAccentColorLight2}" Opacity="0.14" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="SourceTileBrush" Color="#161F5FD6" />
+                    <SolidColorBrush x:Key="SourceTileBrush" Color="{ThemeResource SystemAccentColorDark1}" Opacity="0.10" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-
-            <!-- Cam Studio's own accent, whatever the Windows accent is (a red Windows accent made
-                 selected chips look like errors). One royal blue in both themes; red stays for
-                 "live", green / amber for the connection dots. -->
-            <Color x:Key="SystemAccentColor">#FF2F6FEB</Color>
-            <Color x:Key="SystemAccentColorLight1">#FF3D7FF5</Color>
-            <Color x:Key="SystemAccentColorLight2">#FF4A8CFF</Color>
-            <Color x:Key="SystemAccentColorLight3">#FF8DB6FF</Color>
-            <Color x:Key="SystemAccentColorDark1">#FF1F5FD6</Color>
-            <Color x:Key="SystemAccentColorDark2">#FF1A4FB0</Color>
-            <Color x:Key="SystemAccentColorDark3">#FF123E8F</Color>
 
             <!-- Design rules (2026-10-20), one set for the whole app:
                  - spacing in steps of 4 (4, 8, 12, 16, 20, 24);

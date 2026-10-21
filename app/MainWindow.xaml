@@ -125,7 +125,13 @@
                         <StackPanel VerticalAlignment="Center" Spacing="2">
                             <TextBlock x:Name="CameraButtonText" Text="Đang tìm nguồn hình…" Style="{StaticResource SubtitleTextBlockStyle}"
                                        TextTrimming="CharacterEllipsis" MaxLines="1" />
-                            <StackPanel Orientation="Horizontal" Spacing="6">
+                            <!-- A grid, not a horizontal StackPanel: only a bounded width lets the
+                                 subtitle end in "…" instead of being cut mid-letter. -->
+                            <Grid ColumnSpacing="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
                                 <DropDownButton x:Name="FormatButton" Padding="8,2,8,2" Margin="-8,0,0,0" Background="Transparent" BorderThickness="0"
                                                 ToolTipService.ToolTip="Độ phân giải và tốc độ khung hình của nguồn">
                                     <TextBlock x:Name="FormatButtonText" Text="—" Style="{StaticResource CaptionTextBlockStyle}" />
@@ -133,10 +139,10 @@
                                         <MenuFlyout x:Name="FormatMenu" Placement="BottomEdgeAlignedLeft" />
                                     </DropDownButton.Flyout>
                                 </DropDownButton>
-                                <TextBlock x:Name="SourceSubtitle" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                <TextBlock x:Name="SourceSubtitle" Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
                                            TextWrapping="NoWrap" MaxLines="1" VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
+                            </Grid>
                         </StackPanel>
 
                         <!-- Virtual camera: live state and the picture on/off -->
@@ -242,6 +248,15 @@
                                     <InfoBar.ActionButton>
                                         <Button x:Name="SavedOpenButton" Content="Mở thư mục" Click="SavedOpen_Click" />
                                     </InfoBar.ActionButton>
+                                </InfoBar>
+                                <!-- What a phone needs that Windows lacks (MainWindow.AddOns.cs). -->
+                                <InfoBar x:Name="AddOnBar" IsClosable="True" Closed="AddOnBar_Closed" MaxWidth="560">
+                                    <InfoBar.ActionButton>
+                                        <Button x:Name="AddOnButton" Click="AddOnButton_Click" />
+                                    </InfoBar.ActionButton>
+                                    <InfoBar.Content>
+                                        <ProgressBar x:Name="AddOnProgress" IsIndeterminate="True" Visibility="Collapsed" Margin="0,0,0,12" />
+                                    </InfoBar.Content>
                                 </InfoBar>
                                 <InfoBar x:Name="UpdateBar" Severity="Informational" IsClosable="True">
                                     <InfoBar.ActionButton>
@@ -764,6 +779,8 @@
                         <x:String>Sáng</x:String>
                         <x:String>Tối</x:String>
                     </ComboBox>
+                    <ComboBox x:Name="AccentCombo" Header="Màu nhấn" HorizontalAlignment="Stretch"
+                              SelectionChanged="AccentCombo_SelectionChanged" />
                     <ToggleSwitch x:Name="AutostartToggle" Header="Khởi động cùng Windows"
                                   OnContent="Bật (chạy ẩn ở khay)" OffContent="Tắt" Toggled="AutostartToggle_Toggled" />
                     <ToggleSwitch x:Name="CloseToTrayToggle" Header="Khi đóng cửa sổ"
@@ -819,7 +836,40 @@
                               SelectionChanged="PhoneAudioCombo_SelectionChanged" />
                     <TextBlock x:Name="PhoneAudioHint" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <HyperlinkButton Content="Tải VB-Audio Virtual Cable (miễn phí)" Click="CableLink_Click" Padding="0,2" />
+
+                    <!-- What some phones need that Windows lacks, installed with one click (MainWindow.AddOns.cs). -->
+                    <TextBlock Text="Thành phần bổ sung" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
+                    <Border Style="{StaticResource CardStyle}" MinHeight="0">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="iPhone qua cáp USB" />
+                                <TextBlock x:Name="AppleAddOnState" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <Button x:Name="AppleAddOnButton" Grid.Column="1" VerticalAlignment="Center" Click="AppleAddOnButton_Click" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource CardStyle}" MinHeight="0">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Micro điện thoại trong cuộc gọi" />
+                                <TextBlock x:Name="CableAddOnState" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <Button x:Name="CableAddOnButton" Grid.Column="1" Content="Cài" VerticalAlignment="Center" Click="CableAddOnButton_Click" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Apple Devices là app của Apple trên Microsoft Store. VB-CABLE là phần mềm của VB-Audio, donationware: dùng miễn phí, ai thấy hữu ích có thể ủng hộ tác giả." />
+                    <HyperlinkButton Content="www.vb-cable.com" Click="CableLink_Click" Padding="0,2" />
 
                     <TextBlock Text="Ghi hình" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
                     <ToggleSwitch x:Name="RecordMicToggle" Header="Tiếng khi ghi hình" OnContent="Ghi kèm tiếng micro mặc định" OffContent="Chỉ ghi hình"

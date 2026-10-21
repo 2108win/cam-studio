@@ -15,7 +15,7 @@ namespace CamStudio;
 // Never the speakers by default: the phone would hear itself. Android only for now (caps.audio).
 public sealed partial class MainWindow
 {
-    private const string CableUrl = "https://vb-audio.com/Cable/";
+    private const string CableUrl = AddOns.VbCableSite;
     private DateTime _micUsageAt;
     private bool _micInUse;
     private List<(string Id, string Name)>? _outputs;
@@ -39,8 +39,7 @@ public sealed partial class MainWindow
     // The source now is a phone that can send its microphone (caps.audio: Android, new app).
     private bool PhoneOffersMic => _isPhone && _phoneCaps is { HasAudio: true };
 
-    private static bool IsCable(string name) =>
-        name.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase) || name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
+    private static bool IsCable(string name) => AddOns.IsCable(name);
 
     // Where the sound goes: the device picked in Settings, else VB-Audio's cable, else nowhere.
     private string PhoneAudioTarget(out string name)
@@ -89,9 +88,7 @@ public sealed partial class MainWindow
         _settings.Save();
         ApplyPhoneAudio();
         UpdateMicButton();
-        if (_settings.PhoneMic && PhoneAudioTarget(out _).Length == 0)
-            ShowSaved("Chưa có nơi nhận tiếng", "Cài VB-Audio Virtual Cable, rồi trong Discord hay Zoom chọn micro \"CABLE Output\". Xem Cài đặt › Micro điện thoại.",
-                null, InfoBarSeverity.Warning);
+        if (_settings.PhoneMic && PhoneAudioTarget(out _).Length == 0) ShowCableAddOn();
     }
 
     // The camera bar's microphone: shown for phones that offer it, its tooltip says what happens.
@@ -110,7 +107,7 @@ public sealed partial class MainWindow
             string target = PhoneAudioTarget(out string name);
             int state = Engine.PhoneAudioState(out string problem);
             problemShown = target.Length == 0 || problem.Length > 0;
-            tip = target.Length == 0 ? "Chưa có nơi nhận tiếng: cài VB-Audio Virtual Cable (Cài đặt › Micro điện thoại)"
+            tip = target.Length == 0 ? "Chưa có nơi nhận tiếng: cần VB-CABLE (Cài đặt › Thành phần bổ sung)"
                 : problem.Length > 0 ? problem
                 : state == 1 ? $"Đang gửi tiếng điện thoại vào {name}. Trong ứng dụng gọi, chọn micro \"CABLE Output\"."
                 : $"Tiếng điện thoại sẽ vào {name} khi điện thoại phát";
@@ -147,7 +144,7 @@ public sealed partial class MainWindow
         bool cable = AudioOutputs().Any(o => IsCable(o.Name));
         PhoneAudioHint.Text = cable
             ? "Trong Discord, Zoom, Meet: chọn micro \"CABLE Output\". Nên đeo tai nghe để điện thoại không thu lại tiếng loa."
-            : "Chưa có VB-Audio Virtual Cable: cài nó (miễn phí, cần khởi động lại máy), rồi chọn micro \"CABLE Output\" trong ứng dụng gọi.";
+            : "Chưa có VB-CABLE: bấm Cài ở Thành phần bổ sung bên dưới, rồi chọn micro \"CABLE Output\" trong ứng dụng gọi.";
     }
 
     private void PhoneAudioCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

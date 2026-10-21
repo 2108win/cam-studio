@@ -130,7 +130,7 @@ iPhone sẽ hỏi hai quyền: **Camera** và **Mạng cục bộ**. Phải cho 
 
 ## Giới hạn
 
-- **Phải để app mở khi phát camera:** iOS dừng camera của app chạy nền, nên app tự làm tối màn hình để đỡ tốn pin. Chia sẻ màn hình thì không cần.
+- **Phải để app mở khi phát camera:** iOS dừng camera của app chạy nền, nên app tự làm tối màn hình để đỡ tốn pin. Nút **Tắt màn hình** làm màn hình đen hẳn, camera vẫn phát (chạm để bật lại); 1 phút không chạm thì màn hình cũng tự đen. Chia sẻ màn hình thì không cần.
 - **Chia sẻ màn hình:**
   - nội dung có bản quyền (Netflix…) hiện màn đen;
   - iPhone hiện dấu đỏ suốt lúc chia sẻ;

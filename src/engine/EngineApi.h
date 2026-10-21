@@ -124,6 +124,10 @@ CS_API int32_t cs_phone_flags(int32_t camera);
 // next connection asks for the 6-digit code on both sides, and the phone's idle links close).
 // Switch the camera away from this phone first.
 CS_API void cs_forget_phone(int32_t camera, int32_t what);
+// The phone behind a source, so the app can show one card per phone whatever the route: writes
+// its own id (empty until that route has connected once) and returns its OS (0 unknown or a
+// webcam, 1 Android, 2 iPhone).
+CS_API int32_t cs_phone_identity(int32_t camera, wchar_t* buffer, int32_t capacity);
 
 // Starts capture + virtual camera for a camera and an index from the last
 // cs_load_formats() of that camera (a fresh start: the camera is published again).

@@ -41,6 +41,7 @@ public sealed class AppSettings
     public bool CloseToTray { get; set; } = true;
     public bool TrayHintShown { get; set; }
     public int Theme { get; set; }         // 0 system, 1 light, 2 dark
+    public int Accent { get; set; }        // AccentColors.Names: 0 Windows' own
     public int Brightness { get; set; }    // -100 .. 100
     public int Contrast { get; set; }
     public int Saturation { get; set; }
@@ -89,6 +90,7 @@ public sealed class AppSettings
         s.CloseToTray = Int("CloseToTray", 1) != 0;
         s.TrayHintShown = Int("TrayHintShown", 0) != 0;
         s.Theme = Math.Clamp(Int("Theme", 0), 0, 2);
+        s.Accent = Math.Clamp(Int("Accent", 0), 0, AccentColors.Names.Length - 1);
         s.Brightness = Math.Clamp(Int("Brightness", 0), -100, 100);
         s.Contrast = Math.Clamp(Int("Contrast", 0), -100, 100);
         s.Saturation = Math.Clamp(Int("Saturation", 0), -100, 100);
@@ -143,6 +145,7 @@ public sealed class AppSettings
         key.SetValue("CloseToTray", CloseToTray ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("TrayHintShown", TrayHintShown ? 1 : 0, RegistryValueKind.DWord);
         key.SetValue("Theme", Theme, RegistryValueKind.DWord);
+        key.SetValue("Accent", Accent, RegistryValueKind.DWord);
         key.SetValue("Brightness", Brightness, RegistryValueKind.DWord);
         key.SetValue("Contrast", Contrast, RegistryValueKind.DWord);
         key.SetValue("Saturation", Saturation, RegistryValueKind.DWord);

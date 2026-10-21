@@ -399,6 +399,8 @@ public sealed partial class MainWindow : Window
         TemperatureSlider.Value = _settings.Temperature;
         UpdateColorUi();
         ThemeCombo.SelectedIndex = _settings.Theme;
+        foreach (string name in AccentColors.Names) AccentCombo.Items.Add(name);
+        AccentCombo.SelectedIndex = _settings.Accent;
         AutostartToggle.IsOn = Autostart.IsEnabled;
         CloseToTrayToggle.IsOn = _settings.CloseToTray;
         OutputSizeCombo.SelectedIndex = _settings.OutputSize;
@@ -1509,6 +1511,16 @@ public sealed partial class MainWindow : Window
         ApplyTheme();
     }
 
+    // A new accent, applied at once (AccentColors.Change recolours the accent brushes in use).
+    private void AccentCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || AccentCombo.SelectedIndex < 0) return;
+        _settings.Accent = AccentCombo.SelectedIndex;
+        _settings.Save();
+        AccentColors.Change(Application.Current.Resources, _settings.Accent);
+        BuildSourceList(); // cards built in code
+    }
+
     private void AutostartToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
@@ -1586,6 +1598,7 @@ public sealed partial class MainWindow : Window
     {
         BuildHotkeyRows();
         FillPhoneAudioOutputs();
+        FillAddOnRows();
         SettingsDialog.XamlRoot = RootGrid.XamlRoot;
         try
         {
@@ -1728,6 +1741,7 @@ public sealed partial class MainWindow : Window
 
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
+        CheckAddOns();
         if (_recording) UpdateRecordingUi();
         if (_settings.PhoneMic && MicButton.Visibility == Visibility.Visible) UpdateMicButton();
         if (BackgroundSection.IsExpanded && _settings.BackgroundMode != BackgroundOff) UpdateBackgroundHint();
