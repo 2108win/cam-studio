@@ -226,7 +226,7 @@ internal static unsafe partial class Engine
     public static int PhoneIdentity(int camera, out string id)
     {
         char* buf = stackalloc char[256];
-        buf[0] = ' ';
+        buf[0] = '\0';
         int os = cs_phone_identity(camera, buf, 256);
         id = new string(buf);
         return os;
