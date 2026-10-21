@@ -30,7 +30,7 @@ it once everything is tested.
 | PC UI 2026-10-19: device cards, camera bar under the preview, colour presets, (i) help, **Khởi động lại** | yes | dev build: dark + light theme, 960 px window, presets, restart (visible, hidden `--tray`, and during a Discord call: Discord then needs its camera off/on once, picture back at once) |
 | PC design rules (spacing, radii, one status palette, screen-reader names), 2026-10-20 | yes | dev build: dark + light theme, menus, Settings |
 | PC icons: bundled Fluent UI System Icons font (`tools/make_icon_font.py`) | yes | dev build on Win11; **not seen on Windows 10** |
-| Phone mic → PC → VB-Audio "CABLE Input" (Android `MicCapture`, PC `AudioOut`, protocol 5.1) | yes | fake phone tone → WAV: 440 Hz, 48 kHz, no gaps, live off; **not yet: the Redmi, the WASAPI path into CABLE (VB-Cable not installed), a hidden window in a real call, iOS (not written)** |
+| Phone mic → PC → VB-Audio "CABLE Input" (Android `MicCapture`, PC `AudioOut`, protocol 5.1) | yes | fake phone tone → WAV: 440 Hz, 48 kHz, no gaps, live off; Redmi over USB: sound with the screen off and locked, denied → camera fine and the reason shown; **not yet: the PC-triggered permission prompt, the WASAPI path into CABLE (VB-Cable not installed), a hidden window in a real call, iOS (not written)** |
 | PC "Nền": blur / image behind the person (Windows ML, PP-HumanSeg, in Assets/Models) | yes | OBSBOT, empty room: blurred whole, image mode replaces it; 1–2 ms a look; 3.1 → 5.4 ms a frame at 1080p100. Installed 0.1.8, the user in frame: sharp person and hair, room blurred. **Not yet: a phone camera, Windows 10** |
 | PC "Làm mịn da" (faces, guided filter) | yes | `frame-check` 379/0 (4 new); installed 0.1.8 at 70 on the user's face: smoother skin, glasses and eyes sharp, no ellipse edge, "1 khuôn mặt" |
 | PC: a hot phone drops to 1080p30 / 720p30 (`state.thermal`) | yes | fake phone `--thermal serious`: 720p60 → 720p30, warning; "Quên ghép đôi" on the fake phone: key gone, camera moved to the webcam; **not on a real hot phone** |
@@ -63,13 +63,13 @@ it once everything is tested.
 
 ## 3. Next steps (need someone at the phone or PC)
 
-- **v0.1.9 built, not published** (2026-10-21, commit 32b4fb6): `build\dist` holds
-  `CamStudio-Setup-0.1.9.exe` (sha256 5188ff9d…) and `CamStudio-0.1.9-android.apk` (versionCode 11,
-  RECORD_AUDIO + FOREGROUND_SERVICE_MICROPHONE, sha256 b3ace86f…). Before publishing, on the Redmi
-  (one `adb install -r` of that APK, no adb loops): mic denied → the camera still streams (screen
-  off too) and the PC shows `micDenied`; mic allowed → sound arrives, also with the screen off; the
-  pairing survives the upgrade. With VB-Cable installed: the tone into CABLE Input, captured back
-  from CABLE Output. Android 14+ foreground-service rules are not exercised on Android 12.
+- **v0.1.9 published** (2026-10-21, tag on 07218c5): `CamStudio-Setup-0.1.9.exe` (sha256
+  d9b48899…) and `CamStudio-0.1.9-android.apk` (versionCode 11, sha256 1fa84ed7…, the same APK
+  tested on the Redmi). Redmi over USB: pairing survived the upgrade; mic denied → camera fine,
+  reason shown; mic allowed → sound, also screen off and locked. Left: with the mic denied, the
+  PC's request popping the prompt and the sound starting once allowed; VB-Cable (CABLE Input →
+  CABLE Output); Android 14+ service rules; the installed 0.1.8 updating itself to 0.1.9.
+  The Redmi's "Chạy nền" was switched on by a stray adb tap during the test.
 - **v0.1.8 published** (2026-10-20, tag on d7ac5cd): both digests match; the installed 0.1.7
   saw it within seconds and updated, but the install rolled back half-done (adb.exe locked by a
   test loop of ours, see CLAUDE.md Gotchas); reinstalled with `/LOG`: succeeded, 0.1.8 running.

@@ -224,7 +224,8 @@ Windows 11.
   interface, colour presets, restart button, face framing) is installed on the user's PC and
   **published** (2026-10-20). **v0.1.8** (2026-10-20: effects, snapshot/recording, pause picture,
   global shortcuts, hot phone, QR, forget a phone, Fluent icons) is **published** (tag on d7ac5cd);
-  the installed 0.1.7 found it and offered the update. The `DllCanUnloadNow` is `S_FALSE`, so
+  the installed 0.1.7 found it and offered the update. **v0.1.9** (2026-10-21: phone microphone,
+  Android) is **published** (tag on 07218c5). The `DllCanUnloadNow` is `S_FALSE`, so
   once anything (even the Claude desktop app's device enumeration) loads the registered filter DLL it
   stays mapped and locks the file: rename the DLL aside before rebuilding, or unregister first.
 - **iPhone pairing (same day):** when the PC and phone hold **different** pairing keys (app
@@ -449,7 +450,11 @@ Windows 11.
   camera off keeps the sound; the phone then encodes video too (a later "audio-only start" would
   save that). Tested: fake phone `--audio` → `wav:` target, 28 s of 440.0 Hz, no gap, `set`
   off live. Android: `RECORD_AUDIO` asked at launch, the service adds type `microphone` only once
-  granted (else camera alone).
+  granted (else camera alone). **Redmi 9T over USB (2026-10-21):** 48 kHz, nothing lost, also
+  with the screen off and locked ("Chạy nền" on; `dumpsys audio` says "not silenced"). Denied:
+  the camera streams, the reason shows on the phone and in the PC's mic tooltip (amber dot).
+  Not yet seen on a device: the PC's request popping the permission prompt, sound starting
+  after a later grant. A WinUI tooltip set again every tick never opens: set it on change only.
 - **"Hiệu ứng" › Nền** (2026-10-20, `Segmenter.cpp`, `MainWindow.Background.cs`): blur or an image
   behind the person. Model `app/Assets/Models/pphumanseg.onnx` (OpenCV Zoo PP-HumanSeg 2023mar,
   Apache 2.0, opset 11, IR 8, output softmax; channel 1 = person, checked: an empty room blurs
