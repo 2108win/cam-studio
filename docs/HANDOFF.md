@@ -44,6 +44,7 @@ it once everything is tested.
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
+| PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif` draws the logo once, entrance transition, `MakerLink_Click`), 2026-10-24 | **edited on the Mac, not compiled** | **no**: check it builds, the GIF plays once, and with Windows animations off it shows the whole logo |
 
 ## 2. The user's decisions (do not ask again)
 

@@ -891,6 +891,23 @@
                     </StackPanel>
                     <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <!-- Maker signature. WinLa.gif draws the logo once on its dark chip colour, then holds it. -->
+                    <HyperlinkButton Click="MakerLink_Click" Padding="0,4" Margin="0,4,0,0"
+                                     AutomationProperties.Name="by Win Lã, mở winlax.id.vn" ToolTipService.ToolTip="winlax.id.vn">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Width="28" Height="28" CornerRadius="14" Background="#0B111B">
+                                <Image Source="Assets/WinLa.gif" Width="18" Height="18" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                <Run Text="by " /><Run Text="Win Lã" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                            </TextBlock>
+                        </StackPanel>
+                        <HyperlinkButton.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromVerticalOffset="12" />
+                            </TransitionCollection>
+                        </HyperlinkButton.Transitions>
+                    </HyperlinkButton>
                 </StackPanel>
             </ScrollViewer>
         </ContentDialog>

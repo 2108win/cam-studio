@@ -16,6 +16,7 @@ namespace CamStudio;
 // - otherwise when the user clicks "Cập nhật ngay" (bar, settings, tray menu).
 public sealed partial class MainWindow
 {
+    private const string MakerUrl = "https://winlax.id.vn";
     private readonly Updater _updater = new();
     private DateTime _launchedAt = DateTime.UtcNow;
     private bool _manualLaunch;
@@ -206,5 +207,17 @@ public sealed partial class MainWindow
         _settings.AutoUpdate = AutoUpdateToggle.IsOn;
         _settings.Save();
         _updater.AutoDownload = _settings.AutoUpdate;
+    }
+
+    // "by Win Lã" under the version in Settings; opened the same way as the other links.
+    private async void MakerLink_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await Windows.System.Launcher.LaunchUriAsync(new Uri(MakerUrl));
+        }
+        catch (Exception)
+        {
+        }
     }
 }

@@ -270,4 +270,6 @@ CamStudio.exe --tray              # chạy ẩn ở khay
 
 <div align="center">
 <sub>Toàn bộ mã nguồn được viết từ đầu: không dùng mã của Camo hay bất kỳ phần mềm thương mại nào.</sub>
+<br><br>
+<a href="https://winlax.id.vn"><img src="docs/images/by-win-la.svg" width="176" height="44" alt="by Win Lã"></a>
 </div>
