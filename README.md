@@ -13,7 +13,7 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
 ![Android 8+](https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)
 ![iOS 17+](https://img.shields.io/badge/iOS-17%2B-000000?logo=apple&logoColor=white)
 
-[**⬇ Tải cho Windows**](https://github.com/2108win/cam-studio/releases/latest) · [**⬇ Tải cho Android**](https://github.com/2108win/cam-studio/releases/latest) · [Hướng dẫn iPhone](ios/README.md)
+[**⬇ Tải cho Windows**](https://github.com/2108win/cam-studio/releases/latest) · [**⬇ Tải cho Android**](https://github.com/2108win/cam-studio/releases/latest) · [**⬇ Tải cho iPhone (TestFlight)**](https://testflight.apple.com/join/h3NKXEjD)
 
 <img src="docs/images/pc-app-phone-screen.png" width="760" alt="Cam Studio trên Windows, đang phát màn hình một chiếc Redmi 9T" />
 
@@ -53,7 +53,7 @@ Discord, Zoom, Teams, Google Meet, OBS và trình duyệt đều thấy một ca
 |---|---|---|
 | **Windows 11**, hoặc **Windows 10** phiên bản 2004 (build 19041) trở lên (64‑bit) | `CamStudio-Setup-<phiên bản>.exe` trong [Releases](https://github.com/2108win/cam-studio/releases/latest) | Bấm đúp file, bấm **Có** khi Windows hỏi quyền, rồi **Tiếp tục** đến hết. Không cần cài thêm .NET hay Visual C++. Trên Windows 10 camera ảo là bộ lọc DirectShow: Discord, OBS, Zoom, Chrome thấy nó; app Camera của Windows thì không ([chi tiết](docs/windows10.md)). |
 | **Android** 8.0 trở lên | `CamStudio-<phiên bản>-android.apk` | Chép sang điện thoại, mở file và cho phép cài. Cập nhật: cài đè lên bản cũ. |
-| **iPhone** iOS 17 trở lên | build từ mã nguồn | Xem [ios/README.md](ios/README.md): build bằng Xcode trên Mac, hoặc bằng xtool trên Windows. |
+| **iPhone** iOS 17 trở lên | [TestFlight](https://testflight.apple.com/join/h3NKXEjD) | Cài app **TestFlight** của Apple từ App Store, rồi mở link trên iPhone và bấm tham gia. Build từ mã nguồn: xem [ios/README.md](ios/README.md). |
 
 > [!NOTE]
 > Ứng dụng chưa có chữ ký số, nên Windows có thể hiện **"Windows protected your PC"**. Bấm **More info** rồi **Run anyway**.
@@ -113,7 +113,7 @@ Lỡ rút cáp webcam: camera "Cam Studio" vẫn còn trong Discord, hình tự 
 > Nhiều nguồn cùng lúc, cửa sổ màn hình điện thoại, cửa sổ trên máy tính và camera luôn có là tính năng mới, **chưa được kiểm tra trên Windows**.
 
 > [!TIP]
-> - **Chưa có app trên điện thoại?** Bấm **+ › Tải app cho điện thoại…** và quét mã QR (Android).
+> - **Chưa có app trên điện thoại?** Bấm **+ › Tải app cho điện thoại…** và quét mã QR của Android hoặc iPhone.
 > - **Không thấy điện thoại?** Bấm **+ › Thêm điện thoại theo IP…** rồi nhập địa chỉ IP hiện trên app điện thoại. Hoặc cắm cáp USB.
 > - **Bỏ một điện thoại:** chuột phải vào nó: **Quên ghép đôi…** hoặc **Xóa khỏi danh sách**.
 > - **Dùng camera điện thoại:** cần để app mở trên màn hình. Android và iOS không cho ứng dụng chạy nền dùng camera. App tự làm tối màn hình để đỡ tốn pin.

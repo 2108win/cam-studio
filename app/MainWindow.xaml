@@ -200,12 +200,21 @@
                                 <TextBlock x:Name="PlaceholderHint" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                                            Foreground="#B3FFFFFF" Visibility="Collapsed"
                                            Text="Mở app Cam Studio trên điện thoại (Wi‑Fi hoặc cáp USB), hoặc cắm webcam." />
-                                <!-- No source yet: scan to get the phone app (MainWindow.Download.cs). -->
+                                <!-- No source yet: scan to get the phone app, one code per platform (MainWindow.Download.cs). -->
                                 <StackPanel x:Name="PlaceholderQrRow" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" Visibility="Collapsed">
-                                    <Border x:Name="PlaceholderQr" />
-                                    <TextBlock VerticalAlignment="Center" MaxWidth="200" TextWrapping="Wrap" Foreground="#B3FFFFFF"
+                                    <StackPanel Spacing="4">
+                                        <Border x:Name="PlaceholderQrAndroid" />
+                                        <TextBlock Text="Android" HorizontalAlignment="Center" Foreground="#B3FFFFFF"
+                                                   Style="{StaticResource CaptionTextBlockStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Border x:Name="PlaceholderQrIphone" />
+                                        <TextBlock Text="iPhone" HorizontalAlignment="Center" Foreground="#B3FFFFFF"
+                                                   Style="{StaticResource CaptionTextBlockStyle}" />
+                                    </StackPanel>
+                                    <TextBlock VerticalAlignment="Center" MaxWidth="160" TextWrapping="Wrap" Foreground="#B3FFFFFF"
                                                Style="{StaticResource CaptionTextBlockStyle}"
-                                               Text="Chưa có app trên điện thoại? Quét mã để tải app Cam Studio cho Android." />
+                                               Text="Chưa có app trên điện thoại? Quét mã đúng loại máy để tải app Cam Studio." />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                     <Button x:Name="PlaceholderStart" Style="{StaticResource AccentButtonStyle}" Click="PlaceholderStart_Click">

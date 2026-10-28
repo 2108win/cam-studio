@@ -485,8 +485,9 @@ Windows 11.
   recording to end. Ctrl+Alt+C / Ctrl+Alt+R, the tray (not Ctrl+Alt+S: Zalo takes it).
 - **Phone app QR** (2026-10-20, `QrCode.cs`, `MainWindow.Download.cs`): our own encoder (byte mode,
   level M, versions 1–10), checked against Thonky's HELLO WORLD Reed–Solomon codewords and the
-  ISO format strings. It encodes the GitHub `releases/latest` page (the APK's name has the
-  version). "+" › "Tải app cho điện thoại…", and the empty preview with no source.
+  ISO format strings. Two codes: Android → the GitHub `releases/latest` page (the APK's name has
+  the version); iPhone → the public TestFlight link `testflight.apple.com/join/h3NKXEjD` (also on
+  winlax.id.vn/camstudio). "+" › "Tải app cho điện thoại…", and the empty preview with no source.
 - **Pause picture** (2026-10-20, `StillPicture.cpp`, `MainWindow.Pause.cs`): while paused, apps see
   the last picture blurred with "Quay lại ngay" (default), a card, the person's image (copied to
   `%LOCALAPPDATA%\CamStudio\pause-image.*`) or the old "no signal". The app calls
