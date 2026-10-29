@@ -1,6 +1,6 @@
 # Handoff: unfinished work
 
-> **Tóm tắt (2026-10-21):** bản 0.1.10 đã đăng trên GitHub (PC + Android). iOS 0.1.0
+> **Tóm tắt (2026-10-29):** bản 0.1.11 đã đăng trên GitHub (PC + Android). iOS 0.1.0
 > (20261021.2339) đã lên TestFlight. Còn một lỗi micro phía PC (mục 3) và các bài thử cần người
 > cầm máy.
 
@@ -36,6 +36,7 @@ it once everything is tested.
 | PC: a hot phone drops to 1080p30 / 720p30 (`state.thermal`) | yes | fake phone `--thermal serious`: 720p60 → 720p30, warning; "Quên ghép đôi" on the fake phone: key gone, camera moved to the webcam; **not on a real hot phone** |
 | PC snapshot (PNG) and recording (MP4 H.264 + mic AAC) of the camera's picture | yes | OBSBOT: PNG 1920×1080, MP4 4.4 s and 17.7 s with the window hidden (~50 fps, sound track); **not tried: a phone source, paused while recording, no microphone, Windows 10** |
 | PC phone-app QR ("+" › Tải app cho điện thoại…, empty preview) | yes | 16/16 codes (versions 1–10, Vietnamese text) read back by zxing-cpp; **not scanned with a phone camera** |
+| PC phone-app QR: two codes (Android release page, iPhone TestFlight `join/h3NKXEjD`), 2026-10-28 | yes (Windows, 2026-10-29) | dialog: both codes decoded by zxing-cpp from a screenshot, the TestFlight page answers "Join the Cam Studio beta"; **the empty-preview row (no source) not seen** |
 | PC pause picture (blurred last picture + text, card, own image, no signal) | yes | blurred card seen through `camstudio-verify --dump` (29 fps, 0 no-signal), resume live; **card / own image / Windows 10 path not looked at** |
 | PC global shortcuts (P pause, N next, C snapshot, R record, B effects, with Ctrl+Alt) | yes | hidden: with `camstudio-verify --hold` on the camera (no frame lost) and in standby (snapshot woke the webcam); a taken combination (Zalo's Ctrl+Alt+S) shows the warning. **Not in a real Discord call** |
 | PC source list: working sources first, "Chưa kết nối" below; right-click "Quên ghép đôi…" / "Xóa khỏi danh sách"; add by IP without a port | yes | order, menu, add + remove a test IP; **"Quên ghép đôi" not run** (needs re-pairing a real phone) |
@@ -44,7 +45,7 @@ it once everything is tested.
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
-| PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif` draws the logo once, entrance transition, `MakerLink_Click`), 2026-10-24 | **edited on the Mac, not compiled** | **no**: check it builds, the GIF plays once, and with Windows animations off it shows the whole logo |
+| PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif`, `MakerLink_Click`), 2026-10-24 | yes (Windows, 2026-10-29) | dev build: logo shows, the GIF has no loop extension (28 frames once), the link opens winlax.id.vn; **with Windows animations off: not looked at** |
 
 ## 2. The user's decisions (do not ask again)
 
@@ -70,6 +71,11 @@ it once everything is tested.
   button toggled), and a phone recording at 44.1/16 kHz would play at 48 kHz. Also: "Tạm dừng
   hình" (`cs_switch_none`) stops the phone's sound too, in a call.
 
+- **v0.1.11 published** (2026-10-29, tag on e2a4572, setup sha256 e3fa551e…, APK 12757a4a…,
+  versionCode 13, no Android code change): two phone-app QR codes, "by Win Lã" in Settings.
+  Installed on the user's PC with `/LOG`: succeeded, no rollback, installed files match the
+  build, settings untouched (the size was already "Tự động"), virtual camera 181/181 live. No
+  phone tested (Redmi not plugged in, iPhone app closed). The phone-mic bug above is still in it.
 - **v0.1.10 published** (2026-10-21, tag on 91dae8f, setup sha256 10de9da0…, APK baf1f5ec…): Thành phần bổ sung (Apple Devices, VB-CABLE), Windows accent +
   Settings › Màu nhấn, bigger centred icons, one card per phone, crash log. Tested on the user's
   PC: winget install of Apple Devices, iPhone over USB (~130 ms vs ~185 ms Wi‑Fi), VB-CABLE
