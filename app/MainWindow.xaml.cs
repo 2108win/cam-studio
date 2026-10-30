@@ -33,7 +33,7 @@ public sealed partial class MainWindow : Window
 
 
     private readonly AppSettings _settings = AppSettings.Load();
-    private readonly DispatcherQueueTimer _previewTimer;
+    private readonly EngineSignal _engineSignal = new(); // a preview frame is ready
     private readonly DispatcherQueueTimer _statusTimer;
     private readonly TrayIcon _tray;
     private readonly Process _self = Process.GetCurrentProcess();
@@ -64,6 +64,7 @@ public sealed partial class MainWindow : Window
     private WriteableBitmap? _bitmap;
     private unsafe byte* _bitmapPixels;
     private ulong _lastFrameId;
+    private bool _previewOn; // the window is on screen: frames are drawn
 
     // Pan by dragging the preview
     private bool _panning;
@@ -81,6 +82,10 @@ public sealed partial class MainWindow : Window
         // At login (--tray) phones are looked for after 20 s; a restart wants its picture back now.
         int hr = Engine.cs_init_delayed(options.Tray && !options.Restarted ? 20000 : 0);
         if (hr < 0) throw new InvalidOperationException($"Engine init failed 0x{hr:X8}");
+        // The preview is drawn when the engine says a frame is ready (an even ~30 fps), not
+        // polled on a timer. Before any source starts.
+        _engineSignal.Signaled += PumpPreview;
+        Engine.cs_set_notify(_engineSignal.Hwnd, EngineSignal.Message);
         Engine.cs_set_output_size(_settings.OutputSize);
         Engine.cs_set_auto_frame(_settings.AutoFrame ? 1 : 0);
 
@@ -94,10 +99,6 @@ public sealed partial class MainWindow : Window
         SetupHotkeys();
         SetupPhoneAppCode();
 
-        // 30 fps is plenty for an on-screen preview.
-        _previewTimer = DispatcherQueue.CreateTimer();
-        _previewTimer.Interval = TimeSpan.FromMilliseconds(33);
-        _previewTimer.Tick += (_, _) => PumpPreview();
         _statusTimer = DispatcherQueue.CreateTimer();
         _statusTimer.Interval = TimeSpan.FromSeconds(1);
         _statusTimer.Tick += (_, _) => UpdateStatus();
@@ -108,6 +109,7 @@ public sealed partial class MainWindow : Window
 
         _statusTimer.Start();
         UpdatePreviewActivity(visible: !options.Tray);
+        if (options.Tray) TrimLater(90); // after the first background connections to phones
         UpdateStatus();
         InitAsync(options);
     }
@@ -214,15 +216,17 @@ public sealed partial class MainWindow : Window
     private void UpdatePreviewActivity(bool? visible = null)
     {
         bool on = visible ?? IsOnScreen;
+        _previewOn = on;
         Engine.cs_set_preview_enabled(on ? 1 : 0);
         if (on)
         {
-            _previewTimer.Start();
+            _shows++;
+            PumpPreview();
         }
         else
         {
-            _previewTimer.Stop();
             TrimMemory();
+            TrimLater(30); // the source closes 5 s after the window hides; at login phones are looked for after 20 s
         }
     }
 
@@ -233,6 +237,18 @@ public sealed partial class MainWindow : Window
         GC.Collect();
         GC.WaitForPendingFinalizers();
         EmptyWorkingSet(System.Diagnostics.Process.GetCurrentProcess().Handle);
+    }
+
+    private int _shows; // times the window was shown: a trim planned while it was hidden is dropped
+
+    // Once more after things settled, if the window stayed hidden (a trim at the moment it hides,
+    // or at a hidden start, comes before the engine and the UI have finished their work). Not
+    // while an app uses the camera or a recording runs: their pages would fault back in mid-stream.
+    private async void TrimLater(int seconds)
+    {
+        int shows = _shows;
+        await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(seconds));
+        if (shows == _shows && !_exiting && !IsOnScreen && !_recording && Engine.GetStatus().ConsumerActive == 0) TrimMemory();
     }
 
     [System.Runtime.InteropServices.DllImport("psapi.dll")]
@@ -287,7 +303,8 @@ public sealed partial class MainWindow : Window
     {
         if (_shutDown) return;
         _shutDown = true;
-        _previewTimer.Stop();
+        Engine.cs_set_notify(0, 0);
+        _engineSignal.Dispose();
         _statusTimer.Stop();
         CloseScreenWindows();
         if (_recording) Engine.cs_record_stop(); // a finished file, not a broken one
@@ -1627,10 +1644,11 @@ public sealed partial class MainWindow : Window
     {
         uint w, h;
         ulong id;
+        // Size + id only. Asked first, always: it also lets the engine signal the next frame.
+        Engine.cs_copy_preview(null, 0, &w, &h, &id);
         // Waiting for the source, paused, or no source: show the placeholder, not the last frame
         // (the engine keeps it).
-        if (_lastState == EngineState.Waiting || _paused || _noSource) return;
-        Engine.cs_copy_preview(null, 0, &w, &h, &id); // size + id only
+        if (_lastState == EngineState.Waiting || _paused || _noSource || !_previewOn) return;
         if (id == _lastFrameId || w == 0 || h == 0) return;
 
         if (_bitmap is null || _bitmap.PixelWidth != w || _bitmap.PixelHeight != h)
@@ -1741,6 +1759,7 @@ public sealed partial class MainWindow : Window
 
         // Hidden in the tray: the tooltip above is all anyone can see.
         if (!IsOnScreen) return;
+        PumpPreview(); // in case a frame's signal was lost
         CheckAddOns();
         if (_recording) UpdateRecordingUi();
         if (_settings.PhoneMic && MicButton.Visibility == Visibility.Visible) UpdateMicButton();

@@ -60,7 +60,8 @@ private:
 
 // Blends the background of an NV12 picture region (planes y / uv, pitch) with a blurred copy of
 // itself (strength 0..100) or with `image` (NV12 of the same w x h), using mask (Segmenter::kSize
-// square, 255 = person). Rows run in parallel.
+// square, 255 = person). Rows run in parallel when `parallel` (a big picture, or many frames a
+// second): spreading a 1080p frame over every core took half again as much CPU in all.
 struct BackgroundScratch
 {
     std::vector<uint8_t> tiny;   // the box-averaged picture the blur is made from
@@ -69,4 +70,4 @@ struct BackgroundScratch
     uint32_t alphaW = 0, alphaH = 0;
 };
 void BlendBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h, const std::vector<uint8_t>& mask,
-                     bool maskChanged, int strength, const uint8_t* image, BackgroundScratch& scratch);
+                     bool maskChanged, int strength, const uint8_t* image, BackgroundScratch& scratch, bool parallel);

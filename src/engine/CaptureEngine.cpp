@@ -19,7 +19,10 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-constexpr ULONGLONG kPreviewIntervalMs = 33; // ~30 fps is plenty for a preview
+// ~30 fps is plenty for a preview, but evenly spaced: timed on the QPC clock (GetTickCount64
+// moves in 15.6 ms steps, and a 33 ms gate on it gave ~21 fps with 33-85 ms gaps).
+constexpr double kPreviewFps = 30;
+constexpr double kPreviewIntervalMs = 1000.0 / kPreviewFps;
 // Source closed after this long with no app on the camera and no preview on
 // screen (an app switching cameras or a quick glance should not reopen it).
 // MFCreateVirtualCamera exists on Windows 11 only (mfsensorgroup.dll, build 22000). Looked up at
@@ -62,6 +65,21 @@ double QpcMs()
     LARGE_INTEGER c;
     QueryPerformanceCounter(&c);
     return c.QuadPart * 1000.0 / freq;
+}
+
+// Frame pacing on the QPC clock: a frame is ready at or a little before its due time, and taking
+// it moves the due time by exactly one interval, so a faster source gives evenly spread frames
+// (100 fps paced to 30 gives 30/30/40 ms gaps). A late frame (a slow or stalled source) restarts
+// the schedule from now.
+bool PaceReady(double dueMs, double intervalMs)
+{
+    return QpcMs() >= dueMs - intervalMs / 4;
+}
+
+void PaceTake(double& dueMs, double intervalMs)
+{
+    const double now = QpcMs();
+    dueMs = now > dueMs + intervalMs ? now + intervalMs : dueMs + intervalMs;
 }
 
 std::wstring Widen(const std::string& s)
@@ -282,10 +300,12 @@ public:
     {
         m_writer.TryOpen();
         return m_writer.ConsumerActive() || (m_writer.IsOpen() && GetTickCount64() - m_lastWriteTick >= 1000) ||
-               m_engine.PreviewWanted() || m_engine.m_recorder.Active() || m_engine.m_snapWanted;
+               m_engine.PreviewWanted(NominalFps()) || m_engine.m_recorder.Active() || m_engine.m_snapWanted;
     }
 
     double LastFps() const { return m_lastFps; }
+    // The rate the source was opened at (Begin).
+    double NominalFps() const { return m_fpsDen ? static_cast<double>(m_fpsNum) / m_fpsDen : 30; }
 
     // Automatic framing applies to cameras only (a webcam, a phone's camera): a shared screen or
     // a PC window would be zoomed into the faces on it.
@@ -403,6 +423,7 @@ private:
         }
         m_vcamWidth = width;
         m_vcamHeight = height;
+        m_cameraFps = static_cast<double>(m_fpsNum) / m_fpsDen; // what MediaSource offers apps at most
         m_consumerSeen = 0;
         return S_OK;
     }
@@ -419,8 +440,25 @@ private:
         // picture at once rather than "no signal" until the next frame of a
         // slow source (a still phone screen sends ~4 a second).
         const ULONGLONG tick = GetTickCount64();
-        const bool toCamera = m_writer.ConsumerActive() || (m_writer.IsOpen() && tick - m_lastWriteTick >= 1000);
-        const bool toPreview = m_engine.PreviewDue();
+        const bool consumer = m_writer.ConsumerActive();
+        // An app gets at most the rate the camera was registered with (MediaSource offers no
+        // faster mode). With an effect on, the frames in between are not worth their work (blur
+        // on a 1080p100 webcam took 1.4 cores for a 30 fps call): one frame per camera interval,
+        // and the preview shows those same frames.
+        bool toCamera, toPreview;
+        const bool capped = consumer && EffectsOn() && m_cameraFps > 0 && NominalFps() > m_cameraFps * 1.1;
+        if (capped)
+        {
+            const double interval = 1000.0 / m_cameraFps;
+            toCamera = PaceReady(m_cameraDueMs, interval);
+            if (toCamera) PaceTake(m_cameraDueMs, interval);
+            toPreview = toCamera && m_engine.PreviewDue(m_cameraFps);
+        }
+        else
+        {
+            toCamera = consumer || (m_writer.IsOpen() && tick - m_lastWriteTick >= 1000);
+            toPreview = m_engine.PreviewDue(NominalFps());
+        }
         const bool toRecording = m_engine.m_recorder.Active();
         const bool toSnapshot = m_engine.m_snapWanted;
         if (!toCamera && !toPreview && !toRecording && !toSnapshot) return;
@@ -513,7 +551,12 @@ private:
         }
         if (SmoothingOn()) ApplySmoothing(const_cast<uint8_t*>(picY), picPitch, l.destWidth, l.destHeight);
         else if (m_smoothDetector) StopSmoothing();
-        if (BackgroundOn()) ApplyBackground(const_cast<uint8_t*>(picY), const_cast<uint8_t*>(picUv), picPitch, l.destWidth, l.destHeight);
+        // On every core for a big picture or many frames a second (a recording, or a camera with
+        // no cap: Windows 10), else on this thread: less CPU in all.
+        const bool manyFrames = NominalFps() > 35 && (toRecording || (consumer && !capped));
+        if (BackgroundOn())
+            ApplyBackground(const_cast<uint8_t*>(picY), const_cast<uint8_t*>(picUv), picPitch, l.destWidth, l.destHeight,
+                            manyFrames || static_cast<uint64_t>(l.destWidth) * l.destHeight > 1920u * 1088u);
         else if (m_segmenter && !BackgroundWanted()) StopBackground();
         else if (m_segmenter && m_bgReported != m_segmenter->State())
         {
@@ -550,7 +593,7 @@ private:
     bool BackgroundWanted() const { return m_framingSource && m_engine.m_bgMode != 0; }
     bool BackgroundOn() const { return BackgroundWanted() && (!m_segmenter || m_segmenter->State() == 1); }
 
-    void ApplyBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h)
+    void ApplyBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h, bool parallel)
     {
         std::wstring imagePath;
         uint32_t gen = 0;
@@ -584,7 +627,7 @@ private:
                 }
                 if (!m_bgImageNv12.empty()) image = m_bgImageNv12.data();
             }
-            BlendBackground(y, uv, pitch, w, h, m_mask, changed, m_engine.m_bgStrength, image, m_bgScratch);
+            BlendBackground(y, uv, pitch, w, h, m_mask, changed, m_engine.m_bgStrength, image, m_bgScratch, parallel);
             active = true;
         }
         std::lock_guard lk(m_engine.m_lock);
@@ -596,6 +639,10 @@ private:
     // "Làm mịn da": faces are looked for in the picture itself (its own detector, 5 times a
     // second), so their boxes need no mapping; frames between looks reuse the last boxes.
     bool SmoothingOn() const { return m_framingSource && m_engine.m_smoothing > 0; }
+
+    // An effect that costs real work on every frame: background, skin smoothing, framing (a
+    // crop-scale of the whole frame). They all move by time, not by frame count.
+    bool EffectsOn() const { return BackgroundOn() || SmoothingOn() || (m_engine.m_autoFrame && m_framingSource); }
 
     void ApplySmoothing(uint8_t* y, long pitch, uint32_t w, uint32_t h)
     {
@@ -695,6 +742,8 @@ private:
     const bool m_dshow;
     ComPtr<IMFVirtualCamera> m_vcam;
     uint32_t m_vcamWidth = 0, m_vcamHeight = 0; // size the virtual camera was published with
+    double m_cameraFps = 0;                       // and its rate (0: not known, Windows 10)
+    double m_cameraDueMs = 0;                     // QPC time the next camera frame is due (effects on)
     uint32_t m_fpsNum = 30, m_fpsDen = 1;
     FrameWriter m_writer;
     std::wstring m_failure;
@@ -1017,22 +1066,23 @@ bool CaptureEngine::SetImage(const ImageSettings& image)
     return a.pictureWidth != b.pictureWidth || a.pictureHeight != b.pictureHeight;
 }
 
-bool CaptureEngine::PreviewDue()
+// A source at the preview's rate or slower gives every frame; a faster one is paced (PaceReady).
+bool CaptureEngine::PreviewWanted(double sourceFps) const
 {
     if (!m_previewEnabled) return false;
-    const ULONGLONG now = GetTickCount64();
-    if (now - m_lastPreviewTick < kPreviewIntervalMs) return false;
-    m_lastPreviewTick = now;
-    return true;
+    return sourceFps <= kPreviewFps * 1.1 || PaceReady(m_previewDueMs, kPreviewIntervalMs);
 }
 
-bool CaptureEngine::PreviewWanted() const
+bool CaptureEngine::PreviewDue(double sourceFps)
 {
-    return m_previewEnabled && GetTickCount64() - m_lastPreviewTick >= kPreviewIntervalMs;
+    if (!PreviewWanted(sourceFps)) return false;
+    PaceTake(m_previewDueMs, kPreviewIntervalMs);
+    return true;
 }
 
 bool CaptureEngine::CopyPreview(uint32_t* dst, size_t capacity, uint32_t& width, uint32_t& height, uint64_t& frameId) const
 {
+    m_notifyPending = false; // the window looked: the next frame may post again
     std::lock_guard lk(m_lock);
     width = m_previewW;
     height = m_previewH;
@@ -1045,7 +1095,9 @@ bool CaptureEngine::CopyPreview(uint32_t* dst, size_t capacity, uint32_t& width,
 
 void CaptureEngine::Notify() const
 {
-    if (m_notifyWindow) PostMessageW(m_notifyWindow, m_notifyMsg, 0, 0);
+    const HWND window = m_notifyWindow;
+    if (window && !m_notifyPending.exchange(true) && !PostMessageW(window, m_notifyMsg, 0, 0))
+        m_notifyPending = false; // the queue is full or the window gone: try again next time
 }
 
 void CaptureEngine::Fail(const std::wstring& what, HRESULT hr)

@@ -342,6 +342,42 @@ void TestNv12ToBgraScaled()
           "downscaled preview keeps the halves");
 }
 
+// The SSE2 conversion gives the plain one's output bit for bit: random pictures (every Y/U/V
+// value, so the clamps are hit), pitch wider than the picture, 1:1, down, up, odd widths (tails).
+void TestNv12ToBgraSimd()
+{
+    uint32_t seed = 12345;
+    auto next = [&] { seed = seed * 1664525u + 1013904223u; return static_cast<uint8_t>(seed >> 24); };
+    const uint32_t sizes[][5] = { // w, h, pitch, pw, ph
+        { 16, 8, 16, 16, 8 },     { 64, 32, 80, 64, 32 },   { 1920, 1080, 1920, 853, 480 },
+        { 1920, 1080, 2048, 1920, 1080 }, { 640, 360, 640, 1281, 721 }, { 100, 50, 128, 37, 19 },
+        { 1080, 1920, 1088, 405, 719 }, { 2, 2, 2, 7, 3 },
+    };
+    for (const auto& s : sizes)
+    {
+        const uint32_t w = s[0], h = s[1], pitch = s[2], pw = s[3], ph = s[4];
+        std::vector<uint8_t> y(static_cast<size_t>(pitch) * h), uv(static_cast<size_t>(pitch) * (h / 2));
+        for (auto& v : y) v = next();
+        for (auto& v : uv) v = next();
+        std::vector<uint32_t> want(static_cast<size_t>(pw) * ph), got(want.size());
+        Nv12ToBgraScalar(y.data(), uv.data(), static_cast<long>(pitch), w, h, want.data(), pw, ph);
+        Nv12ToBgra(y.data(), uv.data(), static_cast<long>(pitch), w, h, got.data(), pw, ph);
+        Check(want == got, "SIMD NV12 -> BGRA = plain: " + Size(w, h) + " pitch " + std::to_string(pitch) + " -> " + Size(pw, ph));
+    }
+    // Every Y with the most extreme chroma: the clamps at 0 and 255.
+    std::vector<uint8_t> y(256 * 2), uv(256);
+    for (uint32_t x = 0; x < 256; ++x) y[x] = y[256 + x] = static_cast<uint8_t>(x);
+    for (uint32_t x = 0; x < 256; x += 2)
+    {
+        uv[x] = (x / 2) % 2 ? 0 : 255;
+        uv[x + 1] = (x / 4) % 2 ? 255 : 0;
+    }
+    std::vector<uint32_t> want(256 * 2), got(256 * 2);
+    Nv12ToBgraScalar(y.data(), uv.data(), 256, 256, 2, want.data(), 256, 2);
+    Nv12ToBgra(y.data(), uv.data(), 256, 256, 2, got.data(), 256, 2);
+    Check(want == got, "SIMD NV12 -> BGRA = plain: every luma, extreme chroma");
+}
+
 // ---- moving the view (automatic framing) ---------------------------------------------------
 
 void TestView()
@@ -463,6 +499,7 @@ int main()
     TestAdjustRect();
     TestBgraToNv12();
     TestNv12ToBgraScaled();
+    TestNv12ToBgraSimd();
     TestView();
     TestSkinSmooth();
     printf("%d checks, %d failed\n", g_checks, g_failures);

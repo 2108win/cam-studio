@@ -289,7 +289,7 @@ Tap MakeTap(uint32_t x, uint32_t out, uint32_t in)
 } // namespace
 
 void BlendBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h, const std::vector<uint8_t>& mask,
-                     bool maskChanged, int strength, const uint8_t* image, BackgroundScratch& s)
+                     bool maskChanged, int strength, const uint8_t* image, BackgroundScratch& s, bool parallel)
 {
     constexpr uint32_t K = Segmenter::kSize;
     if (w < 4 || h < 4 || mask.size() != static_cast<size_t>(K) * K) return;
@@ -339,10 +339,10 @@ void BlendBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h
         for (uint32_t i = 0; i < aw; ++i) xc[i] = MakeTap(i, aw, tw / 2);
     }
 
-    // Rows in chunks, in parallel: a luma row pair and its chroma row together.
+    // Rows in chunks: a luma row pair and its chroma row together.
     std::vector<uint32_t> chunks((ah + 31) / 32);
     std::iota(chunks.begin(), chunks.end(), 0u);
-    std::for_each(std::execution::par, chunks.begin(), chunks.end(), [&](uint32_t chunk) {
+    auto blendChunk = [&](uint32_t chunk) {
         const uint32_t cy0 = chunk * 32, cy1 = std::min(ah, cy0 + 32);
         for (uint32_t cy = cy0; cy < cy1; ++cy)
         {
@@ -404,5 +404,7 @@ void BlendBackground(uint8_t* y, uint8_t* uv, long pitch, uint32_t w, uint32_t h
                 }
             }
         }
-    });
+    };
+    if (parallel) std::for_each(std::execution::par, chunks.begin(), chunks.end(), blendChunk);
+    else std::for_each(chunks.begin(), chunks.end(), blendChunk);
 }

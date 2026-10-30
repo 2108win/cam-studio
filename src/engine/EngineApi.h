@@ -220,6 +220,10 @@ CS_API void cs_get_framing(CsFraming* framing);
 
 CS_API void cs_get_status(CsStatus* status);
 CS_API void cs_set_preview_enabled(int32_t enabled);
+// Posts message to window (a message-only window on the UI thread) when a preview frame is ready
+// or the state changed; one at a time, until cs_copy_preview is called. Call once, after cs_init
+// and before any source starts.
+CS_API void cs_set_notify(void* window, uint32_t message);
 // Largest preview worth producing: the preview panel's size in pixels.
 CS_API void cs_set_preview_size(int32_t maxWidth, int32_t maxHeight);
 

@@ -197,6 +197,7 @@ internal static unsafe partial class Engine
     [LibraryImport(Dll)] public static partial void cs_set_auto_frame(int enabled);
     [LibraryImport(Dll)] public static partial void cs_get_framing(CsFraming* framing);
     [LibraryImport(Dll)] public static partial void cs_set_preview_enabled(int enabled);
+    [LibraryImport(Dll)] public static partial void cs_set_notify(nint window, uint message);
     [LibraryImport(Dll)] public static partial void cs_set_preview_size(int maxWidth, int maxHeight);
     [LibraryImport(Dll)] public static partial int cs_copy_preview(uint* pixels, int capacity, uint* width, uint* height, ulong* frameId);
     [LibraryImport(Dll)] public static partial int cs_phone_caps(byte* buffer, int capacity);

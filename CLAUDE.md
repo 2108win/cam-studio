@@ -378,6 +378,28 @@ Windows 11.
     - Redmi screen: 0.3% CPU, and 0 encoders running on the phone. It woke in ~0.5 s.
   - **Memory:** the app calls `EmptyWorkingSet` when hidden.
   - **Status:** shown through `CsStatus.standby`.
+- **Light and smooth (2026-10-30), OBSBOT 1080p100, measured before → after:**
+  - **Preview:** paced on QPC (`PaceReady`/`PaceTake`), not `GetTickCount64` (15.6 ms steps: it
+    gave ~21 fps with 33–85 ms gaps). Now an even 30 fps. The engine posts `EngineSignal.Message`
+    to a message-only window (`cs_set_notify`, one message pending until `cs_copy_preview`), so
+    there is no preview timer. `Nv12ToBgra` is SSE2 (2.8–4× faster; `frame-check` compares it
+    with `Nv12ToBgraScalar` bit for bit). Window open: 6.5–6.9 % of a core at 21 fps → 7.0–7.2 %
+    at 30 fps.
+  - **Effects with an app on the camera:** apps get at most the camera's registered rate
+    (`m_cameraFps`; MediaSource offers no faster mode). With blur, skin smoothing or framing on,
+    `Publish` takes one frame per camera interval and the preview shows those. `BlendBackground`
+    runs on one thread up to 1080p at ≤35 frames/s (all cores cost 1.7× the CPU). Blur, hidden,
+    1080p30 reader: 140 % → 28 % of a core, still 30 fps, 0 no-signal, gaps ≤ 35 ms.
+    No cap on Windows 10 (rate unknown) or for a recording.
+  - **Tray memory:** the trim at a `--tray` start ran before anything had loaded (working set
+    stayed ~125 MB). `TrimLater` trims again 30 s after hiding and 90 s after a hidden start,
+    never while an app uses the camera or a recording runs. Task Manager's "Memory" (private
+    working set) in the tray: ~24 MB. Commit is unchanged (~110–126 MB): WinUI plus the GPU
+    driver, which load even when the window never shows. The engine alone is ~2 MB.
+  - Hidden with a 1080p30 reader and no effect: unchanged (~4 % of a core, mostly MJPEG decode).
+- **Build tools:** VS 2022 Build Tools (C++, CMake, Windows 11 SDK 26100) and the .NET 10 SDK
+  (`C:\Program Files\dotnet`, not on PATH in an old shell). A `build\CMakeCache.txt` from a removed
+  Visual Studio stops CMake ("could not find specified instance"): delete it and `build\CMakeFiles`.
 - **USB cable (docs/protocol.md 1.2):** no phone change was needed for the tunnel; it arrives on loopback.
   - **The PC never probes a phone port** to see whether the app is open or sharing its screen. Phone
     apps built with the hello-before-replace change (2026-10-18) are probe-safe (below). Older builds

@@ -286,16 +286,24 @@ inline void BgraToNv12(const uint8_t* bgra, size_t pitch, uint32_t w, uint32_t h
     }
 }
 
-// NV12 (w x h, planes at y / uv with pitch bytes per row) -> BGRA of pw x ph,
-// nearest-neighbour (pw == w and ph == h converts 1:1). BT.601 limited range.
-// Used for on-screen pictures (the preview, a phone screen's window).
-inline void Nv12ToBgra(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch, uint32_t w, uint32_t h,
-                       uint32_t* out, uint32_t pw, uint32_t ph)
+namespace nv12detail
 {
-    auto clamp = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : v > 255 ? 255 : v); };
-    thread_local std::vector<uint32_t> columns;
-    columns.resize(pw);
-    for (uint32_t x = 0; x < pw; ++x) columns[x] = static_cast<uint32_t>(static_cast<uint64_t>(x) * w / pw);
+// One BGRA pixel from Y, U, V (BT.601 limited range).
+inline uint32_t BgraPixel(int y, int u, int v)
+{
+    auto clamp = [](int x) { return static_cast<uint32_t>(x < 0 ? 0 : x > 255 ? 255 : x); };
+    const int c = y - 16, d = u - 128, e = v - 128;
+    const uint32_t r = clamp((298 * c + 409 * e + 128) >> 8);
+    const uint32_t g = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
+    const uint32_t b = clamp((298 * c + 516 * d + 128) >> 8);
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+} // namespace nv12detail
+
+// The plain version of Nv12ToBgra below, kept as its reference (frame-check compares the two).
+inline void Nv12ToBgraScalar(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch, uint32_t w, uint32_t h,
+                             uint32_t* out, uint32_t pw, uint32_t ph)
+{
     for (uint32_t y = 0; y < ph; ++y)
     {
         const uint32_t sy = static_cast<uint32_t>(static_cast<uint64_t>(y) * h / ph);
@@ -304,15 +312,89 @@ inline void Nv12ToBgra(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch
         uint32_t* o = out + static_cast<size_t>(y) * pw;
         for (uint32_t x = 0; x < pw; ++x)
         {
-            const uint32_t sx = columns[x];
-            const int c = row[sx] - 16;
-            const int d = uv[sx & ~1u] - 128;
-            const int e = uv[(sx & ~1u) + 1] - 128;
-            const uint32_t r = clamp((298 * c + 409 * e + 128) >> 8);
-            const uint32_t g = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
-            const uint32_t b = clamp((298 * c + 516 * d + 128) >> 8);
-            o[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
+            const uint32_t sx = static_cast<uint32_t>(static_cast<uint64_t>(x) * w / pw);
+            o[x] = nv12detail::BgraPixel(row[sx], uv[sx & ~1u], uv[(sx & ~1u) + 1]);
         }
+    }
+}
+
+// NV12 (w x h, planes at y / uv with pitch bytes per row) -> BGRA of pw x ph,
+// nearest-neighbour (pw == w and ph == h converts 1:1). BT.601 limited range.
+// Used for on-screen pictures (the preview, a phone screen's window). Each output row's samples
+// are gathered first, then converted with SSE2 8 pixels at a time in 32-bit sums: the same
+// output as Nv12ToBgraScalar, bit for bit.
+inline void Nv12ToBgra(const uint8_t* yPlane, const uint8_t* uvPlane, long pitch, uint32_t w, uint32_t h,
+                       uint32_t* out, uint32_t pw, uint32_t ph)
+{
+    thread_local std::vector<uint32_t> columns;
+    thread_local std::vector<uint8_t> line; // one output row's Y, U and V samples
+    columns.resize(pw);
+    for (uint32_t x = 0; x < pw; ++x) columns[x] = static_cast<uint32_t>(static_cast<uint64_t>(x) * w / pw);
+    line.resize(static_cast<size_t>(pw) * 3);
+    uint8_t* ly = line.data();
+    uint8_t* lu = ly + pw;
+    uint8_t* lv = lu + pw;
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i k16 = _mm_set1_epi16(16), k128 = _mm_set1_epi16(128);
+    const __m128i one = _mm_set1_epi16(1);
+    const __m128i round = _mm_set1_epi32(128);
+    const __m128i kR = _mm_setr_epi16(298, 409, 298, 409, 298, 409, 298, 409);      // (c, e)
+    const __m128i kB = _mm_setr_epi16(298, 516, 298, 516, 298, 516, 298, 516);      // (c, d)
+    const __m128i kG1 = _mm_setr_epi16(298, -100, 298, -100, 298, -100, 298, -100); // (c, d)
+    const __m128i kG2 = _mm_setr_epi16(-208, 128, -208, 128, -208, 128, -208, 128); // (e, 1): + rounding
+    const __m128i alpha = _mm_set1_epi8(static_cast<char>(0xFF));
+    // Four 32-bit sums >> 8 for each half, packed to 8 bytes clamped to 0..255.
+    auto channel = [](__m128i lo, __m128i hi) {
+        const __m128i v16 = _mm_packs_epi32(_mm_srai_epi32(lo, 8), _mm_srai_epi32(hi, 8));
+        return _mm_packus_epi16(v16, v16);
+    };
+
+    uint32_t lastSy = UINT32_MAX;
+    for (uint32_t y = 0; y < ph; ++y)
+    {
+        const uint32_t sy = static_cast<uint32_t>(static_cast<uint64_t>(y) * h / ph);
+        uint32_t* o = out + static_cast<size_t>(y) * pw;
+        if (sy == lastSy)
+        {
+            memcpy(o, o - pw, static_cast<size_t>(pw) * 4); // scaled up: the same source row again
+            continue;
+        }
+        lastSy = sy;
+        const uint8_t* row = yPlane + static_cast<size_t>(sy) * pitch;
+        const uint8_t* uv = uvPlane + static_cast<size_t>(sy / 2) * pitch;
+        const uint32_t* cols = columns.data();
+        if (pw == w)
+            memcpy(ly, row, pw);
+        else
+            for (uint32_t x = 0; x < pw; ++x) ly[x] = row[cols[x]];
+        for (uint32_t x = 0; x < pw; ++x)
+        {
+            const uint32_t sx = cols[x] & ~1u;
+            lu[x] = uv[sx];
+            lv[x] = uv[sx + 1];
+        }
+        uint32_t x = 0;
+        for (; x + 8 <= pw; x += 8)
+        {
+            auto load = [&](const uint8_t* p) {
+                return _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(p + x)), zero);
+            };
+            const __m128i c = _mm_sub_epi16(load(ly), k16);
+            const __m128i d = _mm_sub_epi16(load(lu), k128);
+            const __m128i e = _mm_sub_epi16(load(lv), k128);
+            const __m128i ceLo = _mm_unpacklo_epi16(c, e), ceHi = _mm_unpackhi_epi16(c, e);
+            const __m128i cdLo = _mm_unpacklo_epi16(c, d), cdHi = _mm_unpackhi_epi16(c, d);
+            const __m128i e1Lo = _mm_unpacklo_epi16(e, one), e1Hi = _mm_unpackhi_epi16(e, one);
+            const __m128i r = channel(_mm_add_epi32(_mm_madd_epi16(ceLo, kR), round), _mm_add_epi32(_mm_madd_epi16(ceHi, kR), round));
+            const __m128i b = channel(_mm_add_epi32(_mm_madd_epi16(cdLo, kB), round), _mm_add_epi32(_mm_madd_epi16(cdHi, kB), round));
+            const __m128i g = channel(_mm_add_epi32(_mm_madd_epi16(cdLo, kG1), _mm_madd_epi16(e1Lo, kG2)),
+                                      _mm_add_epi32(_mm_madd_epi16(cdHi, kG1), _mm_madd_epi16(e1Hi, kG2)));
+            const __m128i bg = _mm_unpacklo_epi8(b, g); // B G pairs
+            const __m128i ra = _mm_unpacklo_epi8(r, alpha);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(o + x), _mm_unpacklo_epi16(bg, ra));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(o + x + 4), _mm_unpackhi_epi16(bg, ra));
+        }
+        for (; x < pw; ++x) o[x] = nv12detail::BgraPixel(ly[x], lu[x], lv[x]);
     }
 }
 

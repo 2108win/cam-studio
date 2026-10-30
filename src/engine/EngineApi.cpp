@@ -712,6 +712,11 @@ CS_API void cs_set_preview_enabled(int32_t enabled)
     if (g_engine) g_engine->SetPreviewEnabled(enabled != 0);
 }
 
+CS_API void cs_set_notify(void* window, uint32_t message)
+{
+    if (g_engine) g_engine->SetNotify(static_cast<HWND>(window), message);
+}
+
 CS_API void cs_set_preview_size(int32_t maxWidth, int32_t maxHeight)
 {
     if (g_engine && maxWidth > 0 && maxHeight > 0)

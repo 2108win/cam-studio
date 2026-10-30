@@ -1,8 +1,8 @@
 # Handoff: unfinished work
 
-> **Tóm tắt (2026-10-29):** bản 0.1.11 đã đăng trên GitHub (PC + Android). iOS 0.1.0
+> **Tóm tắt (2026-10-30):** bản 0.1.11 đã đăng trên GitHub (PC + Android). iOS 0.1.0
 > (20261021.2339) đã lên TestFlight. Còn một lỗi micro phía PC (mục 3) và các bài thử cần người
-> cầm máy.
+> cầm máy. Bản PC nhẹ và mượt hơn (2026-10-30) đã commit, chưa phát hành.
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
 Redmi over USB" says what was verified). Update this file in the same commit as each step; delete
@@ -45,6 +45,7 @@ it once everything is tested.
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
+| PC lighter and smoother (2026-10-30, CLAUDE.md "Light and smooth"): even 30 fps preview, SSE2 colour, effects capped to the camera's rate, tray trims | yes (Windows, dev build) | OBSBOT: preview 30 fps, blur + reader 140 % → 28 % CPU, tray ~24 MB; `camstudio-verify` live, 0 no-signal. **Not yet: in a release, a phone source, Windows 10, the preview looked at by a person** |
 | PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif`, `MakerLink_Click`), 2026-10-24 | yes (Windows, 2026-10-29) | dev build: logo shows, the GIF has no loop extension (28 frames once), the link opens winlax.id.vn; **with Windows animations off: not looked at** |
 
 ## 2. The user's decisions (do not ask again)

@@ -66,7 +66,14 @@ public:
 
     ~CaptureEngine() { Stop(); }
 
-    void SetNotify(HWND window, UINT msg) { m_notifyWindow = window; m_notifyMsg = msg; }
+    // A window that gets msg when a preview frame is ready (or the state changed). One message
+    // waits at a time: the next is posted once CopyPreview has been called. Set once, before any
+    // source runs.
+    void SetNotify(HWND window, UINT msg)
+    {
+        m_notifyMsg = msg;
+        m_notifyWindow = window;
+    }
 
     // Both return the id the new source's status will carry (Status::sourceId).
     uint32_t Start(const CameraDevice& cam, const NativeFormat& format, const ImageSettings& image);
@@ -200,8 +207,10 @@ private:
     void Wait(const std::wstring& what, HRESULT hr);
     void Notify() const;
     void UpdatePreview(const uint8_t* y, const uint8_t* uv, long pitch, uint32_t w, uint32_t h);
-    bool PreviewDue();
-    bool PreviewWanted() const; // PreviewDue without taking the slot
+    // sourceFps: the source's nominal rate. The preview gets an even ~30 fps (every frame of a
+    // source at 30 fps or less).
+    bool PreviewDue(double sourceFps);
+    bool PreviewWanted(double sourceFps) const; // PreviewDue without taking the slot
     void StartLocked();
     ImageSettings EffectiveImageLocked() const; // user settings + phone orientation
     // A phone link the source is blocked on while it reconnects: Switch()/Stop() abort it.
@@ -227,7 +236,7 @@ private:
     uint32_t m_previewW = 0;
     uint32_t m_previewH = 0;
     uint64_t m_previewId = 0;
-    ULONGLONG m_lastPreviewTick = 0;
+    double m_previewDueMs = 0; // QPC time the next preview frame is due (capture thread only)
 
     // The source running now, and the one Switch() asked for (under m_lock).
     CameraDevice m_camera;
@@ -276,6 +285,7 @@ private:
     // not rebuilt (dropping the app that just opened it) when the phone starts.
     std::map<std::wstring, int> m_rotationMemory;
 
-    HWND m_notifyWindow = nullptr;
-    UINT m_notifyMsg = 0;
+    std::atomic<HWND> m_notifyWindow{ nullptr };
+    std::atomic<UINT> m_notifyMsg{ 0 };
+    mutable std::atomic<bool> m_notifyPending{ false }; // posted, CopyPreview not called since
 };
