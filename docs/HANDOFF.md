@@ -1,8 +1,8 @@
 # Handoff: unfinished work
 
-> **Tóm tắt (2026-10-30):** bản 0.1.11 đã đăng trên GitHub (PC + Android). iOS 0.1.0
-> (20261021.2339) đã lên TestFlight. Còn một lỗi micro phía PC (mục 3) và các bài thử cần người
-> cầm máy. Bản PC nhẹ và mượt hơn (2026-10-30) đã commit, chưa phát hành.
+> **Tóm tắt (2026-10-30):** bản 0.1.12 (PC nhẹ và mượt hơn) đã đăng trên GitHub (PC + Android).
+> iOS 0.1.0 (20261021.2339) đã lên TestFlight. Còn một lỗi micro phía PC (mục 3) và các bài thử
+> cần người cầm máy.
 
 For AI agents picking the work up on any machine. Read CLAUDE.md first ("Windows build and the
 Redmi over USB" says what was verified). Update this file in the same commit as each step; delete
@@ -45,7 +45,7 @@ it once everything is tested.
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
-| PC lighter and smoother (2026-10-30, CLAUDE.md "Light and smooth"): even 30 fps preview, SSE2 colour, effects capped to the camera's rate, tray trims | yes (Windows, dev build) | OBSBOT: preview 30 fps, blur + reader 140 % → 28 % CPU, tray (Task Manager) 38 → 24 MB; `camstudio-verify` live, 0 no-signal. **Not yet: in a release, a phone source, Windows 10, the preview looked at by a person** |
+| PC lighter and smoother (2026-10-30, CLAUDE.md "Light and smooth"): even 30 fps preview, SSE2 colour, effects capped to the camera's rate, tray trims | yes (Windows), **published in v0.1.12** | OBSBOT: preview 30 fps, blur + reader 140 % → 28 % CPU, tray (Task Manager) 38 → 24 MB; `camstudio-verify` live, 0 no-signal. **Not yet: a phone source, Windows 10, the preview looked at by a person** |
 | PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif`, `MakerLink_Click`), 2026-10-24 | yes (Windows, 2026-10-29) | dev build: logo shows, the GIF has no loop extension (28 frames once), the link opens winlax.id.vn; **with Windows animations off: not looked at** |
 
 ## 2. The user's decisions (do not ask again)
@@ -72,6 +72,11 @@ it once everything is tested.
   button toggled), and a phone recording at 44.1/16 kHz would play at 48 kHz. Also: "Tạm dừng
   hình" (`cs_switch_none`) stops the phone's sound too, in a call.
 
+- **v0.1.12 published** (2026-10-30, tag on 4002312, setup sha256 a3d74240…, APK 40a33935…,
+  versionCode 14, no Android code change): the "Light and smooth" work in CLAUDE.md. Installed on
+  the user's PC over 0.1.11 the updater's way (`/SILENT /RELAUNCH=tray /LOG`): succeeded, no
+  rollback, installed files match the build, settings untouched, back in the tray, virtual camera
+  live. Not yet: an installed 0.1.11 elsewhere updating itself, a phone source, the preview looked at.
 - **v0.1.11 published** (2026-10-29, tag on e2a4572, setup sha256 e3fa551e…, APK 12757a4a…,
   versionCode 13, no Android code change): two phone-app QR codes, "by Win Lã" in Settings.
   Installed on the user's PC with `/LOG`: succeeded, no rollback, installed files match the

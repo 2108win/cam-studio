@@ -234,7 +234,8 @@ Windows 11.
   the installed 0.1.7 found it and offered the update. **v0.1.9** (2026-10-21: phone microphone,
   Android) is **published** (tag on 07218c5); **v0.1.10** (add-ons, Windows accent, icons, one
   card per phone) is **published** (tag on 91dae8f); **v0.1.11** (two phone-app QR codes, maker
-  link) is **published** (tag on e2a4572). The `DllCanUnloadNow` is `S_FALSE`, so
+  link) is **published** (tag on e2a4572); **v0.1.12** (even 30 fps preview, effects capped to the
+  camera's rate, lighter in the tray) is **published** (tag on 4002312). The `DllCanUnloadNow` is `S_FALSE`, so
   once anything (even the Claude desktop app's device enumeration) loads the registered filter DLL it
   stays mapped and locks the file: rename the DLL aside before rebuilding, or unregister first.
 - **iPhone pairing (same day):** when the PC and phone hold **different** pairing keys (app
