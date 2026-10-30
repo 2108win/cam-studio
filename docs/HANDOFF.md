@@ -45,7 +45,7 @@ it once everything is tested.
 | Discord over Wi‑Fi (Redmi), screen off | yes | yes |
 | Automatic updates, PC (`Updater.cs`) | yes | yes (0.1.4 → test 0.1.5); "Không" at UAC **no** |
 | Automatic updates, Android (`AppUpdater.kt`) | yes | 0.1.4 installed; update path **no** (next release) |
-| PC lighter and smoother (2026-10-30, CLAUDE.md "Light and smooth"): even 30 fps preview, SSE2 colour, effects capped to the camera's rate, tray trims | yes (Windows, dev build) | OBSBOT: preview 30 fps, blur + reader 140 % → 28 % CPU, tray ~24 MB; `camstudio-verify` live, 0 no-signal. **Not yet: in a release, a phone source, Windows 10, the preview looked at by a person** |
+| PC lighter and smoother (2026-10-30, CLAUDE.md "Light and smooth"): even 30 fps preview, SSE2 colour, effects capped to the camera's rate, tray trims | yes (Windows, dev build) | OBSBOT: preview 30 fps, blur + reader 140 % → 28 % CPU, tray (Task Manager) 38 → 24 MB; `camstudio-verify` live, 0 no-signal. **Not yet: in a release, a phone source, Windows 10, the preview looked at by a person** |
 | PC Settings: "by Win Lã" link under the version (`Assets/WinLa.gif`, `MakerLink_Click`), 2026-10-24 | yes (Windows, 2026-10-29) | dev build: logo shows, the GIF has no loop extension (28 frames once), the link opens winlax.id.vn; **with Windows animations off: not looked at** |
 
 ## 2. The user's decisions (do not ask again)

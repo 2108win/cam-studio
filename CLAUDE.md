@@ -390,12 +390,15 @@ Windows 11.
     `Publish` takes one frame per camera interval and the preview shows those. `BlendBackground`
     runs on one thread up to 1080p at ≤35 frames/s (all cores cost 1.7× the CPU). Blur, hidden,
     1080p30 reader: 140 % → 28 % of a core, still 30 fps, 0 no-signal, gaps ≤ 35 ms.
-    No cap on Windows 10 (rate unknown) or for a recording.
-  - **Tray memory:** the trim at a `--tray` start ran before anything had loaded (working set
-    stayed ~125 MB). `TrimLater` trims again 30 s after hiding and 90 s after a hidden start,
-    never while an app uses the camera or a recording runs. Task Manager's "Memory" (private
-    working set) in the tray: ~24 MB. Commit is unchanged (~110–126 MB): WinUI plus the GPU
-    driver, which load even when the window never shows. The engine alone is ~2 MB.
+    No cap on Windows 10 (rate unknown) or for a recording. It only helps while the registered
+    rate is below the source's: true here (registered at 30 at launch with no source, never
+    rebuilt), not once the camera is rebuilt at 60/100 for a new size. Then the vcam would have
+    to publish the app's own rate (`reserved1` in the header).
+  - **Tray memory:** the trim at a `--tray` start ran before anything had loaded. `TrimLater`
+    trims again 30 s after hiding and 90 s after a hidden start, never while an app uses the
+    camera or a recording runs. Task Manager's "Memory" (private working set) 2.5 min after a
+    tray start: 38 → 24 MB. Commit is unchanged (~110–126 MB): WinUI plus the GPU driver, which
+    load even when the window never shows. The engine alone is ~2 MB.
   - Hidden with a 1080p30 reader and no effect: unchanged (~4 % of a core, mostly MJPEG decode).
 - **Build tools:** VS 2022 Build Tools (C++, CMake, Windows 11 SDK 26100) and the .NET 10 SDK
   (`C:\Program Files\dotnet`, not on PATH in an old shell). A `build\CMakeCache.txt` from a removed
