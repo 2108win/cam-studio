@@ -421,14 +421,29 @@ rồi Discord, Zoom… chọn "CABLE Output" làm micro.
 
 ## 6. Thích ứng với mạng
 
-- **Theo dõi hàng đợi:** điện thoại theo dõi hàng đợi gửi của mình.
-- **Mạng nghẽn:** khi hàng đợi vượt khoảng 150 ms, điện thoại:
-  1. bỏ các khung không phải khung khóa đang chờ gửi;
-  2. giảm bitrate 30%, mức sàn là 1 Mbps;
-  3. gửi `bitrate` để PC biết.
+Mục tiêu là độ trễ thấp nhất: hình đi ngay, không xếp hàng ở đâu cả.
+
+- **Khung khóa thưa:** điện thoại chỉ gửi khung khóa mỗi **10 giây** và khi được xin (`keyframe`). TCP không
+  mất gói nên khung khóa định kỳ không cần; một khung khóa nặng gấp 5–10 lần khung thường, gửi mỗi giây
+  thì các khung sau nó phải xếp hàng 30–80 ms trên Wi‑Fi. Android dùng CBR và intra‑refresh (làm mới dần
+  từng phần ảnh trong một giây) để cỡ khung đều; iPhone dùng bộ điều khiển bitrate độ trễ thấp.
+- **Theo dõi hàng đợi:** điện thoại đo mỗi khung đã chờ bao lâu từ lúc mã hóa xong tới lúc gửi được.
+  Hai mức (bỏ qua ~300 ms sau một khung khóa, vì chính nó làm các khung sau chờ):
+  - **chờ hơn 80 ms** (đường truyền gần đầy): giảm bitrate 20%, tối đa một lần mỗi giây, không bỏ khung;
+  - **chờ hơn 150 ms** (đã cũ): bỏ các khung không phải khung khóa đang chờ, xin khung khóa, giảm bitrate
+    30%. Mức sàn 1 Mbps. Mỗi lần đổi gửi `bitrate` để PC biết.
+- **PC báo lại** mỗi giây trong `stats`: `queueMs` là khung mới nhất đến **muộn hơn bao nhiêu** so với nhịp
+  của chính luồng (thời điểm đến trừ `ptsMicros`, trừ đi mức nhỏ nhất trong 3–6 giây gần đây), tức là
+  phần dồn trên đường truyền hoặc trên PC. Điện thoại xử lý như hàng đợi của mình: trên 80 ms giảm
+  bitrate, trên 200 ms (hoặc `lost` > 0) bỏ khung và xin khung khóa.
 - **Mạng ổn định trở lại:** sau 5 giây ổn định, tăng bitrate 10% mỗi lần, không vượt quá mức PC đã yêu cầu.
 - **PC mất gói hoặc giải mã lỗi:** PC gửi `keyframe`, rồi bỏ các khung cho tới khi nhận được khung khóa tiếp theo.
-- **Hình luôn mới:** PC chỉ giữ khung mới nhất (không xếp hàng), nên khi mạng yếu hình sẽ mờ đi chứ không bị trễ dồn.
+- **Hình luôn mới:** PC chỉ giữ khung mới nhất (không xếp hàng). Khi PC chậm hơn một khung và khung sau
+  đã nằm sẵn trong socket, PC vẫn giải mã khung này (khung sau cần nó) nhưng không hiện: máy yếu đuổi
+  kịp thay vì trễ dần. Khi mạng yếu hình mờ đi chứ không bị trễ dồn.
+- **Ưu tiên trên mạng:** điện thoại đánh dấu gói hình là video (Android DSCP AF41, iPhone
+  `interactiveVideo`), để Wi‑Fi xếp vào hàng đợi video (WMM) trước dữ liệu thường; Nagle tắt ở cả hai
+  bên (đoạn cuối của một khung không chờ ACK của PC).
 
 ---
 

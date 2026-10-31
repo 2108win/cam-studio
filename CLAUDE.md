@@ -401,6 +401,20 @@ Windows 11.
     tray start: 38 → 24 MB. Commit is unchanged (~110–126 MB): WinUI plus the GPU driver, which
     load even when the window never shows. The engine alone is ~2 MB.
   - Hidden with a 1080p30 reader and no effect: unchanged (~4 % of a core, mostly MJPEG decode).
+- **Low latency over Wi‑Fi (0.1.13, 2026-10-31, docs/protocol.md 6):** keyframes every 10 s and on
+  request (Android `VideoEncoder.lowLatencyFormat`, 4 fallback levels: CBR, `KEY_LATENCY` 1, no
+  B-frames, intra refresh; iOS `MaxKeyFrameInterval`, `MaxFrameDelayCount` 0); the phone slows
+  down 20 % at 80 ms of send-queue age and drops at 150 ms (300 ms after a keyframe ignored); iOS
+  `noDelay` + `serviceClass .interactiveVideo`, Android DSCP AF41 and a `WIFI_MODE_FULL_LOW_LATENCY`
+  lock beside the old one. PC: `stats.queueMs` is real now (arrival minus pts, less the 3–6 s
+  minimum: `Lag` in `RunPhone`); behind by more than a frame with bytes pending, a frame is decoded
+  but not published (`framesSkipped`, `lagMs` in `CsStatus`, "Trễ mạng" in Chi tiết); the capture
+  thread and the vcam worker run above normal; the vcam follows the source's cadence when its rate
+  is ≤ 1.2× the app's (`PaceUntilNextFrame`, re-phased per frame, min spacing half an interval).
+  Tested on the PC with `camstudio-fake-phone --stall 250` (prints the PC's stats): 721/721 live
+  frames at 30 fps through the installed 0.1.12 vcam, queueMs 260–340 in stall seconds. **Not
+  tested:** the new vcam DLL's pacing (needs the installer), the "Trễ mạng" row on screen, any
+  phone (Android APK built, tests pass; iOS not compiled: needs a Mac).
 - **Build tools:** VS 2022 Build Tools (C++, CMake, Windows 11 SDK 26100) and the .NET 10 SDK
   (`C:\Program Files\dotnet`, not on PATH in an old shell). A `build\CMakeCache.txt` from a removed
   Visual Studio stops CMake ("could not find specified instance"): delete it and `build\CMakeFiles`.

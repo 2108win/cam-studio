@@ -66,6 +66,8 @@ public unsafe struct CsStatus
     public uint PictureHeight;
     public uint SourceId;     // which Start/Switch the frame counts belong to
     public int NoSource;      // the camera is up with no source (cs_switch_none): apps see "no signal"
+    public double LagMs;      // phones: how late the newest frame arrived in the last second (network or PC backlog)
+    public ulong FramesSkipped; // phones: frames decoded but not shown because a newer one had arrived
     public fixed char Error[256];
 
     public readonly string ErrorText

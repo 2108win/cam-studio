@@ -1821,12 +1821,21 @@ public sealed partial class MainWindow : Window
             InfoFps.Text = $"{s.Fps:0.0} fps";
             InfoDropped.Text = $"{s.FramesDropped:N0} / {s.FramesCaptured:N0}";
             InfoProcess.Text = s.ProcessMs > 0 ? $"{s.ProcessMs:0.0} ms" : "0 ms (không có ai xem)";
+            // Phones: how late the newest frame of the last second arrived against the stream's own
+            // clock (the backlog on the network, or on this PC), and the frames not shown for it.
+            InfoLagLabel.Visibility = InfoLag.Visibility = _isPhone ? Visibility.Visible : Visibility.Collapsed;
+            if (_isPhone)
+            {
+                InfoLag.Text = s.LagMs < 1 ? "Không dồn"
+                             : s.FramesSkipped > 0 ? $"Dồn thêm {s.LagMs:0} ms · bỏ {s.FramesSkipped:N0} khung cũ"
+                             : $"Dồn thêm {s.LagMs:0} ms";
+            }
             InfoConsumers.Text = _consumers.Count > 0 ? string.Join(", ", _consumers)
                                : s.ConsumerActive != 0 ? "Có (không rõ tên)" : "Chưa có ứng dụng nào";
         }
         else
         {
-            InfoCamera.Text = InfoOutput.Text = InfoFps.Text = InfoDropped.Text = InfoProcess.Text = InfoConsumers.Text = "—";
+            InfoCamera.Text = InfoOutput.Text = InfoFps.Text = InfoDropped.Text = InfoProcess.Text = InfoLag.Text = InfoConsumers.Text = "—";
         }
 
         _self.Refresh();

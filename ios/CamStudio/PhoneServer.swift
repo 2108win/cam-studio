@@ -58,9 +58,15 @@ final class PhoneServer {
     private func listen() {
         listener?.cancel()
         listener = nil
-        let params = NWParameters.tcp
+        // No Nagle: with it, the last segment of a frame waits for the PC's delayed ACK (up to
+        // 200 ms on Windows). The video service class puts the stream in Wi‑Fi's video queue
+        // (WMM), ahead of bulk traffic. Inbound connections inherit both.
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        let params = NWParameters(tls: nil, tcp: tcp)
         params.includePeerToPeer = false
         params.allowLocalEndpointReuse = true
+        params.serviceClass = .interactiveVideo
         // Fixed port first (docs/protocol.md 1), so an address added by IP stays valid.
         let fixedPort: NWEndpoint.Port = kind == .camera ? 47321 : 47322
         guard let listener = (try? NWListener(using: params, on: fixedPort)) ?? (try? NWListener(using: params)) else {

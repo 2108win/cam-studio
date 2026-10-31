@@ -1,5 +1,6 @@
 ﻿#include "MediaStream.h"
 #include "MediaSource.h"
+#include <algorithm>
 
 namespace
 {
@@ -380,21 +381,60 @@ void MediaStream::PaceUntilNextFrame(LONGLONG interval)
         WaitForMultipleObjects(extra ? 2 : 1, handles, FALSE, INFINITE);
     };
 
-    // Deliver on a fixed schedule at the rate the app asked for: a 30 fps
-    // consumer of a 100 fps source gets one frame every 33 ms, not one per
-    // host write (uneven timestamps stutter in apps like Discord).
+    // Waits for a frame newer than the last delivered, up to `limit`. The event is auto-reset
+    // and may still be set from a publish already delivered: check again after each wake.
+    auto waitForFrame = [&](LONGLONG limit) {
+        while (m_reader->LatestFrame() == m_reader->DeliveredFrame() && MFGetSystemTime() < limit)
+            waitUntil(limit, m_reader->FrameEvent());
+    };
+
     const LONGLONG now = MFGetSystemTime();
+    // The host's rate, from how many frames it published between our requests.
+    {
+        const LONG64 latest = m_reader->LatestFrame();
+        if (m_rateStart100ns == 0 || latest < m_rateLatest)
+        {
+            m_rateStart100ns = now;
+            m_rateCount = 0;
+        }
+        else
+        {
+            m_rateCount += latest - m_rateLatest;
+            if (now - m_rateStart100ns >= 10'000'000)
+            {
+                m_sourceFps = static_cast<double>(m_rateCount) * 1e7 / static_cast<double>(now - m_rateStart100ns);
+                m_rateStart100ns = now;
+                m_rateCount = 0;
+            }
+        }
+        m_rateLatest = latest;
+    }
+    const bool follow = m_sourceFps > 0 && m_sourceFps <= 1e7 / static_cast<double>(interval) * 1.2;
+
     if (due == 0 || now - due > interval)
     {
         due = now; // first frame, or the app fell behind: restart the schedule
     }
+    else if (follow)
+    {
+        // Source at the app's rate or slower (a phone, a 30 fps webcam): each frame goes out as
+        // it comes, so it never waits for the next tick (up to a whole interval, ~16 ms on
+        // average at 30 fps). Never two closer than half an interval, and the schedule re-phases
+        // to the frame, so the cadence stays the source's own.
+        const LONGLONG earliest = m_lastDelivery100ns + interval / 2;
+        waitUntil(earliest, nullptr);
+        waitForFrame(due + interval / 2);
+        if (m_reader->LatestFrame() != m_reader->DeliveredFrame()) due = std::max(earliest, MFGetSystemTime());
+    }
     else
     {
+        // Deliver on a fixed schedule at the rate the app asked for: a 30 fps
+        // consumer of a 100 fps source gets one frame every 33 ms, not one per
+        // host write (uneven timestamps stutter in apps like Discord).
         waitUntil(due, nullptr);
         // Source slower than the consumer: wait a little for a fresh frame
         // rather than repeat the last one, never more than half an interval.
-        if (m_reader->LatestFrame() == m_reader->DeliveredFrame())
-            waitUntil(due + interval / 2, m_reader->FrameEvent());
+        waitForFrame(due + interval / 2);
     }
     std::lock_guard lk(m_lock);
     m_nextDue100ns = due + interval;
@@ -402,6 +442,8 @@ void MediaStream::PaceUntilNextFrame(LONGLONG interval)
 
 void MediaStream::WorkerLoop()
 {
+    // The app's frames must not wait behind its own busy threads on a weak PC.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     for (;;)
     {
         ComPtr<IUnknown> token;

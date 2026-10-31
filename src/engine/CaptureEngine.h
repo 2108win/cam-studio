@@ -61,6 +61,8 @@ public:
         uint32_t pictureHeight = 0;  //   when it is fitted with black bars
         uint32_t sourceId = 0;       // which Start()/Switch() the frame counts belong to
         bool noSource = false;       // the camera is up with no source: apps see "no signal"
+        double lagMs = 0.0;          // phones: how late the newest frame arrived in the last second
+        uint64_t framesSkipped = 0;  //   and frames not shown because a newer one had arrived
         std::wstring error;
     };
 

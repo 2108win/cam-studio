@@ -60,6 +60,9 @@ struct CsStatus
     uint32_t pictureHeight;   //   fitted with black bars (an app keeps the camera's size)
     uint32_t sourceId;        // which cs_start/cs_switch the frame counts belong to
     int32_t noSource;         // the camera is up with no source (cs_switch_none): apps see "no signal"
+    double lagMs;             // phones: how late the newest frame arrived in the last second (ms), the
+                              //   network's or this PC's backlog; 0 when the stream keeps up
+    uint64_t framesSkipped;   // phones: frames decoded but not shown because a newer one had arrived
     wchar_t error[256];
 };
 

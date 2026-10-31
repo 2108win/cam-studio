@@ -86,10 +86,10 @@ class CameraStreamer(
         // Vendors accept different optional keys: try the full low-latency
         // setup first, then step down to the plainest configuration.
         var lastError: Exception? = null
-        for (level in 0..2) {
+        for (level in 0..VideoEncoder.LEVELS) {
             val enc = MediaCodec.createEncoderByType(mime)
             try {
-                enc.configure(encoderFormat(mime, level), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                enc.configure(encoderFormat(enc, mime, level), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 inputSurface = enc.createInputSurface()
                 enc.start()
                 encoder = enc
@@ -128,22 +128,9 @@ class CameraStreamer(
     /** The camera (not the encoder) refused to open. */
     class OpenFailed(cause: Exception) : Exception(cause.message, cause)
 
-    /** level 0: everything; 1: no latency/priority/bitrate-mode hints; 2: bare minimum. */
-    private fun encoderFormat(mime: String, level: Int): MediaFormat =
-        MediaFormat.createVideoFormat(mime, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            if (level <= 1) {
-                // Re-send the last frame if the scene is static, so the PC never stalls.
-                setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / fps * 3)
-            }
-            if (level == 0) {
-                setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-                setInteger(MediaFormat.KEY_PRIORITY, 0) // real-time
-            }
+    /** [VideoEncoder.lowLatencyFormat], re-sending the last frame when the scene is still so the PC never stalls. */
+    private fun encoderFormat(enc: MediaCodec, mime: String, level: Int): MediaFormat =
+        VideoEncoder.lowLatencyFormat(enc, mime, width, height, fps, bitrate, level, 1_000_000L / fps * 3).apply {
             if (codec == "hevc10") {
                 setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10)
                 setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT2020)

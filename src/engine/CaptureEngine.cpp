@@ -1155,6 +1155,8 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
         Fail(L"Không khởi tạo được COM", E_FAIL);
         return;
     }
+    // Frames must not wait behind the UI or other apps on a busy PC.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     {
         Pipeline pipeline(*this);
         CameraDevice webcam = cam; // found again after the webcam was unplugged
@@ -1177,7 +1179,8 @@ void CaptureEngine::Run(CameraDevice cam, NativeFormat format)
                 ++m_layoutGen;
                 m_phoneState.clear();
                 m_status.sourceId = m_nextSourceId;
-                m_status.framesCaptured = m_status.framesDropped = 0;
+                m_status.framesCaptured = m_status.framesDropped = m_status.framesSkipped = 0;
+                m_status.lagMs = 0;
                 m_status.fps = 0;
                 m_status.error.clear();
                 m_status.noSource = IsNoSource(cam);
@@ -1659,6 +1662,31 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
     uint32_t lostFrames = 0;
     double decodeMs = 0;
     unsigned decoded = 0;
+    // How late each frame arrives against the stream's own clock (docs/protocol.md 6): arrival
+    // time minus pts, less the smallest difference seen over the last 3–6 s (the clock offset,
+    // tracked in two buckets so a drift or a pts jump is forgotten within 6 s). It grows when the
+    // network, or this PC, falls behind; the phone sends less at 80 ms and drops at 200 ms.
+    struct Lag
+    {
+        double minNow = 1e18, minPrev = 1e18;
+        ULONGLONG bucket = 0;
+        double current = 0, peak = 0;
+        void Update(double arrivalMs, double ptsMs, ULONGLONG now)
+        {
+            const double d = arrivalMs - ptsMs;
+            if (now - bucket >= 3000)
+            {
+                minPrev = minNow;
+                minNow = 1e18;
+                bucket = now;
+            }
+            minNow = std::min(minNow, d);
+            current = std::max(0.0, d - std::min(minNow, minPrev));
+            peak = std::max(peak, current);
+        }
+    } lag;
+    const double frameMs = 1000.0 / std::max(1u, fps);
+    unsigned skipped = 0; // frames decoded but not shown: a newer one had already arrived
     ULONGLONG lastFrame = GetTickCount64();
     ULONGLONG lastStats = lastFrame;
     std::vector<uint8_t> unit;
@@ -1754,6 +1782,11 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
                 size = unit.size();
             }
             const double t0 = QpcMs();
+            lag.Update(t0, static_cast<double>(m.ptsUs) / 1000.0, now);
+            // Behind by more than a frame, and the next one is already here: decode this one (the
+            // next needs it) but do not spend the colour work, effects and preview on a picture
+            // the app would see for less than a frame. A weak PC catches up instead of lagging.
+            const bool behind = lag.current > frameMs && link.PendingBytes() > 0;
             const HRESULT dhr = decoder.Decode(data, size, m.ptsUs * 10, [&](const uint8_t* nv12, long pitch, uint32_t w, uint32_t h) {
                 if (w != width || h != height)
                 {
@@ -1763,7 +1796,15 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
                     height = h;
                     if (FAILED(pipeline.Begin(width, height, fps, 1, hevc ? MFVideoFormat_HEVC : MFVideoFormat_H264))) return;
                 }
-                pipeline.Frame(nv12, pitch, m.ptsUs * 10);
+                if (behind && !waitKeyframe)
+                {
+                    pipeline.Count(m.ptsUs * 10);
+                    ++skipped;
+                }
+                else
+                {
+                    pipeline.Frame(nv12, pitch, m.ptsUs * 10);
+                }
             });
             decodeMs += QpcMs() - t0;
             ++decoded;
@@ -1786,7 +1827,14 @@ CaptureEngine::Outcome CaptureEngine::RunPhone(Pipeline& pipeline, const CameraD
             link.SendControl(json::Value::MakeObject()
                 .Set("type", "stats").Set("recvFps", pipeline.LastFps())
                 .Set("decodeMs", decoded ? decodeMs / decoded : 0.0)
-                .Set("queueMs", 0).Set("lost", static_cast<int>(lostFrames)));
+                .Set("queueMs", std::round(lag.peak)).Set("lost", static_cast<int>(lostFrames)));
+            {
+                std::lock_guard lk(m_lock);
+                m_status.lagMs = lag.peak;
+                m_status.framesSkipped += skipped;
+            }
+            lag.peak = 0;
+            skipped = 0;
             lostFrames = 0;
             decodeMs = 0;
             decoded = 0;

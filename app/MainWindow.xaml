@@ -749,6 +749,7 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <TextBlock Text="Nguồn" Style="{StaticResource InfoLabelStyle}" />
                                         <TextBlock x:Name="InfoCamera" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
@@ -760,10 +761,12 @@
                                         <TextBlock x:Name="InfoDropped" Grid.Row="3" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
                                         <TextBlock Grid.Row="4" Text="Xử lý mỗi khung" Style="{StaticResource InfoLabelStyle}" />
                                         <TextBlock x:Name="InfoProcess" Grid.Row="4" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                        <TextBlock Grid.Row="5" Text="Đang dùng camera" Style="{StaticResource InfoLabelStyle}" />
-                                        <TextBlock x:Name="InfoConsumers" Grid.Row="5" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
-                                        <TextBlock Grid.Row="6" Text="Cam Studio dùng" Style="{StaticResource InfoLabelStyle}" />
-                                        <TextBlock x:Name="InfoCpu" Grid.Row="6" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                        <TextBlock x:Name="InfoLagLabel" Grid.Row="5" Text="Trễ mạng" Style="{StaticResource InfoLabelStyle}" Visibility="Collapsed" />
+                                        <TextBlock x:Name="InfoLag" Grid.Row="5" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" Visibility="Collapsed" />
+                                        <TextBlock Grid.Row="6" Text="Đang dùng camera" Style="{StaticResource InfoLabelStyle}" />
+                                        <TextBlock x:Name="InfoConsumers" Grid.Row="6" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
+                                        <TextBlock Grid.Row="7" Text="Cam Studio dùng" Style="{StaticResource InfoLabelStyle}" />
+                                        <TextBlock x:Name="InfoCpu" Grid.Row="7" Grid.Column="1" Text="—" Style="{StaticResource InfoValueStyle}" />
                                     </Grid>
                                     <StackPanel x:Name="PhoneInfoSection" Visibility="Collapsed">
                                         <TextBlock Text="Điện thoại" Style="{StaticResource InspectorSubheadStyle}" />

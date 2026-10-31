@@ -83,6 +83,8 @@ public:
     bool Receive(Message& message, int timeoutMs, bool& timedOut);
     // Something can be read now (a record, or the connection closing).
     bool Readable() const;
+    // Bytes received and not yet read: more of the stream already waits behind the current record.
+    size_t PendingBytes() const;
     // Lease holder: closes the socket.
     void Close();
     // Any thread: ends the connection without closing the socket under its reader (shutdown).

@@ -51,7 +51,12 @@ final class Session {
     private var targetBitrate = 8_000_000
     private var currentBitrate = 8_000_000
     private var lastCongestion: TimeInterval = 0
+    private var lastKeyframeSent: TimeInterval = 0
     private var waitingForKeyframe = false
+    // Adaptive sending (docs/protocol.md 6): how long a frame waited to be sent, and the PC's
+    // `queueMs` (how late the newest frame arrived against the stream's own clock).
+    private static let slowSeconds = 0.080, dropSeconds = 0.150
+    private static let pcSlowMs = 80.0, pcDropMs = 200.0
 
     init(connection: NWConnection, store: Store, ui: UI, source: MediaSource) {
         self.connection = Connection(connection)
@@ -182,7 +187,9 @@ final class Session {
             case "keyframe":
                 if streaming { source.requestKeyframe() }
             case "stats":
-                if (json["lost"] as? Int ?? 0) > 0 || (json["queueMs"] as? Double ?? 0) > 200 { congestion() }
+                let queueMs = json["queueMs"] as? Double ?? 0
+                if (json["lost"] as? Int ?? 0) > 0 || queueMs > Self.pcDropMs { congestion() }
+                else if queueMs > Self.pcSlowMs { slowDown() }
             case "showSystemEffects":
                 ui?.showSystemEffects()
             default:
@@ -285,7 +292,14 @@ final class Session {
                 guard let out else { break }
                 if out.kind == Wire.kindVideoFrame {
                     let keyframe = out.flags & Wire.flagKeyframe != 0
-                    if Date().timeIntervalSince1970 - out.queuedAt > 0.150 && !keyframe { congestion() }
+                    let now = Date().timeIntervalSince1970
+                    let age = now - out.queuedAt
+                    // Two levels: frames waiting a little mean the link is nearly full, so send
+                    // less before anything has to be dropped; frames waiting long are stale and
+                    // go. A keyframe's own size delays the frames right behind it: not the network.
+                    if age > Self.dropSeconds && !keyframe { congestion() }
+                    else if age > Self.slowSeconds && !keyframe && now - lastKeyframeSent > 0.3 { slowDown() }
+                    if keyframe { lastKeyframeSent = now }
                     // After a drop, the decoder needs a keyframe: skip until one comes.
                     if waitingForKeyframe && !keyframe { continue }
                     waitingForKeyframe = false
@@ -315,6 +329,14 @@ final class Session {
             lastCongestion = now
             setBitrate(max(1_000_000, Int(Double(currentBitrate) * 0.7)))
         }
+    }
+
+    /// The link is nearly full: 20% less, at most once a second, nothing dropped.
+    private func slowDown() {
+        let now = Date().timeIntervalSince1970
+        guard now - lastCongestion > 1 else { return }
+        lastCongestion = now
+        setBitrate(max(1_000_000, Int(Double(currentBitrate) * 0.8)))
     }
 
     private func setBitrate(_ bps: Int) {

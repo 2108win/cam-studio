@@ -29,6 +29,7 @@ class CameraService : Service(), Session.Ui {
     private var orientation: OrientationEventListener? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var wifiLowLatency: WifiManager.WifiLock? = null
     @Volatile private var rotation = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -128,22 +129,30 @@ class CameraService : Service(), Session.Ui {
 
     /**
      * While streaming, the stream must go on with the screen off: the CPU stays awake
-     * and Wi‑Fi stays out of power saving.
+     * and Wi‑Fi stays out of power saving. Two Wi‑Fi locks: the low-latency mode (Android 10+)
+     * cuts the Wi‑Fi chip's sleep between packets, but only while the app is on screen, so the
+     * older full-power mode stays held for the screen-off case.
      */
-    @Suppress("DEPRECATION") // WIFI_MODE_FULL_LOW_LATENCY works only with the screen on
+    @Suppress("DEPRECATION") // WIFI_MODE_FULL_HIGH_PERF: the only mode that works with the screen off
     @Synchronized private fun keepAwake(on: Boolean) {
         if (on && wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CamStudio:camera")
                 .apply { setReferenceCounted(false); acquire() }
-            wifiLock = applicationContext.getSystemService(WifiManager::class.java)
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CamStudio:camera")
+            val wifi = applicationContext.getSystemService(WifiManager::class.java)
+            wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CamStudio:camera")
                 .apply { setReferenceCounted(false); acquire() }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                wifiLowLatency = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "CamStudio:camera-latency")
+                    .apply { setReferenceCounted(false); acquire() }
+            }
         } else if (!on) {
             wakeLock?.let { if (it.isHeld) it.release() }
             wakeLock = null
             wifiLock?.let { if (it.isHeld) it.release() }
             wifiLock = null
+            wifiLowLatency?.let { if (it.isHeld) it.release() }
+            wifiLowLatency = null
         }
     }
 

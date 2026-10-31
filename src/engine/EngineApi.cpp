@@ -704,6 +704,8 @@ CS_API void cs_get_status(CsStatus* out)
     out->pictureHeight = s.pictureHeight;
     out->sourceId = s.sourceId;
     out->noSource = s.noSource ? 1 : 0;
+    out->lagMs = s.lagMs;
+    out->framesSkipped = s.framesSkipped;
     wcsncpy_s(out->error, s.error.c_str(), _TRUNCATE);
 }
 

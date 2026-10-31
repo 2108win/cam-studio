@@ -4,7 +4,9 @@
 // caps with one 1280x720@30 H.264 mode, and a moving test pattern encoded
 // with the Windows H.264 encoder MFT.
 //
-//   camstudio-fake-phone [--port 47321] [--thermal serious|critical] [--audio]
+//   camstudio-fake-phone [--port 47321] [--thermal serious|critical] [--audio] [--stall MS]
+// --stall: every 3 s the stream stops for MS ms, then the held frames go out in a bunch (a Wi‑Fi
+// stall): the PC's "stats" (printed) should show queueMs rise, and the PC show the newest frame.
 // --audio: the caps offer a microphone; asked for it ("audio" in start, or "set"), the phone sends
 // a 440 Hz tone as AUDIO records (48 kHz mono 16-bit, 10 ms each), as the real apps send their mic.
 // --thermal: 5 s into a stream, "state" says the phone is that hot (the PC should then ask for
@@ -197,6 +199,7 @@ bool Handshake()
 
 // The --thermal level, sent in "state" once a stream has run 5 s.
 std::string g_thermal;
+int g_stallMs = 0;                      // --stall
 bool g_audioCap = false;                // --audio
 std::atomic<bool> g_audioOn{ false };   // the PC asked for the microphone
 
@@ -319,6 +322,7 @@ void StreamLoop()
     std::vector<uint8_t> nv12(kWidth * kHeight * 3 / 2);
     const int64_t frame100ns = 10000000 / kFps;
     ULONGLONG next = GetTickCount64();
+    ULONGLONG lastStall = next;
     for (uint32_t n = 0; g_streaming; ++n)
     {
         DrawFrame(nv12, n);
@@ -374,6 +378,11 @@ void StreamLoop()
         next += 1000 / kFps;
         const ULONGLONG now = GetTickCount64();
         if (next > now) Sleep(static_cast<DWORD>(next - now));
+        if (g_stallMs > 0 && now - lastStall > 3000)
+        {
+            lastStall = now;
+            Sleep(static_cast<DWORD>(g_stallMs)); // the frames due meanwhile follow back to back
+        }
     }
     CoUninitialize();
 }
@@ -386,6 +395,7 @@ int main(int argc, char** argv)
     {
         if (std::string(argv[i]) == "--port") port = atoi(argv[i + 1]);
         if (std::string(argv[i]) == "--thermal") g_thermal = argv[i + 1];
+        if (std::string(argv[i]) == "--stall") g_stallMs = atoi(argv[i + 1]);
     }
     for (int i = 1; i < argc; ++i)
         if (std::string(argv[i]) == "--audio") g_audioCap = true;
@@ -441,6 +451,7 @@ int main(int argc, char** argv)
                     }
                     else if (type == "stop") g_streaming = false;
                     else if (type == "keyframe") g_forceKey = true;
+                    else if (type == "stats") printf("stats: %s\n", msg.Dump().c_str());
                     else if (type == "set")
                     {
                         printf("set: %s\n", msg.Dump().c_str());

@@ -7,6 +7,9 @@ import VideoToolbox
 /// out as VIDEO_CONFIG before every keyframe. Shared by the cameras and the screen broadcast.
 /// Thread-safe: frames come from a capture queue, bitrate and keyframe requests from the session.
 final class VideoEncoder {
+    /// Seconds between keyframes (docs/protocol.md 6).
+    static let keyframeSeconds = 10
+
     let width: Int32
     let height: Int32
     let codec: String                          // h264 | hevc | hevc10
@@ -48,8 +51,12 @@ final class VideoEncoder {
         set(kVTCompressionPropertyKey_AllowFrameReordering, false)
         set(kVTCompressionPropertyKey_AverageBitRate, bitrate)
         set(kVTCompressionPropertyKey_ExpectedFrameRate, fps)
-        set(kVTCompressionPropertyKey_MaxKeyFrameInterval, fps)
-        set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 1)
+        // Keyframes every 10 s and on request (the PC asks with `keyframe`): over TCP nothing is
+        // lost, and a keyframe is 5–10× a normal frame, which queued the frames behind it on
+        // Wi‑Fi. No frame held back in the encoder.
+        set(kVTCompressionPropertyKey_MaxKeyFrameInterval, fps * VideoEncoder.keyframeSeconds)
+        set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, VideoEncoder.keyframeSeconds)
+        set(kVTCompressionPropertyKey_MaxFrameDelayCount, 0)
         switch codec {
         case "hevc10":
             set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main10_AutoLevel)

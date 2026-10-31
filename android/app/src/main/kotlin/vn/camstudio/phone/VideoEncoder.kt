@@ -34,11 +34,12 @@ class VideoEncoder(
         // setup first, then step down to the plainest configuration.
         var made: Pair<MediaCodec, Surface>? = null
         var lastError: Exception? = null
-        for (level in 0..2) {
+        for (level in 0..LEVELS) {
             val enc = MediaCodec.createEncoderByType(mime)
             var surface: Surface? = null
             try {
-                enc.configure(format(mime, level), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                enc.configure(lowLatencyFormat(enc, mime, width, height, fps, bitrate, level, null), null, null,
+                    MediaCodec.CONFIGURE_FLAG_ENCODE)
                 surface = enc.createInputSurface()
                 enc.start()
                 made = enc to surface
@@ -54,20 +55,6 @@ class VideoEncoder(
         inputSurface = surface
         drainThread = Thread(::drain, "encoder-drain").apply { start() }
     }
-
-    /** level 0: everything; 1: no latency/priority/bitrate-mode hints; 2: bare minimum. */
-    private fun format(mime: String, level: Int): MediaFormat =
-        MediaFormat.createVideoFormat(mime, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            if (level == 0) {
-                setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-                setInteger(MediaFormat.KEY_PRIORITY, 0) // real-time
-            }
-        }
 
     fun setBitrate(bps: Int) {
         bitrate = bps
@@ -117,6 +104,51 @@ class VideoEncoder(
     }
 
     companion object {
+        /** The last configuration level of [lowLatencyFormat]. */
+        const val LEVELS = 3
+
+        /**
+         * Seconds between keyframes. Over TCP nothing is lost, and the PC asks for one (`keyframe`)
+         * when it needs it; a keyframe is 5–10× a normal frame, so one every second queued the
+         * frames behind it on Wi‑Fi for 30–80 ms.
+         */
+        const val KEYFRAME_SECONDS = 10
+
+        /**
+         * The encoder configuration for the lowest latency the vendor accepts (optional keys are
+         * rejected by some): the caller tries level 0 first and steps down.
+         * - 0: everything: CBR (even frame sizes, so no bursts), one frame of encoder latency, no
+         *   B-frames, intra refresh spread over a second instead of a whole keyframe;
+         * - 1: the plain hints (CBR, low latency, real-time priority);
+         * - 2: only the repeat-frame timer;
+         * - 3: the bare minimum.
+         * `repeatAfterUs`: re-send the last frame when the source is still (cameras), or null.
+         */
+        fun lowLatencyFormat(
+            codec: MediaCodec, mime: String, width: Int, height: Int, fps: Int, bitrate: Int, level: Int, repeatAfterUs: Long?,
+        ): MediaFormat = MediaFormat.createVideoFormat(mime, width, height).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, KEYFRAME_SECONDS)
+            if (level <= 2 && repeatAfterUs != null) setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, repeatAfterUs)
+            if (level <= 1) {
+                val cbr = runCatching {
+                    codec.codecInfo.getCapabilitiesForType(mime).encoderCapabilities
+                        .isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                }.getOrDefault(false)
+                setInteger(MediaFormat.KEY_BITRATE_MODE,
+                    if (cbr) MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR else MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+                setInteger(MediaFormat.KEY_PRIORITY, 0) // real-time
+            }
+            if (level == 0) {
+                setInteger(MediaFormat.KEY_LATENCY, 1) // frames the encoder may hold
+                setInteger(MediaFormat.KEY_INTRA_REFRESH_PERIOD, fps)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+            }
+        }
+
         /** Hardware encoders for `mime` (software ones cannot keep up at screen sizes). */
         fun capabilities(mime: String): List<MediaCodecInfo.VideoCapabilities> =
             MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos

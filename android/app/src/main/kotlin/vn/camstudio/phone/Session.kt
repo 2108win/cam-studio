@@ -80,11 +80,14 @@ class Session(
     private var targetBitrate = 8_000_000
     private var currentBitrate = 8_000_000
     private var lastCongestion = 0L
+    private var lastKeyframeSent = 0L
     private var waitingForKeyframe = false
 
     fun run() {
         try {
             socket.tcpNoDelay = true
+            // DSCP AF41: Wi‑Fi puts the stream in its video queue (WMM), ahead of bulk traffic.
+            runCatching { socket.trafficClass = 0x88 }
             handshake()
             sender = Thread(::sendLoop, "sender").apply { start() }
             ui.status(false, "Đã kết nối với $pcName")
@@ -350,7 +353,13 @@ class Session(
                     if (out.kind == Wire.KIND_VIDEO_FRAME) {
                         val keyframe = out.flags and Wire.FLAG_KEYFRAME != 0
                         val ageMs = (now - out.queuedAt) / 1_000_000
-                        if (ageMs > 150 && !keyframe) congestion()
+                        // Two levels (docs/protocol.md 6): frames waiting a little mean the link is
+                        // nearly full, so send less before anything has to be dropped; frames
+                        // waiting long are stale and go. A keyframe's own size delays the frames
+                        // right behind it: that is not the network.
+                        if (ageMs > DROP_MS && !keyframe) congestion()
+                        else if (ageMs > SLOW_MS && !keyframe && now - lastKeyframeSent > 300_000_000L) slowDown()
+                        if (keyframe) lastKeyframeSent = now
                         // After a drop, the decoder needs a keyframe: skip until one comes.
                         if (waitingForKeyframe && !keyframe) continue
                         waitingForKeyframe = false
@@ -381,8 +390,19 @@ class Session(
         }
     }
 
+    /** The link is nearly full: 20% less, at most once a second, nothing dropped. */
+    private fun slowDown() {
+        val now = System.nanoTime()
+        if (now - lastCongestion < 1_000_000_000L) return
+        lastCongestion = now
+        setBitrate(maxOf(1_000_000, (currentBitrate * 0.8).toInt()))
+    }
+
+    /** The PC's view, once a second: how far behind the newest frame arrives, and decode errors. */
     private fun onStats(json: JSONObject) {
-        if (json.optInt("lost") > 0 || json.optDouble("queueMs", 0.0) > 200) congestion()
+        val queueMs = json.optDouble("queueMs", 0.0)
+        if (json.optInt("lost") > 0 || queueMs > PC_DROP_MS) congestion()
+        else if (queueMs > PC_SLOW_MS) slowDown()
     }
 
     private fun setBitrate(bps: Int) {
@@ -394,6 +414,12 @@ class Session(
 
     private companion object {
         const val PING_TIMEOUT_MS = 45_000 // docs/protocol.md: three missed pings
+        // Adaptive sending (docs/protocol.md 6): how long a frame waited to be sent.
+        const val SLOW_MS = 80L
+        const val DROP_MS = 150L
+        // The PC's `queueMs`: how late the newest frame arrived against the stream's own clock.
+        const val PC_SLOW_MS = 80.0
+        const val PC_DROP_MS = 200.0
     }
 
     // ---- device state ------------------------------------------------------------------

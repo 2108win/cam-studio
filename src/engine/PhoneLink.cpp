@@ -384,6 +384,14 @@ bool PhoneLink::Readable() const
     return select(0, &r, nullptr, nullptr, &tv) > 0;
 }
 
+size_t PhoneLink::PendingBytes() const
+{
+    const uintptr_t s = m_socket;
+    if (s == kInvalid) return 0;
+    u_long n = 0;
+    return ioctlsocket(static_cast<SOCKET>(s), FIONREAD, &n) == 0 ? static_cast<size_t>(n) : 0;
+}
+
 std::string PhoneLink::DeviceId() const
 {
     std::lock_guard lk(m_infoLock);

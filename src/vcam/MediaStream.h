@@ -84,4 +84,9 @@ private:
     LONGLONG m_lastDelivery100ns = 0;
     LONGLONG m_nextDue100ns = 0; // when the next sample is due (0: deliver at once)
     HANDLE m_timer = nullptr;
+    // The host's frame rate (frames published per second), measured by the worker.
+    LONGLONG m_rateStart100ns = 0;
+    LONG64 m_rateLatest = 0;
+    LONG64 m_rateCount = 0;
+    double m_sourceFps = 0;
 };
